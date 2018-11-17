@@ -1,20 +1,30 @@
 package io.mycat.mycat2.cmds;
 
-import io.mycat.mycat2.MySQLCommand;
-import io.mycat.mycat2.MySQLSession;
-import io.mycat.mycat2.MycatSession;
-import io.mycat.mycat2.console.SessionKey;
-import io.mycat.mycat2.hbt.*;
-import io.mycat.mycat2.hbt.pipeline.HBTEngine;
-import io.mycat.mysql.Fields;
-import io.mycat.proxy.ProxyBuffer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.swing.*;
 import java.io.IOException;
 import java.nio.channels.SelectionKey;
 import java.util.Arrays;
+
+import javax.swing.SortOrder;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.mycat.mycat2.CurSQLState;
+import io.mycat.mycat2.MySQLCommand;
+import io.mycat.mycat2.MySQLSession;
+import io.mycat.mycat2.MycatSession;
+import io.mycat.mycat2.hbt.CountFunction;
+import io.mycat.mycat2.hbt.GroupPairKeyMeta;
+import io.mycat.mycat2.hbt.JoinMeta;
+import io.mycat.mycat2.hbt.OrderMeta;
+import io.mycat.mycat2.hbt.OutFunction;
+import io.mycat.mycat2.hbt.ResultSetMeta;
+import io.mycat.mycat2.hbt.RowMeta;
+import io.mycat.mycat2.hbt.SqlMeta;
+import io.mycat.mycat2.hbt.TableMeta;
+import io.mycat.mycat2.hbt.pipeline.HBTEngine;
+import io.mycat.mysql.Fields;
+import io.mycat.proxy.ProxyBuffer;
 
 /**
  * 直接透传命令报文
@@ -28,8 +38,10 @@ public class HBTDemoCmd2 implements MySQLCommand {
 
 	public static final HBTDemoCmd2 INSTANCE = new HBTDemoCmd2();
 
+	private MycatSession session;
 	@Override
 	public boolean procssSQL(MycatSession session) throws IOException {
+		this.session=session;
 		logger.debug("current buffer is "+session.proxyBuffer);
 		/*
 		 * 获取后端连接可能涉及到异步处理,这里需要先取消前端读写事件
@@ -92,7 +104,7 @@ public class HBTDemoCmd2 implements MySQLCommand {
 
 	@Override
 	public boolean onFrontWriteFinished(MycatSession session) throws IOException {
-		TableMeta tableMeta = (TableMeta) session.getAttrMap().get(SessionKey.HBT_TABLE_META);
+		TableMeta tableMeta = (TableMeta) session.curSQLSate.get(CurSQLState.HBT_TABLE_META);
 		
 		if(null != tableMeta && !tableMeta.isWriteFinish()) {
 			ProxyBuffer buffer = session.proxyBuffer;
@@ -108,7 +120,7 @@ public class HBTDemoCmd2 implements MySQLCommand {
 			} 
 			return false;
 		} else {
-			session.getAttrMap().remove(SessionKey.HBT_TABLE_META);
+			session.curSQLSate.remove(CurSQLState.HBT_TABLE_META);
 			session.proxyBuffer.flip();
 			session.takeOwner(SelectionKey.OP_READ);
 			return true;
@@ -137,7 +149,7 @@ public class HBTDemoCmd2 implements MySQLCommand {
 	public void clearFrontResouces(MycatSession session, boolean sessionCLosed) {
 		if(sessionCLosed){
 			session.recycleAllocedBuffer(session.getProxyBuffer());
-			session.unbindAllBackend();
+			session.unbindBackends();
 		}
 	}
 
@@ -145,7 +157,7 @@ public class HBTDemoCmd2 implements MySQLCommand {
 	public void clearBackendResouces(MySQLSession mysqlSession, boolean sessionCLosed) {
 		if(sessionCLosed){
 			mysqlSession.recycleAllocedBuffer(mysqlSession.getProxyBuffer());
-			mysqlSession.unbindMycatSession();
+			session.unbindBackends();
 		}
 	}
 }
