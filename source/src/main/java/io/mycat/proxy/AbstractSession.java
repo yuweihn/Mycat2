@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.mycat.mycat2.CurSQLState;
-import io.mycat.mycat2.MycatSession;
 import io.mycat.proxy.buffer.BufferPool;
 import io.mycat.util.StringUtil;
 
@@ -173,7 +172,7 @@ public abstract class AbstractSession implements Session {
 		buffer.limit(proxyBuffer.readIndex);
 		buffer.position(proxyBuffer.readMark);
 		final String hexs = StringUtil.dumpAsHex(buffer, buffer.position(), buffer.remaining());
-		logger.debug( hexs);
+		logger.debug("{} write to session {} ",this, hexs);
 		int writed = channel.write(buffer);
 		
 		proxyBuffer.readMark += writed; // 记录本次磁轭如到 Channel 中的数据
@@ -249,6 +248,7 @@ public abstract class AbstractSession implements Session {
 		// 事件转换时,只注册一个事件,存在可写事件没有取消注册的情况。这里把判断取消
 		// if ((intesOpts & SelectionKey.OP_READ) != SelectionKey.OP_READ) {
 		channelKey.interestOps(SelectionKey.OP_READ);
+		logger.debug("change to read opts {}",this);
 		// }
 	}
 
@@ -262,6 +262,7 @@ public abstract class AbstractSession implements Session {
 		// 事件转换时,只注册一个事件,存在可读事件没有取消注册的情况。这里把判断取消
 		// if ((intesOpts & SelectionKey.OP_WRITE) != SelectionKey.OP_WRITE) {
 		channelKey.interestOps(SelectionKey.OP_WRITE);
+		logger.debug("change to write opts {}",this);
 		// }
 	}
 
@@ -294,9 +295,7 @@ public abstract class AbstractSession implements Session {
 			if (!referedBuffer) {
 				recycleAllocedBuffer(proxyBuffer);
 			}
-			if (this instanceof MycatSession) {
-				this.getMySessionManager().removeSession(this);
-			}
+			this.getMySessionManager().removeSession(this);
 		} else {
 			logger.warn("session already closed " + this.sessionInfo());
 		}
