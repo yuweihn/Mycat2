@@ -82,12 +82,10 @@ public final class StringUtil {
 							"---------------"+readSocketOrwriteSocketFlag +
 									"packetId:" +
 									packetInf.getCurrPacketId() +
-									",packetType:" +
-									packetInf.getType() +
 									",payloadType:" +
 									payloadType +
 									"------------------------------------------\n" +
-									StringUtil.dumpAsHex(packetInf.proxyBuffer.getBytes(packetInf.startPos, packetInf.endPos - packetInf.startPos)));
+									StringUtil.dumpAsHex(packetInf.getProxyBuffer().getBytes(packetInf.startPos, packetInf.endPos - packetInf.startPos)));
 				}catch (Exception e){
 					e.printStackTrace();
 				}
@@ -105,7 +103,7 @@ public final class StringUtil {
 	/**
      * Dumps the given bytes as a hex dump (from offset up to length bytes).
      * 
-     * @param byteBuffer the data to print as hex
+     * @param   as hex
      * @param offset the begin index of bytes to print
      * @param length the number of bytes to print
      * @param g the get a byte interface from buffer such as byte array etc
@@ -187,7 +185,7 @@ public final class StringUtil {
     	return (dumpAsHex(new ByteBufferGetable(buffer), offset, length));
     }
 	public final static String dumpMySQLPackageInfAsHex(AbstractMySQLSession mySQLSession){
-		return (dumpAsHex(new ByteBufferGetable(mySQLSession.proxyBuffer.getBuffer()), mySQLSession.curPacketInf.startPos, mySQLSession.curPacketInf.endPos));
+		return (dumpAsHex(new ByteBufferGetable(mySQLSession.curPacketInf.getProxyBuffer().getBuffer()), mySQLSession.curPacketInf.startPos, mySQLSession.curPacketInf.endPos));
 	}
     public final static boolean isEmpty(String str) {
     	return str == null || str == "";

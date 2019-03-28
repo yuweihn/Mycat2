@@ -1,7 +1,7 @@
 package io.mycat.mysql;
 
 public enum ComQueryState {
-    DO_NOT(false),
+    //DO_NOT(false),
     QUERY_PACKET(true),
     FIRST_PACKET(true),
     COLUMN_DEFINITION(false),

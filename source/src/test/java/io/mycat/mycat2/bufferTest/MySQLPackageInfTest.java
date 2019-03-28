@@ -163,7 +163,7 @@
 //        MySQLPackageInf curMSQLPackgInf = session.curMSQLPackgInf;
 //        Assert.assertTrue(curMSQLPackgInf.isFieldsCount());
 //        Assert.assertFalse(curMSQLPackgInf.isOkPacket());
-//        proxyBuffer.reset();
+//        proxyBuffer.reset2();
 //        curMSQLPackgInf.startPos = 0;
 //        curMSQLPackgInf.endPos = 0;
 //        curMSQLPackgInf.pkgLength = 0;
@@ -776,7 +776,7 @@
 //    }
 //
 //    private void someoneTakeAway(AbstractMySQLSession sqlSession) {
-//        sqlSession.proxyBuffer.reset();
+//        sqlSession.proxyBuffer.reset2();
 //        sqlSession.curMSQLPackgInf.startPos = 0;
 //        sqlSession.curMSQLPackgInf.endPos = 0;
 //    }

@@ -70,7 +70,7 @@ public class MycatSwitchReplCmd implements MySQLCommand {
 	        packet.packetId = 1;
 	        packet.affectedRows = 1;
 	        packet.serverStatus = 2;
-	        session.responseOKOrError(packet);
+	        session.responseMySQLPacket(packet);
 		}
 		
 		return true;
@@ -90,7 +90,7 @@ public class MycatSwitchReplCmd implements MySQLCommand {
 
 	@Override
 	public boolean onFrontWriteFinished(MycatSession session) throws IOException {
-		session.proxyBuffer.flip();
+		session.curPacketInf.getProxyBuffer().flip();
 		session.takeOwner(SelectionKey.OP_READ);
 		return false;
 	}

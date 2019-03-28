@@ -164,7 +164,7 @@ public class MySQLMetaBean {
 	 * @param reason
 	 */
 	public void clearAndDestroyCons(String reason) {
-		logger.info("clear and destroy connections of {} ,for reason ", this, reason);
+		logger.info("reset and destroy connections of {} ,for reason ", this, reason);
 		ProxyRuntime runtime = ProxyRuntime.INSTANCE;
 		final MySQLMetaBean target = this;
 		MycatReactorThread[] reactorThreads = runtime.getMycatReactorThreads();

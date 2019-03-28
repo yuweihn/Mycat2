@@ -6,7 +6,7 @@ import io.mycat.mycat2.MycatSession;
 import io.mycat.mycat2.beans.conf.FireWallBean;
 import io.mycat.mycat2.beans.conf.UserBean;
 import io.mycat.mycat2.beans.conf.UserConfig;
-import io.mycat.mysql.MySQLProxyPacketResolver;
+import io.mycat.mysql.ComQueryState;
 import io.mycat.mysql.MysqlNativePasswordPluginUtil;
 import io.mycat.mysql.packet.ErrorPacket;
 import io.mycat.mysql.packet.AuthPacket;
@@ -37,14 +37,14 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
 
     @Override
     public void onSocketRead(MycatSession session) throws IOException {
-        ProxyBuffer frontBuffer = session.getProxyBuffer();
+
         if (!session.readFromChannel()) {
             return;
         }
-        if (!MySQLProxyPacketResolver.simpleJudgeFullPacket(frontBuffer) && MySQLProxyPacketResolver.needExpandCapacity(frontBuffer)) {
-            MySQLProxyPacketResolver.simpleAdjustCapacityProxybuffer(frontBuffer, frontBuffer.writeIndex * 2);
+        if (!session.curPacketInf.readFully()){
             return;
         }
+        ProxyBuffer frontBuffer = session.curPacketInf.getProxyBuffer();
 
         // 处理用户认证报文
         try {
@@ -104,7 +104,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
                     logger.debug("set mycatSchema: {} for user: {}", session.getMycatSchema(), username);
                     if (success(session, auth)) {
                         session.clientUser = username;//设置session用户
-                        session.proxyBuffer.reset();
+                        session.curPacketInf.reset();
                         session.answerFront(AUTH_OK);
                         // 认证通过，设置当前SQL Handler为默认Handler
                         session.setCurNIOHandler(MainMycatNIOHandler.INSTANCE);
@@ -191,7 +191,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
         errorPacket.packetId = 2;
         errorPacket.errno = errno;
         errorPacket.message = info;
-        session.responseOKOrError(errorPacket);
+        session.responseMySQLPacket(errorPacket);
     }
 
     private boolean success(MycatSession session, AuthPacket auth) {
@@ -222,7 +222,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
     @Override
     public void onWriteFinished(MycatSession session) {
         // 明确开启读操作
-        session.proxyBuffer.flip();
+        session.curPacketInf.getProxyBuffer().flip();
         session.change2ReadOpts();
     }
 }

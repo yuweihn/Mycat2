@@ -36,7 +36,7 @@ public class ComStatisticsCmd extends DirectPassthrouhCmd{
 		session.clearReadWriteOpts();
 		
 		session.getBackendAndCallBack((mysqlsession, sender, success,result)->{
-			ProxyBuffer curBuffer = session.proxyBuffer;
+			ProxyBuffer curBuffer = session.curPacketInf.getProxyBuffer();
 			// 切换 buffer 读写状态
 			curBuffer.flip();
 			

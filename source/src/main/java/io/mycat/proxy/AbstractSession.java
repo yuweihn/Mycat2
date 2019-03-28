@@ -1,13 +1,14 @@
 package io.mycat.proxy;
 
 import io.mycat.mycat2.CurSQLState;
+import io.mycat.mysql.ComQueryState;
+import io.mycat.mysql.MySQLPacketInf;
 import io.mycat.proxy.buffer.BufferPool;
 import io.mycat.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
@@ -25,8 +26,6 @@ public abstract class AbstractSession implements Session {
 
     // 当前SQL上下文状态数据对象
     public final CurSQLState curSQLSate = new CurSQLState();
-    public ProxyBuffer proxyBuffer;
-    public BufferPool bufPool;
     public Selector nioSelector;
     public long startTime;
     public SocketChannel channel;
@@ -34,69 +33,31 @@ public abstract class AbstractSession implements Session {
     public long lastActiveTime;
     public String addr;
     public String host;
-    /**
-     * 是否多个Session共用同一个Buffer
-     */
-    protected boolean referedBuffer;
-    /**
-     * 是否多个Session共用同一个Buffer时，当前Session是否暂时获取了Buffer独家使用权，即独占Buffer
-     */
-    protected boolean curBufOwner = true;
+    public final MySQLPacketInf curPacketInf;
+
     private SessionManager<? extends Session> sessionManager;
     private NIOHandler nioHandler;
     private int sessionId;
     // Session是否关闭
     private boolean closed;
 
-    public AbstractSession(BufferPool bufferPool, Selector selector, SocketChannel channel,NIOHandler nioHandler) throws IOException {
-        this(bufferPool, selector, channel, SelectionKey.OP_READ,nioHandler);
+    public AbstractSession(BufferPool bufferPool, Selector selector, SocketChannel channel, NIOHandler nioHandler) throws IOException {
+        this(bufferPool, selector, channel, SelectionKey.OP_READ, nioHandler);
     }
 
-    public AbstractSession(BufferPool bufferPool, Selector selector, SocketChannel channel, int socketOpt,NIOHandler nioHandler)
+    public AbstractSession(BufferPool bufferPool, Selector selector, SocketChannel channel, int socketOpt, NIOHandler nioHandler)
             throws IOException {
-        this.bufPool = bufferPool;
+        this.curPacketInf = new MySQLPacketInf(bufferPool);
         this.nioSelector = selector;
         this.channel = channel;
         this.nioHandler = nioHandler;
         this.channelKey = channel.register(nioSelector, socketOpt, this);
-        this.proxyBuffer = new ProxyBuffer(this.bufPool.allocate());
         this.sessionId = ProxyRuntime.INSTANCE.genSessionId();
         this.startTime = System.currentTimeMillis();
     }
 
-    public AbstractSession() {
-
-    }
-
-    /**
-     * 使用共享的Buffer
-     *
-     * @param sharedBuffer
-     */
-    public void useSharedBuffer(ProxyBuffer sharedBuffer) {
-        if (this.proxyBuffer != null && referedBuffer == false) {
-            recycleAllocedBuffer(proxyBuffer);
-            proxyBuffer = sharedBuffer;
-            this.referedBuffer = true;
-            logger.debug("use sharedBuffer. ");
-        } else if (proxyBuffer == null) {
-            logger.debug("proxyBuffer is null.{}", this);
-            throw new RuntimeException("proxyBuffer is null.");
-            // proxyBuffer = sharedBuffer;
-        } else if (sharedBuffer == null) {
-            logger.debug("referedBuffer is false.");
-            proxyBuffer = new ProxyBuffer(this.bufPool.allocate());
-            proxyBuffer.reset();
-            this.referedBuffer = false;
-        }
-    }
-
-    public boolean isCurBufOwner() {
-        return curBufOwner;
-    }
-
-    public ProxyBuffer getProxyBuffer() {
-        return proxyBuffer;
+    public void setCurBufOwner(boolean curBufOwner) {
+        this.curPacketInf.setCurBufOwner(curBufOwner);
     }
 
     /**
@@ -106,17 +67,19 @@ public abstract class AbstractSession implements Session {
      * @return 读取了多少数据
      */
     public boolean readFromChannel() throws IOException {
-        if (!this.proxyBuffer.isInWriting()) {
-            this.proxyBuffer.reset();
+        ProxyBuffer proxyBuffer = this.curPacketInf.getProxyBuffer();
+        if (!proxyBuffer.isInWriting()) {
+            proxyBuffer.reset();
             logger.error(this.getClass() + " buffer not in writing state");
             return false;
-        } else if (this.curBufOwner == false) {//
+        } else if (!this.curPacketInf.isCurBufOwner()) {
+            //只有session没有独占buffer
             logger.info("take owner for some read data coming ..." + this.sessionInfo());
             doTakeReadOwner();
         }
 
         ByteBuffer buffer = proxyBuffer.getBuffer();
-        if (proxyBuffer.writeIndex > buffer.capacity() * 1 / 3) {
+        if (proxyBuffer.writeIndex > buffer.capacity() * (1.0 / 3)) {
             proxyBuffer.compact();
         } else {
             // buffer.position 在有半包没有参与透传时,会小于 writeIndex。
@@ -149,20 +112,12 @@ public abstract class AbstractSession implements Session {
 
     protected abstract void doTakeReadOwner();
 
-    protected void checkBufferOwner(boolean bufferReadstate) {
-        if (!curBufOwner) {
-            throw new java.lang.IllegalArgumentException("buffer not changed to me ");
-        } else if (this.proxyBuffer.isInReading() != bufferReadstate) {
-            throw new java.lang.IllegalArgumentException(
-                    "buffer not in correcte state ,expected state  " + (bufferReadstate ? " readable " : "writable "));
-        }
-    }
-
     /**
      * 从内部Buffer数据写入到SocketChannel中发送出去，readState里记录了写到Socket中的数据指针位置 方法，
      */
     public void writeToChannel() throws IOException {
-        checkBufferOwner(true);
+        curPacketInf.checkBufferOwner(true);
+        ProxyBuffer proxyBuffer = curPacketInf.getProxyBuffer();
         ByteBuffer buffer = proxyBuffer.getBuffer();
         buffer.limit(proxyBuffer.readIndex);
         buffer.position(proxyBuffer.readMark);
@@ -206,33 +161,10 @@ public abstract class AbstractSession implements Session {
         lastActiveTime = System.currentTimeMillis();
     }
 
-    /**
-     * 手动创建的ProxyBuffer需要手动释放，recycleAllocedBuffer()
-     *
-     * @return ProxyBuffer
-     */
-    public ProxyBuffer allocNewProxyBuffer() {
-        return new ProxyBuffer(bufPool.allocate());
-    }
-    public ProxyBuffer allocNewProxyBuffer(int len) {
-        return new ProxyBuffer(bufPool.allocate(len));
-    }
-    /**
-     * 释放手动分配的ProxyBuffer
-     *
-     * @param curFrontBuffer
-     */
-    public void recycleAllocedBuffer(ProxyBuffer curFrontBuffer) {
-        if (curFrontBuffer != null) {
-            this.bufPool.recycle(curFrontBuffer.getBuffer());
-        } else {
-            logger.error("curFrontBuffer is null,please fix it !!!!");
-        }
-    }
 
     protected void checkWriteFinished() throws IOException {
-        checkBufferOwner(true);
-        if (!this.proxyBuffer.writeFinished()) {
+        curPacketInf.checkBufferOwner(true);
+        if (!curPacketInf.getProxyBuffer().writeFinished()) {
             this.change2WriteOpts();
         } else {
             writeFinished();
@@ -255,7 +187,7 @@ public abstract class AbstractSession implements Session {
     }
 
     public void change2WriteOpts() {
-        checkBufferOwner(true);
+        curPacketInf.checkBufferOwner(true);
         //int intesOpts = this.channelKey.interestOps();
         // 事件转换时,只注册一个事件,存在可读事件没有取消注册的情况。这里把判断取消
         // if ((intesOpts & SelectionKey.OP_WRITE) != SelectionKey.OP_WRITE) {
@@ -272,7 +204,7 @@ public abstract class AbstractSession implements Session {
     public String sessionInfo() {
         try {
             return " [ sessionId = " + sessionId + " ,remote address :" + this.channel.getRemoteAddress() + ']';
-        }catch (Exception e){
+        } catch (Exception e) {
             return " [ sessionId = " + sessionId + " ," + "remote address : exception" + ']';
         }
     }
@@ -294,12 +226,10 @@ public abstract class AbstractSession implements Session {
         if (!this.isClosed()) {
             this.closed = true;
             closeSocket(channel, normal, hint);
-            if (!referedBuffer) {
-                recycleAllocedBuffer(proxyBuffer);
-            }
-            if (this.getMySessionManager()!=null){
+            curPacketInf.reset();
+            if (this.getMySessionManager() != null) {
                 this.getMySessionManager().removeSession(this);
-            }else {
+            } else {
                 //@todo 检测不关闭是否泄漏
             }
         } else {
@@ -331,7 +261,7 @@ public abstract class AbstractSession implements Session {
             channel.close();
         } catch (IOException e) {
             logger.error(e.getMessage());
-        }finally {
+        } finally {
             ProxyReactorThread proxyReactorThread = (ProxyReactorThread) Thread.currentThread();
             proxyReactorThread.allSession.remove(this);
         }
@@ -367,9 +297,5 @@ public abstract class AbstractSession implements Session {
     public void writeFinished() throws IOException {
         this.getCurNIOHandler().onWriteFinished(this);
 
-    }
-
-    public boolean isReferedBuffer() {
-        return referedBuffer;
     }
 }

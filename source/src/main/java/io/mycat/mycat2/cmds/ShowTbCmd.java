@@ -5,6 +5,7 @@ import io.mycat.mycat2.MySQLSession;
 import io.mycat.mycat2.MycatSession;
 import io.mycat.mycat2.beans.conf.SchemaBean;
 import io.mycat.mycat2.beans.conf.TableDefBean;
+import io.mycat.mysql.ComQueryState;
 import io.mycat.mysql.Fields;
 import io.mycat.mysql.packet.*;
 import io.mycat.proxy.ProxyBuffer;
@@ -42,7 +43,7 @@ public class ShowTbCmd implements MySQLCommand {
 				error.packetId = 1;
 				error.message = "Unknown database '" + showSchemal + "'";
 
-				session.responseOKOrError(error);
+				session.responseMySQLPacket(error);
 				return false;
 			}
 		}
@@ -55,7 +56,7 @@ public class ShowTbCmd implements MySQLCommand {
 		fields[i++].packetId = ++packetId;
 		eof.packetId = ++packetId;
 
-		ProxyBuffer buffer = session.proxyBuffer;
+		ProxyBuffer buffer = session.curPacketInf.getProxyBuffer();
 		buffer.reset();
 
 		// write header
@@ -105,11 +106,11 @@ public class ShowTbCmd implements MySQLCommand {
 	@Override
 	public boolean onFrontWriteFinished(MycatSession session) throws IOException {
 
-		session.proxyBuffer.flip();
+		session.curPacketInf.getProxyBuffer().flip();
 		session.takeOwner(SelectionKey.OP_READ);
 
 		logger.info("****************sessionID:" + session.getSessionId() + "isRead:"
-				+ session.getProxyBuffer().isInReading());
+				+ session.curPacketInf.getProxyBuffer().isInReading());
 		return true;
 	}
 
@@ -122,7 +123,7 @@ public class ShowTbCmd implements MySQLCommand {
 	@Override
 	public void clearResouces(MycatSession session, boolean sessionCLosed) {
 		if (sessionCLosed) {
-			session.recycleAllocedBuffer(session.getProxyBuffer());
+			session.curPacketInf.reset();
 			session.unbindBackends();
 		}
 	}

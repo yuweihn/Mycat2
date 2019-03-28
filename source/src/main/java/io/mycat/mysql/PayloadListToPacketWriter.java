@@ -7,6 +7,8 @@ import io.mycat.proxy.buffer.BufferPool;
 import java.nio.ByteBuffer;
 import java.util.List;
 
+import static io.mycat.mysql.MySQLPacketInf.simpleAdjustCapacityProxybuffer;
+
 public class PayloadListToPacketWriter {
     PacketSplitter packetSplitter = new PacketSplitter();
     BufferPool bufferPool;
@@ -42,7 +44,7 @@ public class PayloadListToPacketWriter {
         int payloadLen = packetSplitter.getPacketLen();
         int packetLength = payloadLen + 4;
         if (buffer.getBuffer().capacity() < packetLength) {
-            MySQLProxyPacketResolver.simpleAdjustCapacityProxybuffer(buffer,packetLength);
+            simpleAdjustCapacityProxybuffer(buffer,packetLength);
         }
         ByteBuffer byteBuffer = byteBuffers.get(index);
         buffer.writeFixInt(3,payloadLen);

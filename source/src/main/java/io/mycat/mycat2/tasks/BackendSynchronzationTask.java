@@ -4,9 +4,9 @@ import io.mycat.mycat2.MySQLSession;
 import io.mycat.mycat2.MycatSession;
 import io.mycat.mycat2.beans.MycatException;
 import io.mycat.mysql.MySQLPacketInf;
+import io.mycat.mysql.packet.ComQueryPacket;
 import io.mycat.mysql.packet.ErrorPacket;
 import io.mycat.mysql.packet.MySQLPacket;
-import io.mycat.mysql.packet.ComQueryPacket;
 import io.mycat.proxy.ProxyBuffer;
 import io.mycat.util.ErrorCode;
 import io.mycat.util.StringUtil;
@@ -33,7 +33,7 @@ public class BackendSynchronzationTask extends AbstractBackendIOTask<MySQLSessio
     }
 
     public void syncState(MycatSession mycatSession, MySQLSession mySQLSession) throws IOException {
-        ProxyBuffer proxyBuf = mySQLSession.proxyBuffer;
+        ProxyBuffer proxyBuf = mySQLSession.curPacketInf.getProxyBuffer();
         proxyBuf.reset();
         ComQueryPacket queryPacket = new ComQueryPacket();
         queryPacket.packetId = 0;
@@ -58,7 +58,7 @@ public class BackendSynchronzationTask extends AbstractBackendIOTask<MySQLSessio
             //2.从节点和主节点的mysql版本号必定一致
             //3.所以直接取主节点
             String charsetName = mySQLSession.getMySQLMetaBean().INDEX_TO_CHARSET.get(mycatSession.charSet.charsetIndex);
-            if (StringUtil.isEmpty(charsetName)){
+            if (StringUtil.isEmpty(charsetName)) {
                 throw new MycatException("cannot load character set");
             }
             queryPacket.sql += "SET names " + charsetName + ";";
@@ -101,7 +101,6 @@ public class BackendSynchronzationTask extends AbstractBackendIOTask<MySQLSessio
 
     @Override
     public void onSocketRead(MySQLSession session) throws IOException {
-        session.proxyBuffer.reset();
         try {
             if (!session.readFromChannel()) {
                 return;
@@ -118,20 +117,18 @@ public class BackendSynchronzationTask extends AbstractBackendIOTask<MySQLSessio
 
         boolean isAllOK = true;
         while (syncCmdNum > 0) {
-            switch (session.resolveFullPayload()) {
-                case FULL_PAYLOAD:
-                    session.curPacketInf.markRead();
-                    if (session.curPacketInf.head == MySQLPacket.ERROR_PACKET) {
-                        isAllOK = false;
-                        syncCmdNum = 0;
-                    }
-                    break;
-                default:
-                    return;
+            if (session.curPacketInf.readFully()) {
+                session.curPacketInf.markRead();
+                if (session.curPacketInf.head == MySQLPacket.ERROR_PACKET) {
+                    isAllOK = false;
+                    syncCmdNum = 0;
+                }
+                syncCmdNum--;
+                break;
+            } else {
+                return;
             }
-            syncCmdNum--;
         }
-
         if (isAllOK) {
             session.autoCommit = mycatSession.autoCommit;
             session.isolation = mycatSession.isolation;
@@ -141,8 +138,8 @@ public class BackendSynchronzationTask extends AbstractBackendIOTask<MySQLSessio
         } else {
             errPkg = new ErrorPacket();
             MySQLPacketInf curMQLPackgInf = session.curPacketInf;
-            session.proxyBuffer.readIndex = curMQLPackgInf.startPos;
-            errPkg.read(session.proxyBuffer);
+            session.curPacketInf.getProxyBuffer().readIndex = curMQLPackgInf.startPos;
+            errPkg.read(session.curPacketInf.getProxyBuffer());
             logger.error("backend state sync Error.Err No. " + errPkg.errno + "," + errPkg.message);
             finished(false);
         }

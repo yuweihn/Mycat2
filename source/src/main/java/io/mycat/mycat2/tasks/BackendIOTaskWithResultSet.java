@@ -1,9 +1,9 @@
 package io.mycat.mycat2.tasks;
 
 import io.mycat.mycat2.AbstractMySQLSession;
+import io.mycat.mycat2.beans.MycatException;
+import io.mycat.mysql.ComQueryState;
 import io.mycat.mysql.MySQLPacketInf;
-import io.mycat.mysql.PayloadType;
-import io.mycat.mysql.packet.MySQLPacket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,95 +15,73 @@ import java.io.IOException;
  * Created by ynfeng on 2017/8/28.
  */
 public abstract class BackendIOTaskWithResultSet<T extends AbstractMySQLSession> extends AbstractBackendIOTask<T> {
-	
-	private static Logger logger = LoggerFactory.getLogger(BackendIOTaskWithResultSet.class);
-	
-    protected ResultSetState curRSState = ResultSetState.RS_STATUS_COL_COUNT;
+    private static Logger logger = LoggerFactory.getLogger(BackendIOTaskWithResultSet.class);
+    ResultSetState curRSState;
+
+
+    public BackendIOTaskWithResultSet(T session, boolean useNewBuffer) {
+        super(session, useNewBuffer);
+        this.curRSState = ResultSetState.RS_STATUS_NORMAL;
+    }
 
     @Override
     public void onSocketRead(T session) throws IOException {
-    	
-    	try {
-    		if (!session.readFromChannel()){
-    			return;
-    		}
-		}catch(IOException e){
-			curRSState = ResultSetState.RS_STATUS_READ_ERROR;
-			onRsFinish(session,false,e.getMessage());
-			return;
-		}
-    	
-        for (; ; ) {
-           PayloadType payloadType = session.resolveFullPayload();
-            //因为是解析所以只处理整包
-            if (payloadType == PayloadType.FULL_PAYLOAD) {
-				MySQLPacketInf curMQLPackgInf = session.curPacketInf;
-				curMQLPackgInf.markRead();
-				if(curMQLPackgInf.head == MySQLPacket.ERROR_PACKET && curRSState.equals(ResultSetState.RS_STATUS_COL_COUNT) ) {
-    				 onRsFinish(session,false, "错误包");
-            	} else {
-            		switch (curRSState) {
-	                    case RS_STATUS_COL_COUNT:
-	                        onRsColCount(session);
-	                        curRSState = ResultSetState.RS_STATUS_COL_DEF;
-	                        break;
-	                    case RS_STATUS_COL_DEF:
-	                        if (curMQLPackgInf.head == MySQLPacket.EOF_PACKET) {
-	                            curRSState = ResultSetState.RS_STATUS_ROW;
-	                        } else {
-	                            onRsColDef(session);
-	                        }
-	                        break;
-	                    case RS_STATUS_ROW:
-	                        if (curMQLPackgInf.head == MySQLPacket.EOF_PACKET) {
-	                            curRSState = ResultSetState.RS_STATUS_FINISH;
-	                            onRsFinish(session,true, null);
-	                        } else {
-	                            onRsRow(session);
-	                        }
-	                        break;
-	                }
-	            }
-            } else {
-                session.ensureFreeSpaceOfReadBuffer();
-                break;
+        try {
+            if (!session.readFromChannel()) {
+                return;
             }
+            MySQLPacketInf curPacketInf = session.curPacketInf;
+            while (curPacketInf.readFully()) {
+                switch (curPacketInf.mysqlPacketType) {
+                    case ERROR:
+                        onRsFinish(session, false, "错误包");
+                        break;
+                    case OK:
+                    case EOF:
+                        if (curPacketInf.state == ComQueryState.COMMAND_END) {
+                            onRsFinish(session, true, null);
+                        }
+                        break;
+                    case COLUMN_COUNT:
+                        onRsColCount(session);
+                        break;
+                    case COLUMN_DEFINITION:
+                        onRsColDef(session);
+                        break;
+                    case TEXT_RESULTSET_ROW:
+                    case BINARY_RESULTSET_ROW:
+                        onRsRow(session);
+                        break;
+                    default:
+                        throw new MycatException("错误包");
+                }
+                curPacketInf.markRead();
+            }
+        } catch (IOException e) {
+            onRsFinish(session, false, e.getMessage());
+            return;
         }
-        //设置读取过的指针
-        session.proxyBuffer.readMark = session.proxyBuffer.readIndex;
     }
-    
+
     abstract void onRsColCount(T session);
 
     abstract void onRsColDef(T session);
 
     abstract void onRsRow(T session);
 
-    abstract void onRsFinish(T session,boolean success,String msg) throws IOException;
+    abstract void onRsFinish(T session, boolean success, String msg) throws IOException;
 
     public enum ResultSetState {
         /**
-         * 结果集第一个包
+         * 结果集默认值
          */
-        RS_STATUS_COL_COUNT,
-        /**
-         * 结果集列定义
-         */
-        RS_STATUS_COL_DEF,
-        /**
-         * 结果集行数据
-         */
-        RS_STATUS_ROW,
-        /**
-         * 结果集完成
-         */
-        RS_STATUS_FINISH,
-        
+        RS_STATUS_NORMAL,
+
         /**
          * 结果集网络读取错误
          */
         RS_STATUS_READ_ERROR,
-        
+
         /**
          * 结果集网络写入错误
          */

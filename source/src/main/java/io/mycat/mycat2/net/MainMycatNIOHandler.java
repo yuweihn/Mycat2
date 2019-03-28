@@ -4,7 +4,6 @@ import io.mycat.mycat2.MySQLCommand;
 import io.mycat.mycat2.MycatSession;
 import io.mycat.mycat2.cmds.ComQuitCmd;
 import io.mycat.mycat2.cmds.DirectPassthrouhCmd;
-import io.mycat.mycat2.cmds.LoadDataCommand;
 import io.mycat.mycat2.cmds.manager.MyCatCmdDispatcher;
 import io.mycat.mycat2.sqlparser.BufferSQLContext;
 import io.mycat.mysql.MySQLPacketInf;
@@ -12,7 +11,6 @@ import io.mycat.mysql.PacketListToPayloadReader;
 import io.mycat.proxy.NIOHandler;
 import io.mycat.util.ErrorCode;
 import io.mycat.util.LoadDataUtil;
-import io.mycat.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,7 +19,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 
 import static io.mycat.mycat2.cmds.LoadDataState.CLIENT_2_SERVER_EMPTY_PACKET;
-import static io.mycat.mysql.MySQLPacketInf.readFully;
 
 /**
  * 负责MycatSession的NIO事件，驱动SQLCommand命令执行，完成SQL的处理过程
@@ -40,16 +37,10 @@ public class MainMycatNIOHandler implements NIOHandler<MycatSession> {
         MySQLCommand curCmd = session.getCurSQLCommand();
         if (curCmd == null) {
             MySQLPacketInf packetInf = session.curPacketInf;
-            if (!readFully(session)) {
+            if (!packetInf.readFully()) {
                 return;
             }
-            try {
-                processSQL(session);
-            } catch (RuntimeException e) {
-                throw e;
-            } finally {
-                packetInf.recycleLargePayloadBuffer();
-            }
+            processSQL(session);
         } else {
             //当前的SQLCommand没有处理完请求，继续处理
             if (curCmd.procssSQL(session)) {
@@ -137,8 +128,6 @@ public class MainMycatNIOHandler implements NIOHandler<MycatSession> {
                 command = DirectPassthrouhCmd.INSTANCE;
                 break;
             case BufferSQLContext.LOAD_SQL:
-                command = LoadDataCommand.INSTANCE;
-                break;
             default:
                 command = DirectPassthrouhCmd.INSTANCE;
                 break;
@@ -150,28 +139,18 @@ public class MainMycatNIOHandler implements NIOHandler<MycatSession> {
         }
     }
 
-    private void resolveHalfPacket(MycatSession session) throws IOException {
-        int pkgLength = session.curPacketInf.pkgLength;
-        ByteBuffer bytebuffer = session.proxyBuffer.getBuffer();
-        if (pkgLength > bytebuffer.capacity() && !bytebuffer.hasRemaining()) {
-            try {
-                session.ensureFreeSpaceOfReadBuffer();
-            } catch (RuntimeException e1) {
-                session.sendErrorMsg(ErrorCode.ER_UNKNOWN_ERROR, e1.getMessage());
-            }
-        }
-    }
 
-    private void resolveLoadData(final MycatSession mycatSession) throws IOException {
-        LoadDataUtil.readOverByte(mycatSession, mycatSession.proxyBuffer);
-        if (LoadDataUtil.checkOver(mycatSession)) {
-            LoadDataUtil.change2(mycatSession, CLIENT_2_SERVER_EMPTY_PACKET);
-        }
-        mycatSession.proxyBuffer.flip();
-        mycatSession.proxyBuffer.readIndex = mycatSession.proxyBuffer.writeIndex;
-        mycatSession.giveupOwner(SelectionKey.OP_WRITE);
-        mycatSession.getCurBackend().writeToChannel();
-    }
+
+//    private void resolveLoadData(final MycatSession mycatSession) throws IOException {
+//        LoadDataUtil.readOverByte(mycatSession, mycatSession.proxyBuffer);
+//        if (LoadDataUtil.checkOver(mycatSession)) {
+//            LoadDataUtil.change2(mycatSession, CLIENT_2_SERVER_EMPTY_PACKET);
+//        }
+//        mycatSession.proxyBuffer.flip();
+//        mycatSession.proxyBuffer.readIndex = mycatSession.proxyBuffer.writeIndex;
+//        mycatSession.giveupOwner(SelectionKey.OP_WRITE);
+//        mycatSession.getCurBackend().writeToChannel();
+//    }
 
     /**
      * 前端连接关闭后，延迟关闭会话

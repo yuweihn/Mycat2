@@ -3,9 +3,9 @@ package io.mycat.mycat2.tasks;
 import io.mycat.mycat2.MySQLSession;
 import io.mycat.mycat2.beans.MySQLMetaBean;
 import io.mycat.mycat2.beans.conf.SchemaBean;
+import io.mycat.mysql.ComQueryState;
 import io.mycat.mysql.MySQLPacketInf;
 import io.mycat.mysql.MysqlNativePasswordPluginUtil;
-import io.mycat.mysql.PayloadType;
 import io.mycat.mysql.packet.AuthPacket;
 import io.mycat.mysql.packet.ErrorPacket;
 import io.mycat.mysql.packet.HandshakePacket;
@@ -36,7 +36,6 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
     private InetSocketAddress serverAddress;
 
 
-
     /**
      * 异步非阻塞模式创建MySQL连接，如果连接创建成功，需要把新连接加入到所在ReactorThread的连接池，则参数addConnectionPool需要设置为True
      *该方法获得已经连接上mysql 的session会不会马上加入到mySQLSessionMap,因为callback的方法里面需要马上用到这个session
@@ -49,6 +48,7 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
      */
     public BackendConCreateTask(BufferPool bufPool, Selector nioSelector, MySQLMetaBean mySQLMetaBean,
                                 SchemaBean schema, AsynTaskCallBack<MySQLSession> callBack) throws IOException {
+        super(null,false);
         String serverIP = mySQLMetaBean.getDsMetaBean().getIp();
         int serverPort = mySQLMetaBean.getDsMetaBean().getPort();
         logger.info("Connecting to backend MySQL Server " + serverIP + ":" + serverPort);
@@ -56,7 +56,6 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         SocketChannel backendChannel = SocketChannel.open();
         this.mySQLMetaBean = mySQLMetaBean;
         this.schema = schema;
-
         if (logger.isDebugEnabled()) {
             if (backendChannel.isConnected()) {
                 logger.debug("MySQL client is not connected so start connecting" + backendChannel);
@@ -82,17 +81,26 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
     }
 
     @Override
+    public void onWriteFinished(MySQLSession s) throws IOException {
+        session.curPacketInf.reset();
+        s.change2ReadOpts();
+    }
+
+    @Override
     public void onSocketRead(MySQLSession session) throws IOException {
-        if (!session.readFromChannel() || PayloadType.FULL_PAYLOAD != session.resolveFullPayload()) {
-            // 没有读到数据或者报文不完整
+        if (!session.readFromChannel()) {
             return;
         }
+        if (!session.curPacketInf.readFully()){
+            return;
+        }
+      //  MySQLPacketInf.simpleJudgeFullPacket()
 
         if (MySQLPacket.ERROR_PACKET == session.curPacketInf.head) {
             errPkg = new ErrorPacket();
             MySQLPacketInf curMQLPackgInf = session.curPacketInf;
-            session.proxyBuffer.readIndex = curMQLPackgInf.startPos;
-            errPkg.read(session.proxyBuffer);
+            session.curPacketInf.getProxyBuffer().readIndex = curMQLPackgInf.startPos;
+            errPkg.read(session.curPacketInf.getProxyBuffer());
             logger.warn("backend authed failed. Err No. " + errPkg.errno + "," + errPkg.message);
             this.finished(false);
             return;
@@ -100,7 +108,7 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
 
         if (!welcomePkgReceived) {
             handshake = new HandshakePacket();
-            handshake.read(this.session.proxyBuffer);
+            handshake.read(this.session.curPacketInf.getProxyBuffer());
 
             // 设置字符集编码
             // int charsetIndex = (handshake.characterSet & 0xff);
@@ -122,12 +130,12 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
             // }
 
             // 不透传的状态下，需要自己控制Buffer的状态，这里每次写数据都切回初始Write状态
-            session.proxyBuffer.reset();
-            packet.write(session.proxyBuffer);
-            session.proxyBuffer.flip();
+            session.curPacketInf.getProxyBuffer().reset();
+            packet.write(session.curPacketInf.getProxyBuffer());
+            session.curPacketInf.getProxyBuffer().flip();
             // 不透传的状态下， 自己指定需要写入到channel中的数据范围
             // 没有读取,直接透传时,需要指定 透传的数据 截止位置
-            session.proxyBuffer.readIndex = session.proxyBuffer.writeIndex;
+            session.curPacketInf.getProxyBuffer().readIndex = session.curPacketInf.getProxyBuffer().writeIndex;
             session.writeToChannel();
             welcomePkgReceived = true;
         } else {

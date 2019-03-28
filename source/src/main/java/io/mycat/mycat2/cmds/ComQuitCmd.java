@@ -2,13 +2,13 @@ package io.mycat.mycat2.cmds;
 
 import java.io.IOException;
 
+import io.mycat.mysql.ComQueryState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.mycat.mycat2.MySQLCommand;
 import io.mycat.mycat2.MySQLSession;
 import io.mycat.mycat2.MycatSession;
-import io.mycat.proxy.ProxyBuffer;
 
 public class ComQuitCmd implements MySQLCommand {
 
@@ -49,7 +49,7 @@ public class ComQuitCmd implements MySQLCommand {
 	@Override
 	public void clearResouces(MycatSession session, boolean sessionCLosed) {
 		if (sessionCLosed) {
-			session.recycleAllocedBuffer(session.getProxyBuffer());
+			session.curPacketInf.reset();
 			session.unbindBackends();
 		}
 	}

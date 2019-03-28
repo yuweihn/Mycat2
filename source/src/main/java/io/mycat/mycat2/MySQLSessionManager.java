@@ -123,7 +123,7 @@ public class MySQLSessionManager implements SessionManager<MySQLSession> {
                             "Duplicated MySQL Session ！！！，Please fix this Bug! Leader call you ! " + mySQLSession);
                 }
             }
-            mySQLSession.proxyBuffer.reset();
+            mySQLSession.curPacketInf.getProxyBuffer().reset();
             mySQLSessionList.add(mySQLSession);
         } else {
             throw new RuntimeException("MySQLSession NotYetConnectedException");

@@ -1,7 +1,6 @@
 package io.mycat.mysql;
 
 import io.mycat.proxy.ProxyBuffer;
-import io.mycat.proxy.buffer.BufferPool;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -13,12 +12,15 @@ import java.util.List;
  */
 public class PacketListToPayloadReader {
     int index = 0;
-    final List<ProxyBuffer> multiPackets = new ArrayList<>();
-
+    final List<ProxyBuffer> multiPackets;
     ByteBuffer curBytebuffer;
-    BufferPool bufferPool;
-    boolean autoRecycleByteBuffer = false;
     int length;
+
+    public void reset() {
+        curBytebuffer = null;
+        index = 0;
+        length = 0;
+    }
 
     public void setIndex(int index) {
         this.index = index;
@@ -29,8 +31,8 @@ public class PacketListToPayloadReader {
     }
 
 
-    public PacketListToPayloadReader() {
-
+    public PacketListToPayloadReader(final List<ProxyBuffer> multiPackets) {
+        this.multiPackets = multiPackets;
     }
 
     public List<ProxyBuffer> getMultiPackets() {
@@ -39,41 +41,13 @@ public class PacketListToPayloadReader {
 
     public void addBuffer(ProxyBuffer buffer) {
         multiPackets.add(buffer);
-        length += buffer.writeIndex - buffer.readIndex - 4;
-    }
-
-    public void recyclebuffer(int index) {
-        this.multiPackets.remove(index);
-
-    }
-
-
-    public void clear() {
-        length = 0;
-        index = 0;
-        bufferPool = null;
-        curBytebuffer = null;
-        autoRecycleByteBuffer = false;
-        multiPackets.clear();
-    }
-
-    public boolean isClear() {
-        if (index == 0 && bufferPool == null && curBytebuffer != null && autoRecycleByteBuffer) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-
-    private void init(BufferPool bufferPool, boolean autoRecycleByteBuffer) {
-        this.bufferPool = bufferPool;
-        this.autoRecycleByteBuffer = autoRecycleByteBuffer;
-        clear();
+   length += buffer.writeIndex - buffer.readIndex - 4;
     }
 
     public void loadFirstPacket() {
-        loadPacket(multiPackets.get(0));
+        ProxyBuffer proxyBuffer = multiPackets.get(0);
+        length +=proxyBuffer.writeIndex - proxyBuffer.readIndex-4;
+        loadPacket(proxyBuffer);
     }
 
     private void loadPacket(ProxyBuffer proxyBuffer) {
@@ -88,12 +62,6 @@ public class PacketListToPayloadReader {
         if (curBytebuffer.hasRemaining()) {
             return curBytebuffer.get();
         } else {
-            if (autoRecycleByteBuffer) {
-                if (bufferPool != null && curBytebuffer != null) {
-                    bufferPool.recycle(curBytebuffer);
-                    multiPackets.set(0, null);
-                }
-            }
             ++this.index;
             if (this.index < multiPackets.size()) {
                 loadPacket(multiPackets.get(this.index));

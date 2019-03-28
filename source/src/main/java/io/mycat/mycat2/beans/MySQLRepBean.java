@@ -181,7 +181,7 @@ public class MySQLRepBean {
 				newWriteBean.clearAndDestroyCons(reason);
 				newWriteBean.prepareHeartBeat(this, getDataSourceInitStatus());
 
-				// clear all connections
+				// reset all connections
 				MySQLMetaBean oldMetaBean = metaBeans.get(current);
 				oldMetaBean.clearAndDestroyCons(reason);
 				// write log

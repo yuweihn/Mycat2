@@ -62,7 +62,7 @@ public class MycatShowConfigsCmd implements MySQLCommand {
 
     @Override
     public boolean procssSQL(MycatSession session) throws IOException {
-        ProxyBuffer buffer = session.proxyBuffer;
+        ProxyBuffer buffer = session.curPacketInf.getProxyBuffer();
         buffer.reset();
         // write header
         header.write(buffer);
@@ -119,7 +119,7 @@ public class MycatShowConfigsCmd implements MySQLCommand {
 
     @Override
     public boolean onFrontWriteFinished(MycatSession session) throws IOException {
-        session.proxyBuffer.flip();
+        session.curPacketInf.getProxyBuffer().flip();
         // session.chnageBothReadOpts();
         session.takeOwner(SelectionKey.OP_READ);
         return false;

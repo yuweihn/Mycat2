@@ -19,7 +19,6 @@ import io.mycat.proxy.MycatReactorThread;
 import io.mycat.proxy.NIOHandler;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.buffer.BufferPool;
-import io.mycat.util.ParseUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,7 +84,7 @@ public class MycatSession extends AbstractMySQLSession {
     }
 
     public MycatSession(BufferPool bufPool, Selector nioSelector, SocketChannel frontChannel, NIOHandler nioHandler) throws IOException {
-        super(bufPool, nioSelector, frontChannel,nioHandler);
+        super(bufPool, nioSelector, frontChannel, nioHandler);
 
     }
 
@@ -124,7 +123,6 @@ public class MycatSession extends AbstractMySQLSession {
     public void sendAuthPackge() throws IOException {
         byte[][] seedParts = MysqlNativePasswordPluginUtil.nextSeedBuild();
         this.seed = seedParts[2];
-
         // 发送握手数据包
         HandshakePacket hs = new HandshakePacket();
         hs.packetId = 0;
@@ -139,13 +137,7 @@ public class MycatSession extends AbstractMySQLSession {
         hs.authPluginDataLen = 21; // 有插件的话，总长度必是21, seed
         hs.authPluginDataPartTwo = new String(seedParts[1]);
         hs.authPluginName = MysqlNativePasswordPluginUtil.PROTOCOL_PLUGIN_NAME;
-        if (hs.calcPacketSize() + 4 > proxyBuffer.getBuffer().limit()) {
-            throw new RuntimeException("bufferPoolChunkSize is too small");
-        }
-        hs.write(proxyBuffer);
-        proxyBuffer.flip();
-        proxyBuffer.readIndex = proxyBuffer.writeIndex;
-        this.writeToChannel();
+        this.responseMySQLPacket(hs);
     }
 
     /**
@@ -156,7 +148,7 @@ public class MycatSession extends AbstractMySQLSession {
     public void closeAllBackendsAndResponseError(boolean normal, ErrorPacket error) {
         unbindAndCloseAllBackend(normal, error.message);
         takeBufferOwnerOnly();
-        responseOKOrError(error);
+        responseMySQLPacket(error);
     }
 
     /**
@@ -189,10 +181,10 @@ public class MycatSession extends AbstractMySQLSession {
      */
     public void sendErrorMsg(int errno, String errMsg) {
         ErrorPacket errPkg = new ErrorPacket();
-        errPkg.packetId = (byte) (proxyBuffer.getByte(curPacketInf.startPos + ParseUtil.mysql_packetHeader_length) + 1);
+        errPkg.packetId = (byte)(this.curPacketInf.getCurrPacketId()+1);
         errPkg.errno = errno;
         errPkg.message = errMsg;
-        responseOKOrError(errPkg);
+        responseMySQLPacket(errPkg);
     }
 
     /**
@@ -245,7 +237,7 @@ public class MycatSession extends AbstractMySQLSession {
     }
 
     public void takeBufferOwnerOnly() {
-        this.curBufOwner = true;
+        this.curPacketInf.setCurBufOwner(true);
         MySQLSession curBackend = getCurBackend();
         if (curBackend != null) {
             curBackend.setCurBufOwner(false);
@@ -259,7 +251,7 @@ public class MycatSession extends AbstractMySQLSession {
      * @return
      */
     public void takeOwner(int intestOpts) {
-        this.curBufOwner = true;
+        this.setCurBufOwner(true);
         if (intestOpts == SelectionKey.OP_READ) {
             this.change2ReadOpts();
         } else {
@@ -278,7 +270,7 @@ public class MycatSession extends AbstractMySQLSession {
      * @param intestOpts
      */
     public void giveupOwner(int intestOpts) {
-        this.curBufOwner = false;
+        this.setCurBufOwner(false);
         this.clearReadWriteOpts();
         MySQLSession curBackend = getCurBackend();
         if (curBackend != null) {
@@ -299,9 +291,9 @@ public class MycatSession extends AbstractMySQLSession {
      * @throws IOException
      */
     public void answerFront(byte[] rawPkg) throws IOException {
-        proxyBuffer.writeBytes(rawPkg);
-        proxyBuffer.flip();
-        proxyBuffer.readIndex = proxyBuffer.writeIndex;
+        this.curPacketInf.getProxyBuffer().writeBytes(rawPkg);
+        this.curPacketInf.getProxyBuffer().flip();
+        this.curPacketInf.getProxyBuffer().readIndex = this.curPacketInf.getProxyBuffer().writeIndex;
         writeToChannel();
     }
 
@@ -341,12 +333,12 @@ public class MycatSession extends AbstractMySQLSession {
         return backendName;
     }
 
-    public void responseOKOrError(byte[] pkg) throws IOException {
-        super.responseOKOrError(pkg);
+    public void responseMySQLPacket(byte[] pkg) throws IOException {
+        super.responseMySQLPacket(pkg);
     }
 
-    public void responseOKOrError(MySQLPacket pkg) {
-        super.responseOKOrError(pkg);
+    public void responseMySQLPacket(MySQLPacket pkg) {
+        super.responseMySQLPacket(pkg);
     }
 
     public MySQLCommand getCurSQLCommand() {
@@ -360,7 +352,7 @@ public class MycatSession extends AbstractMySQLSession {
      */
     private int putBackendMap(MySQLSession backend) {
         backend.setMycatSession(this);
-        backend.useSharedBuffer(this.proxyBuffer);
+        backend.curPacketInf.useSharedBuffer(this.curPacketInf.getProxyBuffer());
         backend.setCurNIOHandler(this.getCurNIOHandler());
         backend.setIdle(false);
         this.backends.add(backend);
@@ -443,9 +435,9 @@ public class MycatSession extends AbstractMySQLSession {
     }
 
     private void unbindMySQLSession(MySQLSession mysql) {
-        mysql.proxyBuffer.reset();
+        mysql.curPacketInf.getProxyBuffer().reset();
         mysql.setMycatSession(null);
-        mysql.useSharedBuffer(null);
+        mysql.curPacketInf.useSharedBuffer(null);
         mysql.setCurBufOwner(true); // 设置后端连接 获取buffer 控制权
         mysql.setIdle(true);
     }

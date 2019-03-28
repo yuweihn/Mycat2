@@ -23,7 +23,7 @@ public class ProxySession extends AbstractSession {
     }
 
     public void setCurBufOwner(boolean ownerFlag) {
-        curBufOwner = ownerFlag;
+       this.curPacketInf.setCurBufOwner(ownerFlag);
     }
 
     public void giveupOwner(int intestOpts) {
@@ -38,7 +38,7 @@ public class ProxySession extends AbstractSession {
     }
 
     public void takeOwner(int intestOpts) {
-        curBufOwner = true;
+        setCurBufOwner(true);
         if (intestOpts == SelectionKey.OP_READ) {
             change2ReadOpts();
         } else {

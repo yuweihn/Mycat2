@@ -45,10 +45,11 @@ import java.util.Map;
  *  关于字符集：https://dev.mysql.com/doc/refman/8.0/en/charset-metadata.html
  *  大部分都是 utf8,且在连接前都是 utf8.几乎上不用设置编码
  * </pre>
+ *
  * @author : zhuqiang
  * @date : 2018/11/14 21:40
  */
-public class AuthPacket extends MySQLPacket{
+public class AuthPacket extends MySQLPacket {
     public byte packetId;
     public int capabilities;
     public int maxPacketSize;
@@ -117,12 +118,14 @@ public class AuthPacket extends MySQLPacket{
     }
 
     public void write(ProxyBuffer buffer) {
-        buffer.writeFixInt(3, 0);
+        int startIndex = buffer.writeIndex;
+        buffer.writeFixInt(3,0);
         buffer.writeByte(packetId);
         writePayload(buffer);
         ByteBuffer b = buffer.getBuffer();
         int position = b.position();
         b.put(0, (byte) (position - 4));
+        buffer.putFixInt(startIndex, 3, buffer.writeIndex-startIndex-4);
     }
 
     public void writePayload(ProxyBuffer buffer) {
@@ -167,6 +170,7 @@ public class AuthPacket extends MySQLPacket{
 
     /**
      * 计算 LengthEncodedInteger 的字节长度
+     *
      * @param val
      * @return
      */

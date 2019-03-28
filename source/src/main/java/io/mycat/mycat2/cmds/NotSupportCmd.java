@@ -22,10 +22,10 @@ public class NotSupportCmd implements MySQLCommand{
 	public boolean procssSQL(MycatSession session) throws IOException {
 		ErrorPacket error = new ErrorPacket();
         error.errno = ErrorCode.ER_BAD_DB_ERROR;
-        error.packetId = (byte)(session.proxyBuffer.getByte(session.curPacketInf.startPos
+        error.packetId = (byte)(session.curPacketInf.getProxyBuffer().getByte(session.curPacketInf.startPos
 				+ ParseUtil.mysql_packetHeader_length)+1);
         error.message = " command  is not supported";
-        session.responseOKOrError(error);
+        session.responseMySQLPacket(error);
         return true;
 	}
 
@@ -43,7 +43,7 @@ public class NotSupportCmd implements MySQLCommand{
 
 	@Override
 	public boolean onFrontWriteFinished(MycatSession session) throws IOException {
-		session.proxyBuffer.flip();
+		session.curPacketInf.getProxyBuffer().flip();
 		session.takeOwner(SelectionKey.OP_READ);
 		return false;
 	}
