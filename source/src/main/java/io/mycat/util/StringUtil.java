@@ -3,8 +3,6 @@ package io.mycat.util;
 import java.nio.ByteBuffer;
 
 import io.mycat.mycat2.AbstractMySQLSession;
-import io.mycat.mysql.MySQLPacketInf;
-import io.mycat.mysql.PayloadType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
