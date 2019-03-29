@@ -69,29 +69,7 @@ public final class StringUtil {
 	public final static String dumpAsHex(final byte[] buffer) {
 		return dumpAsHex(buffer, 0, buffer.length);
 	}
-	public final static void print(String readSocketOrwriteSocketFlag,PayloadType payloadType, MySQLPacketInf packetInf) {
-		switch (payloadType) {
-			case UNKNOWN:
-			case SHORT_PAYLOAD:
-			case LONG_PAYLOAD:
-			case FULL_PAYLOAD:
-			case REST_CROSS_PAYLOAD:
-			case FINISHED_CROSS_PAYLOAD:
-				try {
-					System.out.println(
-							"---------------"+readSocketOrwriteSocketFlag +
-									"packetId:" +
-									packetInf.getCurrPacketId() +
-									",payloadType:" +
-									payloadType +
-									"------------------------------------------\n" +
-									StringUtil.dumpAsHex(packetInf.getProxyBuffer().getBytes(packetInf.startPos, packetInf.endPos - packetInf.startPos)));
-				}catch (Exception e){
-					e.printStackTrace();
-				}
-				break;
-		}
-	}
+
 	public final static String dumpAsHex(final byte[] buffer, final int length) {
 		return dumpAsHex(buffer, 0, length);
 	}

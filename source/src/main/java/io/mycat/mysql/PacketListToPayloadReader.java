@@ -3,7 +3,6 @@ package io.mycat.mysql;
 import io.mycat.proxy.ProxyBuffer;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,18 +34,14 @@ public class PacketListToPayloadReader {
         this.multiPackets = multiPackets;
     }
 
-    public List<ProxyBuffer> getMultiPackets() {
-        return multiPackets;
-    }
-
     public void addBuffer(ProxyBuffer buffer) {
         multiPackets.add(buffer);
-   length += buffer.writeIndex - buffer.readIndex - 4;
+        length += buffer.writeIndex - buffer.readIndex - 4;
     }
 
     public void loadFirstPacket() {
         ProxyBuffer proxyBuffer = multiPackets.get(0);
-        length +=proxyBuffer.writeIndex - proxyBuffer.readIndex-4;
+        length += proxyBuffer.writeIndex - proxyBuffer.readIndex - 4;
         loadPacket(proxyBuffer);
     }
 

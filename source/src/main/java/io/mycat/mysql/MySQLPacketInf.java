@@ -110,18 +110,13 @@ public class MySQLPacketInf {
         proxyBuffer.setBuffer(allocate);
     }
 
-    public boolean isSingleProxyBuffer() {
-        return multiPackets.isEmpty();
-    }
-
     public boolean resolveCrossBufferFullPayload() {
         PacketType type = resolveMySQLPacket();
         if (!this.crossPacket && (type == PacketType.FINISHED_CROSS || type == PacketType.FULL)) {
             this.markRead();
             return true;//true
         } else if (type == PacketType.LONG_HALF) {
-            crossBuffer(this);
-            if (this.packetType == PacketType.REST_CROSS) {
+            if (crossBuffer()) {
                 this.markRead();
             }
             return false;//false
@@ -245,8 +240,9 @@ public class MySQLPacketInf {
         }
     }
 
-    public boolean crossBuffer(MySQLPacketInf packetInf) {
-        if (packetInf.packetType == PacketType.LONG_HALF && !this.state.needFull) {
+    public boolean crossBuffer() {
+        MySQLPacketInf packetInf = this;
+        if (packetInf.packetType == PacketType.LONG_HALF && !packetInf.state.needFull) {
             packetInf.proxyBuffer.readIndex = packetInf.endPos;
             packetInf.updateState(packetInf.head, packetInf.startPos, packetInf.endPos, packetInf.pkgLength,
                     packetInf.pkgLength - (packetInf.endPos - packetInf.startPos), PacketType.REST_CROSS, packetInf.proxyBuffer);
