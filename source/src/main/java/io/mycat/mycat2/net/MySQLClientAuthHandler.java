@@ -3,13 +3,16 @@ package io.mycat.mycat2.net;
 
 import io.mycat.mycat2.MycatConfig;
 import io.mycat.mycat2.MycatSession;
+import io.mycat.mycat2.Version;
 import io.mycat.mycat2.beans.conf.FireWallBean;
 import io.mycat.mycat2.beans.conf.UserBean;
 import io.mycat.mycat2.beans.conf.UserConfig;
+import io.mycat.mysql.CapabilityFlags;
 import io.mycat.mysql.ComQueryState;
 import io.mycat.mysql.MysqlNativePasswordPluginUtil;
 import io.mycat.mysql.packet.ErrorPacket;
 import io.mycat.mysql.packet.AuthPacket;
+import io.mycat.mysql.packet.HandshakePacket;
 import io.mycat.proxy.ConfigEnum;
 import io.mycat.proxy.NIOHandler;
 import io.mycat.proxy.ProxyBuffer;
@@ -32,8 +35,41 @@ import java.util.regex.Pattern;
 public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
     private static final byte[] AUTH_OK = new byte[]{7, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0};
 
-    public static final MySQLClientAuthHandler INSTANCE = new MySQLClientAuthHandler();
     private static Logger logger = LoggerFactory.getLogger(MySQLClientAuthHandler.class);
+
+
+    /**
+     * 认证中的seed报文数据
+     */
+    public byte[] seed;
+    public MycatSession mycatSession;
+
+    public MySQLClientAuthHandler() {
+    }
+
+    /**
+     * 给客户端（front）发送认证报文
+     *
+     */
+    public void sendAuthPackge() {
+        byte[][] seedParts = MysqlNativePasswordPluginUtil.nextSeedBuild();
+        this.seed = seedParts[2];
+        // 发送握手数据包
+        HandshakePacket hs = new HandshakePacket();
+        hs.packetId = 0;
+        hs.protocolVersion = Version.PROTOCOL_VERSION;
+        hs.serverVersion = new String(Version.SERVER_VERSION);
+        hs.connectionId = mycatSession.getSessionId();
+        hs.authPluginDataPartOne = new String(seedParts[0]);
+        hs.capabilities = new CapabilityFlags(mycatSession.getServerCapabilities());
+        hs.hasPartTwo = true;
+        hs.characterSet = 8;
+        hs.statusFlags = 2;
+        hs.authPluginDataLen = 21; // 有插件的话，总长度必是21, seed
+        hs.authPluginDataPartTwo = new String(seedParts[1]);
+        hs.authPluginName = MysqlNativePasswordPluginUtil.PROTOCOL_PLUGIN_NAME;
+        mycatSession.responseMySQLPacket(hs);
+    }
 
     @Override
     public void onSocketRead(MycatSession session) throws IOException {
@@ -157,7 +193,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
             return false;
         }
 
-        byte[] encryptPass = MysqlNativePasswordPluginUtil.scramble411(pass, session.seed);
+        byte[] encryptPass = MysqlNativePasswordPluginUtil.scramble411(pass, seed);
 
         if (encryptPass != null && (encryptPass.length == password.length)) {
             int i = encryptPass.length;
@@ -202,6 +238,9 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
 //		ProxyRuntime.INSTANCE.getConfig().getMySQLRepBean(session.mycatSchema.getDefaultDN().getReplica()).getMetaBeans().get(0).INDEX_TO_CHARSET.get(charsetIndex);
         logger.debug("login success, charsetIndex = {}", charsetIndex);
         return true;
+    }
+    public void setMycatSession(MycatSession mycatSession) {
+        this.mycatSession = mycatSession;
     }
 
     @Override

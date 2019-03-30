@@ -2,6 +2,7 @@ package io.mycat.mysql;
 
 import io.mycat.mycat2.MySQLCommand;
 import io.mycat.mycat2.MySQLSession;
+import io.mycat.mycat2.beans.MycatException;
 import io.mycat.mycat2.beans.conf.ProxyConfig;
 import io.mycat.mycat2.cmds.judge.JudgeUtil;
 import io.mycat.mysql.packet.EOFPacket;
@@ -599,12 +600,12 @@ public class MySQLPacketInf {
      * @param sharedBuffer
      */
     public void useSharedBuffer(ProxyBuffer sharedBuffer) {
-        if (this.proxyBuffer != null && referedBuffer == false) {
+        if (this.proxyBuffer != null && !referedBuffer &&sharedBuffer!=null) {
             recycleAllocedBuffer(proxyBuffer);
             proxyBuffer = sharedBuffer;
             this.referedBuffer = true;
             logger.debug("use sharedBuffer. ");
-        } else if (proxyBuffer == null) {
+        } else if (this.proxyBuffer == null) {
             logger.debug("proxyBuffer is null.{}", this);
             throw new RuntimeException("proxyBuffer is null.");
             // proxyBuffer = sharedBuffer;
@@ -613,6 +614,9 @@ public class MySQLPacketInf {
             proxyBuffer = new ProxyBuffer(this.bufPool.allocate());
             proxyBuffer.reset();
             this.referedBuffer = false;
+        }else {
+            throw new MycatException("useSharedBuffer proxyBuffer:%s  referedBuffer:%s sharedBuffer:%s"
+                    ,proxyBuffer.toString(), referedBuffer,sharedBuffer.toString());
         }
     }
 
@@ -637,6 +641,7 @@ public class MySQLPacketInf {
     public void recycleAllocedBuffer(ProxyBuffer curFrontBuffer) {
         if (curFrontBuffer != null) {
             this.bufPool.recycle(curFrontBuffer.getBuffer());
+            curFrontBuffer.setBuffer(null);
         } else {
             logger.error("curFrontBuffer is null,please fix it !!!!");
         }
@@ -654,7 +659,7 @@ public class MySQLPacketInf {
             lastLargeMessageTime = TimeUtil.currentTimeMillis();
             simpleAdjustCapacityProxybuffer(proxyBuffer, proxyBuffer.writeIndex + pkgLength);
         } else {
-            if (proxyBuffer.writeIndex != 0) {
+            if (proxyBuffer.writeIndex > 0) {
                 // compact bytebuffer only
                 proxyBuffer.compact();
             } else {

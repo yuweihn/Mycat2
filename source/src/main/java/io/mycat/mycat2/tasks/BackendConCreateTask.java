@@ -2,8 +2,6 @@ package io.mycat.mycat2.tasks;
 
 import io.mycat.mycat2.MySQLSession;
 import io.mycat.mycat2.beans.MySQLMetaBean;
-import io.mycat.mycat2.beans.conf.SchemaBean;
-import io.mycat.mysql.ComQueryState;
 import io.mycat.mysql.MySQLPacketInf;
 import io.mycat.mysql.MysqlNativePasswordPluginUtil;
 import io.mycat.mysql.packet.AuthPacket;
@@ -32,7 +30,6 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
     private HandshakePacket handshake;
     private boolean welcomePkgReceived = false;
     private MySQLMetaBean mySQLMetaBean;
-    private SchemaBean schema;
     private InetSocketAddress serverAddress;
 
 
@@ -42,12 +39,11 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
      * @param bufPool
      * @param nioSelector   在哪个Selector上注册NIO事件（即对应哪个ReactorThread）
      * @param mySQLMetaBean
-     * @param schema
      * @param callBack      创建连接结束（成功或失败）后的回调接口
      * @throws IOException
      */
     public BackendConCreateTask(BufferPool bufPool, Selector nioSelector, MySQLMetaBean mySQLMetaBean,
-                                SchemaBean schema, AsynTaskCallBack<MySQLSession> callBack) throws IOException {
+                                AsynTaskCallBack<MySQLSession> callBack) throws IOException {
         super(null,false);
         String serverIP = mySQLMetaBean.getDsMetaBean().getIp();
         int serverPort = mySQLMetaBean.getDsMetaBean().getPort();
@@ -55,7 +51,6 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         serverAddress = new InetSocketAddress(serverIP, serverPort);
         SocketChannel backendChannel = SocketChannel.open();
         this.mySQLMetaBean = mySQLMetaBean;
-        this.schema = schema;
         if (logger.isDebugEnabled()) {
             if (backendChannel.isConnected()) {
                 logger.debug("MySQL client is not connected so start connecting" + backendChannel);
@@ -65,8 +60,7 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         MycatReactorThread mycatReactorThread = (MycatReactorThread) Thread.currentThread();
         AsynTaskCallBack<MySQLSession> task = (session, sender, success, result) -> {
             if (success) {
-                session.setMySQLMetaBean(backendConCreateTask.getMySQLMetaBean());
-                session.setSessionManager(mycatReactorThread.mysqlSessionMan);
+                mycatReactorThread.mysqlSessionMan.addNewMySQLSession(session);
                 callBack.finished(session, mycatReactorThread.mysqlSessionMan, success, result);
             } else {
                 callBack.finished(session, mycatReactorThread.mysqlSessionMan, false, result);
@@ -74,9 +68,8 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         };
         backendConCreateTask.setCallback(task);
         backendChannel.configureBlocking(false);
-        MySQLSession mySQLSession = new MySQLSession(bufPool, nioSelector, backendChannel, backendConCreateTask);
+        MySQLSession mySQLSession = new MySQLSession(bufPool, nioSelector, backendChannel, backendConCreateTask, mySQLMetaBean);
         backendConCreateTask.setSession(mySQLSession, false);
-        mySQLSession.setMySQLMetaBean(mySQLMetaBean);
         backendChannel.connect(backendConCreateTask.getServerAddress());
     }
 
@@ -186,9 +179,6 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         return mySQLMetaBean;
     }
 
-    public SchemaBean getSchema() {
-        return schema;
-    }
 
     public InetSocketAddress getServerAddress() {
         return serverAddress;

@@ -1,5 +1,8 @@
 package io.mycat.mycat2.beans;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * cjw
  * 294712221@qq.com

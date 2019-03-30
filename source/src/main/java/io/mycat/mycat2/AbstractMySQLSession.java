@@ -22,7 +22,7 @@ public abstract class AbstractMySQLSession extends AbstractSession {
     /**
      * 字符集
      */
-    public MySQLCharset charSet = new MySQLCharset();
+    public final MySQLCharset charSet = new MySQLCharset();
     /**
      * 用户
      */
@@ -36,11 +36,6 @@ public abstract class AbstractMySQLSession extends AbstractSession {
      * 事务提交方式
      */
     public AutoCommit autoCommit = AutoCommit.ON;
-
-    /**
-     * 认证中的seed报文数据
-     */
-    public byte[] seed;
 
     /**
      * 用来进行指定结束报文处理

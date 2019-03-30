@@ -5,6 +5,7 @@ import io.mycat.mycat2.MySQLSessionManager;
 import io.mycat.mycat2.MycatSession;
 import io.mycat.mycat2.beans.MySQLMetaBean;
 import io.mycat.mycat2.beans.MySQLRepBean;
+import io.mycat.mycat2.beans.MycatException;
 import io.mycat.mycat2.beans.conf.DNBean;
 import io.mycat.mycat2.net.MainMySQLNIOHandler;
 import io.mycat.mycat2.net.MainMycatNIOHandler;
@@ -45,7 +46,7 @@ public class MycatReactorThread extends ProxyReactorThread<MycatSession> {
      */
     public void tryGetMySQLAndExecute(MycatSession session, AsynTaskCallBack<MySQLSession> callback) throws IOException {
         if (Thread.currentThread() != this) {
-            throw new RuntimeException("Not in current MycatReactorThread");
+            throw new MycatException("Not in current MycatReactorThread");
         }
         if (session.getTargetDataNode() == null) {
             logger.warn("{} not specified SQL target DataNode ,so set to default dataNode ", session);
@@ -55,13 +56,9 @@ public class MycatReactorThread extends ProxyReactorThread<MycatSession> {
         }
         MySQLRepBean targetRepBean = ProxyRuntime.INSTANCE.getConfig().getMySQLRepBean(session.getTargetDataNode().getReplica());
         MySQLMetaBean targetMetaBean = targetRepBean.getBalanceMetaBean(false);
-        if (targetMetaBean  == null){
-            throw new RuntimeException("没有可用的副本!!!");
-        }
         logger.debug("tryGetMySQLAndExecute  on DataNode {} for callback {} ", session.getTargetDataNode(), callback);
         MySQLSession curBackend = session.getCurBackend();
         if (curBackend != null) {
-            mysqlSessionMan.removeSession(curBackend);
             if (curBackend.synchronizedState(session.getTargetDataNode().getDatabase())) {
                 callback.finished(curBackend, Thread.currentThread(), true, null);
             } else {
@@ -78,19 +75,19 @@ public class MycatReactorThread extends ProxyReactorThread<MycatSession> {
             }
         } else {
             // 从ds中获取已经建立的连接
-            List<MySQLSession> mySQLSessionList = mysqlSessionMan.getSessionsOfHost(targetMetaBean);
+            List<MySQLSession> mySQLSessionList = mysqlSessionMan.getIdleSessionsOfHost(targetMetaBean);
             if (mySQLSessionList != null && !mySQLSessionList.isEmpty()) {
-                for (MySQLSession mysqlSession : mySQLSessionList) {
+                for (int i = mySQLSessionList.size() - 1; i > -1; i--) {
+                    MySQLSession mysqlSession = mySQLSessionList.get(i);
                     if (mysqlSession.isIdle()) {
                         logger.debug("Using the existing session in the datasource  for {}:{}",
                                 mysqlSession.getMySQLMetaBean().getDsMetaBean().getIp(),
                                 mysqlSession.getMySQLMetaBean().getDsMetaBean().getPort());
                         MycatSession oldMycatSession = mysqlSession.getMycatSession();
                         if (oldMycatSession != null) {
-                            throw new RuntimeException("Don't snatch other other's sessions!" + oldMycatSession.toString());
+                            throw new MycatException("Don't snatch other other's sessions!" + oldMycatSession.toString());
                         }
                         session.bindBackend(mysqlSession);
-                        mysqlSessionMan.removeSession(mysqlSession);
                         mysqlSession.syncAndCallback(callback);
                         return;
                     }
@@ -99,7 +96,7 @@ public class MycatReactorThread extends ProxyReactorThread<MycatSession> {
 
             // 新建连接
             logger.info("create new connection  ");
-            mysqlSessionMan.createMySQLSession(targetMetaBean, session.getMycatSchema(),
+            mysqlSessionMan.createMySQLSession(targetMetaBean,
                     (optSession, Sender, exeSucces, retVal) -> {
                         // 恢复默认的Handler
                         session.setCurNIOHandler(MainMycatNIOHandler.INSTANCE);
@@ -107,7 +104,7 @@ public class MycatReactorThread extends ProxyReactorThread<MycatSession> {
                             optSession.setCurNIOHandler(MainMySQLNIOHandler.INSTANCE);
                             session.bindBackend(optSession);
                             optSession.syncAndCallback(callback);
-                            // addMySQLSession(targetMetaBean, optSession);
+                            // addIdleMySQLSession(targetMetaBean, optSession);
                         } else {
                             callback.finished(optSession, Sender, exeSucces, retVal);
                         }
@@ -132,7 +129,7 @@ public class MycatReactorThread extends ProxyReactorThread<MycatSession> {
         List<MySQLSession> mySQLSessionList = this.mysqlSessionMan.getSessionsOfHost(mySQLMetaBean);
         if (mySQLSessionList != null && !mySQLSessionList.isEmpty()) {
             for (MySQLSession mysqlSession : mySQLSessionList) {
-                if (mysqlSession.isIdle()&&!mysqlSession.isClosed()) {//可能会获得到未开启连接的session
+                if (mysqlSession.isIdle() && !mysqlSession.isClosed()) {//可能会获得到未开启连接的session
                     logger.debug("Using the existing session in the datasource  for heart beat. {}:{}",
                             mysqlSession.getMySQLMetaBean().getDsMetaBean().getIp(),
                             mysqlSession.getMySQLMetaBean().getDsMetaBean().getPort());
@@ -148,7 +145,7 @@ public class MycatReactorThread extends ProxyReactorThread<MycatSession> {
 
         // 新建连接
         logger.info("create new connection {} ", mySQLMetaBean);
-        mysqlSessionMan.createMySQLSession(mySQLMetaBean, null, (optSession, Sender, exeSucces, retVal) -> {
+        mysqlSessionMan.createMySQLSession(mySQLMetaBean, (optSession, Sender, exeSucces, retVal) -> {
             if (exeSucces) {
                 // 恢复默认的Handler
                 optSession.setCurNIOHandler(MainMySQLNIOHandler.INSTANCE);
