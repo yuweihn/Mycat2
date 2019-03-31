@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.StringJoiner;
 
@@ -40,7 +41,11 @@ public class MySQLPacketInf {
 
     public void setProxyBuffer(ProxyBuffer proxyBuffer) {
         this.proxyBuffer = proxyBuffer;
-        multiPackets.set(0,proxyBuffer);
+        if (multiPackets.isEmpty()){
+            multiPackets.add(proxyBuffer);
+        }else {
+            multiPackets.set(0,proxyBuffer);
+        }
     }
 
     public ProxyBuffer getProxyBuffer() {
@@ -48,14 +53,14 @@ public class MySQLPacketInf {
     }
 
     private ProxyBuffer proxyBuffer;
-    private final List<ProxyBuffer> multiPackets = new ArrayList<>();
+    private final LinkedList<ProxyBuffer> multiPackets = new LinkedList<>();
 
     public BufferPool bufPool;
 
     protected boolean referedBuffer;//是否多个Session共用同一个Buffer
     protected boolean curBufOwner = true;//是否多个Session共用同一个Buffer时，当前Session是否暂时获取了Buffer独家使用权，即独占Buffer
     public final PacketListToPayloadReader payloadReader = new PacketListToPayloadReader(multiPackets);
-    public final MultiPacketWriter multiPacketWriter = new MultiPacketWriter(multiPackets);
+    public final MultiPacketWriter multiPacketWriter = new MultiPacketWriter();
 
     private int sqlType;
     public int prepareFieldNum = 0;
@@ -82,6 +87,10 @@ public class MySQLPacketInf {
         }
         int payloadLength = ParseUtil.getPayloadLength(proxyBuffer.getBuffer(), offset);
         return totalLen >= payloadLength + 4;
+    }
+
+    public int getPacketCount(){
+        return this.multiPackets.size();
     }
 
     public boolean isResponseFinished() {
@@ -246,7 +255,7 @@ public class MySQLPacketInf {
         if (packetInf.packetType == PacketType.LONG_HALF && !packetInf.state.needFull) {
             packetInf.proxyBuffer.readIndex = packetInf.endPos;
             packetInf.updateState(packetInf.head, packetInf.startPos, packetInf.endPos, packetInf.pkgLength,
-                    packetInf.pkgLength - (packetInf.endPos - packetInf.startPos), PacketType.REST_CROSS, packetInf.proxyBuffer);
+                    packetInf.pkgLength - (packetInf.endPos - packetInf.startPos), PacketType.REST_CROSS);
             return true;
         } else {
             return false;
@@ -314,7 +323,7 @@ public class MySQLPacketInf {
                 return;
             }
             case FIRST_PACKET: {
-                if (!isPacketFinished) throw new RuntimeException("unknown state!");
+                if (!isPacketFinished) throw new MycatException("unknown state!");
                 if (head == 0xff) {
                     this.mysqlPacketType = MySQLPayloadType.ERROR;
                     state = ComQueryState.COMMAND_END;
@@ -519,15 +528,12 @@ public class MySQLPacketInf {
                     return false;
             }
         }
-
     }
 
     public MySQLPacketInf directPassthrouhBuffer() {
         MySQLPacketInf packetInf = this;
         while (true) {
-            if (packetInf.resolveCrossBufferFullPayload()) {
-                return this;
-            } else {
+            if (!packetInf.resolveCrossBufferFullPayload()) {
                 if (this.state.isNeedFull() && packetInf.needExpandBuffer()) {
                     simpleAdjustCapacityProxybuffer(packetInf.proxyBuffer, packetInf.endPos + packetInf.pkgLength);
                 }
@@ -541,15 +547,13 @@ public class MySQLPacketInf {
         return packetId - 1;
     }
 
-    private void updateState(int head, int startPos, int endPos, int pkgLength, int remainsBytes, PacketType packetType, ProxyBuffer proxyBuffer
-    ) {
+    private void updateState(int head, int startPos, int endPos, int pkgLength, int remainsBytes, PacketType packetType) {
         this.head = head;
         this.startPos = startPos;
         this.endPos = endPos;
         this.pkgLength = pkgLength;
         this.remainsBytes = remainsBytes;
         this.packetType = packetType;
-        this.proxyBuffer = proxyBuffer;
     }
 
     public boolean needExpandBuffer() {
@@ -557,7 +561,7 @@ public class MySQLPacketInf {
     }
 
     public PacketType change2ShortHalf() {
-        this.updateState(0, 0, 0, 0, 0, PacketType.SHORT_HALF, proxyBuffer);
+        this.updateState(0, 0, 0, 0, 0, PacketType.SHORT_HALF);
         return PacketType.SHORT_HALF;
     }
 
@@ -601,8 +605,8 @@ public class MySQLPacketInf {
      */
     public void useSharedBuffer(ProxyBuffer sharedBuffer) {
         if (this.proxyBuffer != null && !referedBuffer &&sharedBuffer!=null) {
-            recycleAllocedBuffer(proxyBuffer);
-            proxyBuffer = sharedBuffer;
+            this.reset();
+            setProxyBuffer(sharedBuffer);
             this.referedBuffer = true;
             logger.debug("use sharedBuffer. ");
         } else if (this.proxyBuffer == null) {
@@ -611,7 +615,6 @@ public class MySQLPacketInf {
             // proxyBuffer = sharedBuffer;
         } else if (sharedBuffer == null) {
             logger.debug("referedBuffer is false.");
-            proxyBuffer = new ProxyBuffer(this.bufPool.allocate());
             proxyBuffer.reset();
             this.referedBuffer = false;
         }else {
@@ -740,6 +743,19 @@ public class MySQLPacketInf {
     public void setResponse(){
         this.state = ComQueryState.FIRST_PACKET;
     }
+    public void close(){
+        if (!referedBuffer) {
+            if (proxyBuffer!=null&&proxyBuffer.getBuffer()!=null)
+            recycleAllocedBuffer(proxyBuffer);
+        }
+        int size = this.multiPackets.size();
+        for (int i = 0; i < size; i++) {
+            ProxyBuffer proxyBuffer = this.multiPackets.get(i);
+            if (proxyBuffer!=null&&proxyBuffer!= this.proxyBuffer&&proxyBuffer.getBuffer()!=null) {
+                recycleAllocedBuffer(proxyBuffer);
+            }
+        }
+    }
     public void reset() {
         head = 0;
         startPos = 0;
@@ -749,7 +765,7 @@ public class MySQLPacketInf {
         crossPacket = false;
         packetType = PacketType.SHORT_HALF;
 
-        proxyBuffer.reset();
+
         int size = this.multiPackets.size();
         for (int i = 0; i < size; i++) {
             ProxyBuffer proxyBuffer = this.multiPackets.get(i);
@@ -757,6 +773,9 @@ public class MySQLPacketInf {
                 bufPool.recycle(this.proxyBuffer.getBuffer());
             }
         }
+        this.multiPackets.clear();
+        setProxyBuffer(proxyBuffer);
+        proxyBuffer.reset();
         payloadReader.reset();
         multiPacketWriter.reset();
         sqlType = 0;

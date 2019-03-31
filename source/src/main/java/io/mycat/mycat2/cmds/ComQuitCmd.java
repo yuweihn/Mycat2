@@ -18,39 +18,38 @@ public class ComQuitCmd implements MySQLCommand {
 
 	@Override
 	public boolean procssSQL(MycatSession session) throws IOException {
-		session.close(true, "client closed");
 		return true;
 	}
 
 	@Override
 	public boolean onBackendResponse(MySQLSession session) throws IOException {
 		// TODO Auto-generated method stub
-		return false;
+		return true;
 	}
 
 	@Override
 	public boolean onBackendClosed(MySQLSession session, boolean normal) throws IOException {
 		// TODO Auto-generated method stub
-		return false;
+		return true;
 	}
 
 	@Override
 	public boolean onFrontWriteFinished(MycatSession session) throws IOException {
 		// TODO Auto-generated method stub
-		return false;
+		return true;
 	}
 
 	@Override
 	public boolean onBackendWriteFinished(MySQLSession session) throws IOException {
 		// TODO Auto-generated method stub
-		return false;
+		return true;
 	}
 
 	@Override
 	public void clearResouces(MycatSession session, boolean sessionCLosed) {
 		if (sessionCLosed) {
-			session.curPacketInf.reset();
 			session.unbindBackends();
+			session.close(true, "client closed");
 		}
 	}
 

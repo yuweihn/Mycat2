@@ -1,6 +1,7 @@
 package io.mycat.proxy;
 
 import io.mycat.mycat2.CurSQLState;
+import io.mycat.mycat2.beans.MycatException;
 import io.mycat.mysql.ComQueryState;
 import io.mycat.mysql.MySQLPacketInf;
 import io.mycat.proxy.buffer.BufferPool;
@@ -69,9 +70,7 @@ public abstract class AbstractSession implements Session {
     public boolean readFromChannel() throws IOException {
         ProxyBuffer proxyBuffer = this.curPacketInf.getProxyBuffer();
         if (!proxyBuffer.isInWriting()) {
-            proxyBuffer.reset();
-            logger.error(this.getClass() + " buffer not in writing state");
-            return false;
+            throw  new MycatException(this.getClass() + " buffer not in writing state");
         } else if (!this.curPacketInf.isCurBufOwner()) {
             //只有session没有独占buffer
             logger.info("take owner for some read data coming ..." + this.sessionInfo());
@@ -226,7 +225,7 @@ public abstract class AbstractSession implements Session {
         if (!this.isClosed()) {
             this.closed = true;
             closeSocket(channel, normal, hint);
-            curPacketInf.reset();
+            curPacketInf.close();
             if (this.getMySessionManager() != null) {
                 this.getMySessionManager().removeSession(this);
             } else {

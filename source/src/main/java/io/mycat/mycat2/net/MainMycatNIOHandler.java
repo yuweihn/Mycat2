@@ -4,8 +4,12 @@ import io.mycat.mycat2.MySQLCommand;
 import io.mycat.mycat2.MycatSession;
 import io.mycat.mycat2.cmds.ComQuitCmd;
 import io.mycat.mycat2.cmds.DirectPassthrouhCmd;
+import io.mycat.mycat2.cmds.OneCmd;
 import io.mycat.mycat2.cmds.manager.MyCatCmdDispatcher;
 import io.mycat.mycat2.sqlparser.BufferSQLContext;
+import io.mycat.mycat2.sqlparser.byteArrayInterface.ByteArrayView;
+import io.mycat.mycat2.sqlparser.byteArrayInterface.ByteBufferArray;
+import io.mycat.mycat2.sqlparser.byteArrayInterface.DefaultByteArray;
 import io.mycat.mysql.MySQLPacketInf;
 import io.mycat.mysql.PacketListToPayloadReader;
 import io.mycat.proxy.NIOHandler;
@@ -28,7 +32,7 @@ import static io.mycat.mycat2.cmds.LoadDataState.CLIENT_2_SERVER_EMPTY_PACKET;
  */
 public class MainMycatNIOHandler implements NIOHandler<MycatSession> {
     public static final MainMycatNIOHandler INSTANCE = new MainMycatNIOHandler();
-    private static Logger logger = LoggerFactory.getLogger(MainMycatNIOHandler.class);
+    private static final Logger logger = LoggerFactory.getLogger(MainMycatNIOHandler.class);
 
     public void onSocketRead(final MycatSession session) throws IOException {
         boolean readed = session.readFromChannel();
@@ -89,18 +93,16 @@ public class MainMycatNIOHandler implements NIOHandler<MycatSession> {
     private void doQuery(final MycatSession session) throws IOException {
         MySQLCommand command;
         try {
-            session.curPacketInf.payloadReader.loadFirstPacket();
-            PacketListToPayloadReader reader = session.curPacketInf.payloadReader;
-            int length = reader.length();
-            byte[] bytes = new byte[length];
-            int i = 0;
-            while (i < length) {
-                bytes[i] = reader.get();
-                ++i;
+            if (session.curPacketInf.getPacketCount() == 1){
+                //@todo 优化
+                ByteBuffer buffer = session.curPacketInf.getProxyBuffer().getBuffer();
+                ByteArrayView view = new ByteBufferArray(buffer,0,buffer.position());
+                session.parser.parse(view, session.sqlContext);
+            }else {
+                session.curPacketInf.payloadReader.loadFirstPacket();
+                byte[] bytes = session.curPacketInf.payloadReader.getBytes();
+                session.parser.parse(bytes, session.sqlContext);
             }
-            System.out.println(new String(bytes));
-
-            session.parser.parse(bytes, session.sqlContext);
         } catch (Exception e) {
             try {
                 logger.error("sql parse error", e);

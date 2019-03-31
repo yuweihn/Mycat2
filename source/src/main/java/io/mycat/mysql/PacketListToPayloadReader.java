@@ -3,22 +3,27 @@ package io.mycat.mysql;
 import io.mycat.proxy.ProxyBuffer;
 
 import java.nio.ByteBuffer;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 
 /**
  * cjw
  * 294712221@qq.com
  */
-public class PacketListToPayloadReader {
+public class PacketListToPayloadReader implements Iterator<ProxyBuffer> {
     int index = 0;
-    final List<ProxyBuffer> multiPackets;
+    final LinkedList<ProxyBuffer> multiPackets;
     ByteBuffer curBytebuffer;
-    int length;
+    int length = 0;
+
+    int iteratorIndex = 0;
 
     public void reset() {
         curBytebuffer = null;
         index = 0;
         length = 0;
+        iteratorIndex = 0;
     }
 
     public void setIndex(int index) {
@@ -30,7 +35,7 @@ public class PacketListToPayloadReader {
     }
 
 
-    public PacketListToPayloadReader(final List<ProxyBuffer> multiPackets) {
+    public PacketListToPayloadReader(final LinkedList<ProxyBuffer> multiPackets) {
         this.multiPackets = multiPackets;
     }
 
@@ -43,6 +48,7 @@ public class PacketListToPayloadReader {
         ProxyBuffer proxyBuffer = multiPackets.get(0);
         length += proxyBuffer.writeIndex - proxyBuffer.readIndex - 4;
         loadPacket(proxyBuffer);
+        iteratorIndex = 0;
     }
 
     private void loadPacket(ProxyBuffer proxyBuffer) {
@@ -52,7 +58,15 @@ public class PacketListToPayloadReader {
         this.curBytebuffer = proxyBuffer.getBuffer();
     }
 
-
+    public byte[] getBytes() {
+        byte[] bytes = new byte[length];
+        int i = 0;
+        while (i < length) {
+            bytes[i] = get();
+            ++i;
+        }
+        return bytes;
+    }
     public byte get() {
         if (curBytebuffer.hasRemaining()) {
             return curBytebuffer.get();
@@ -69,5 +83,21 @@ public class PacketListToPayloadReader {
 
     public int length() {
         return length;
+    }
+
+    public void changeToIterator(){
+        curBytebuffer = null;
+        index = 0;
+        length = 0;
+    }
+
+    @Override
+    public boolean hasNext() {
+        return !multiPackets.isEmpty();
+    }
+
+    @Override
+    public ProxyBuffer next() {
+        return multiPackets.removeFirst();
     }
 }

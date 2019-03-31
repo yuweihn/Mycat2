@@ -6,28 +6,28 @@ import java.util.Iterator;
 import java.util.List;
 
 public class MultiPacketWriter implements Iterator<ProxyBuffer> {
-    private final List<ProxyBuffer> byteBuffers;
-    int index = 0;
+    private Iterator<ProxyBuffer> byteBuffers;
 
-    public MultiPacketWriter(List<ProxyBuffer> byteBuffers) {
+    public void init(Iterator<ProxyBuffer> byteBuffers) {
         this.byteBuffers = byteBuffers;
     }
 
-
     public boolean hasNext() {
-        return byteBuffers.size()>index;
+        boolean b = byteBuffers.hasNext();
+        if (!b){
+            byteBuffers = null;
+        }
+        return b;
     }
 
     public void reset(){
-        index = 0;
+        byteBuffers = null;
     }
 
     public ProxyBuffer next() {
-        int index = this.index;
-        this.index++;
-        ProxyBuffer remove = byteBuffers.get(index);
+        ProxyBuffer remove = byteBuffers.next();
         remove.readIndex = remove.writeIndex;
-        remove.flip();
+        remove.flipToReading();
         return remove;
     }
 }

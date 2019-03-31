@@ -2,7 +2,6 @@ package io.mycat.mycat2;
 
 import io.mycat.mycat2.beans.MySQLMetaBean;
 import io.mycat.mycat2.beans.MycatException;
-import io.mycat.mycat2.beans.conf.SchemaBean;
 import io.mycat.mycat2.net.MainMySQLNIOHandler;
 import io.mycat.mycat2.tasks.AsynTaskCallBack;
 import io.mycat.mycat2.tasks.BackendConCreateTask;
@@ -45,7 +44,8 @@ public class MySQLSessionManager implements SessionManager<MySQLSession> {
 
     /**
      * 获取所有的Session
-     *chenjunwen
+     * chenjunwen
+     *
      * @param mysqlMetaBean
      * @return
      */
@@ -108,27 +108,28 @@ public class MySQLSessionManager implements SessionManager<MySQLSession> {
      */
     public void createMySQLSession(MySQLMetaBean mySQLMetaBean, AsynTaskCallBack<MySQLSession> callBack)
             throws IOException {
-        if (mySQLMetaBean == null || callBack == null)
-            throw new MycatException("args of createMySQLSession errors: mySQLMetaBean" + mySQLMetaBean + " callback:" + callBack);
-
-        int backendCounts = 0;
-        for (MycatReactorThread reActorthread : ProxyRuntime.INSTANCE.getMycatReactorThreads()) {
-            List<MySQLSession> list = reActorthread.mysqlSessionMan.getSessionsOfHost(mySQLMetaBean);
-            if (null != list) {
-                backendCounts += list.size();
-            }
-        }
-        if (backendCounts + 1 > mySQLMetaBean.getDsMetaBean().getMaxCon()) {
-            ErrorPacket errPkg = new ErrorPacket();
-            errPkg.packetId = 1;
-            errPkg.errno = ErrorCode.ER_UNKNOWN_ERROR;
-            errPkg.message = "backend connection is full for " + mySQLMetaBean.getDsMetaBean().getIp() + ":"
-                    + mySQLMetaBean.getDsMetaBean().getPort();
-            callBack.finished(null, null, false, errPkg);
-            return;
-        }
-        MycatReactorThread curThread = (MycatReactorThread) Thread.currentThread();
         try {
+            if (mySQLMetaBean == null || callBack == null)
+                throw new MycatException("args of createMySQLSession errors: mySQLMetaBean" + mySQLMetaBean + " callback:" + callBack);
+
+            int backendCounts = 0;
+            for (MycatReactorThread reActorthread : ProxyRuntime.INSTANCE.getMycatReactorThreads()) {
+                List<MySQLSession> list = reActorthread.mysqlSessionMan.getSessionsOfHost(mySQLMetaBean);
+                if (null != list) {
+                    backendCounts += list.size();
+                }
+            }
+            if (backendCounts + 1 > mySQLMetaBean.getDsMetaBean().getMaxCon()) {
+                ErrorPacket errPkg = new ErrorPacket();
+                errPkg.packetId = 1;
+                errPkg.errno = ErrorCode.ER_UNKNOWN_ERROR;
+                errPkg.message = "backend connection is full for " + mySQLMetaBean.getDsMetaBean().getIp() + ":"
+                        + mySQLMetaBean.getDsMetaBean().getPort();
+                callBack.finished(null, null, false, errPkg);
+                return;
+            }
+            MycatReactorThread curThread = (MycatReactorThread) Thread.currentThread();
+
             new BackendConCreateTask(curThread.getBufPool(), curThread.getSelector(), mySQLMetaBean, callBack);
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
@@ -194,14 +195,15 @@ public class MySQLSessionManager implements SessionManager<MySQLSession> {
 
     /**
      * 向闲置的容器添加session
-     *前提,
+     * 前提,
+     *
      * @param mySQLSession
      */
     public void addIdleMySQLSession(MySQLSession mySQLSession) {
-        if (mySQLSession.channel().isConnected() && null == mySQLSession.getMycatSession())
+        if (!mySQLSession.channel().isConnected())
             throw new MycatException("MySQLSession NotYetConnectedException");
-        if (mySQLSession.isIdle()) throw new MycatException("MySQLSession is not idle");
-        if (mySQLSession.getMySessionManager()==null) throw new MycatException("MySQLSession has not added");
+        if (!mySQLSession.isIdle()||null != mySQLSession.getMycatSession()) throw new MycatException("MySQLSession is not idle");
+        if (mySQLSession.getMySessionManager() == null) throw new MycatException("MySQLSession has not added");
 
         ArrayList<MySQLSession> mySQLSessionList = idleSessionMap.get(mySQLSession.getMySQLMetaBean());
         if (mySQLSessionList == null) {
@@ -217,6 +219,7 @@ public class MySQLSessionManager implements SessionManager<MySQLSession> {
 
     /**
      * 获取所有的Session对象
+     *
      * @return
      */
     @Override
@@ -231,13 +234,14 @@ public class MySQLSessionManager implements SessionManager<MySQLSession> {
 
     /**
      * 从管理器中移除Session
+     *
      * @param theSession
      */
     public void removeSession(MySQLSession theSession) {
         if (theSession == null || !theSession.channel().isConnected())
             throw new MycatException("MySQLSession NotYetConnectedException");
-        if (theSession.getMySessionManager() != null) {
-            throw new MycatException(theSession + "has been in MySQLSessionManager");
+        if (theSession.getMySessionManager() == null) {
+            throw new MycatException(theSession + "not  in MySQLSessionManager");
         }
         ArrayList<MySQLSession> mysqlSessions = allSessionMap.get(theSession.getMySQLMetaBean());
         boolean find = false;
@@ -258,6 +262,7 @@ public class MySQLSessionManager implements SessionManager<MySQLSession> {
 
     /**
      * 默认的Session处理句柄
+     *
      * @return
      */
     @Override

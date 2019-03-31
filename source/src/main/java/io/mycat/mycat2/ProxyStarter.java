@@ -39,15 +39,15 @@ public class ProxyStarter {
 		acceptor.start();
 		runtime.setAcceptor(acceptor);
 
-		ClusterConfig clusterConfig = conf.getConfig(ConfigEnum.CLUSTER);
-		ClusterBean clusterBean = clusterConfig.getCluster();
-		if (clusterBean.isEnable()) {
-			// 启动集群
-			startCluster(runtime, clusterBean, acceptor);
-		} else {
+//		ClusterConfig clusterConfig = conf.getConfig(ConfigEnum.CLUSTER);
+//		ClusterBean clusterBean = clusterConfig.getCluster();
+//		if (clusterBean.isEnable()) {
+//			// 启动集群
+//			startCluster(runtime, clusterBean, acceptor);
+//		} else {
 			// 未配置集群，直接启动
 			startProxy(true);
-		}
+//		}
 	}
 
 	/**
@@ -150,8 +150,11 @@ public class ProxyStarter {
 			MycatReactorThread thread = new MycatReactorThread(
 					ProxyRuntime.INSTANCE.getBufferPoolFactory().getBufferPool());
 			thread.setName("Mycat_NIOThread " + (i + 1));
-			thread.start();
+
 			nioThreads[i] = thread;
+		}
+		for (int i = 0; i < cpus; i++) {
+			nioThreads[i] .start();
 		}
 	}
 }

@@ -20,6 +20,7 @@ import io.mycat.proxy.MycatReactorThread;
 import io.mycat.proxy.NIOHandler;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.buffer.BufferPool;
+import io.mycat.util.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -309,7 +310,12 @@ public class MycatSession extends AbstractMySQLSession {
      * @param hint
      */
     public void close(boolean normal, String hint) {
-        this.unbindBackends();
+        if (normal){
+            this.unbindBackends();
+        }else {
+            this.unbindAndCloseAllBackend(normal,hint);
+        }
+
         super.close(normal, hint);
     }
 
@@ -459,7 +465,14 @@ public class MycatSession extends AbstractMySQLSession {
     public void switchSQLCommand(MySQLCommand newCmd) {
         logger.debug("{} switch command from {} to  {} ", this, this.curSQLCommand, newCmd);
         this.curSQLCommand = newCmd;
+    }
 
+    public ErrorPacket errorPacket(String message){
+        ErrorPacket errorPacket = new ErrorPacket();
+        errorPacket.message = message;
+        errorPacket.errno = ErrorCode.ER_UNKNOWN_ERROR;
+        errorPacket.packetId = (byte)( this.curPacketInf.getCurrPacketId()+1);
+        return errorPacket;
     }
 
 }
