@@ -214,7 +214,9 @@ public abstract class AbstractSession implements Session {
     public ProxyBuffer allocNewProxyBuffer() {
         return new ProxyBuffer(bufPool.allocate());
     }
-
+    public ProxyBuffer allocNewProxyBuffer(int len) {
+        return new ProxyBuffer(bufPool.allocate(len));
+    }
     /**
      * 释放手动分配的ProxyBuffer
      *
@@ -328,6 +330,10 @@ public abstract class AbstractSession implements Session {
         try {
             channel.close();
         } catch (IOException e) {
+            logger.error(e.getMessage());
+        }finally {
+            ProxyReactorThread proxyReactorThread = (ProxyReactorThread) Thread.currentThread();
+            proxyReactorThread.allSession.remove(this);
         }
     }
 

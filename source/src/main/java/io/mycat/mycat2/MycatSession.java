@@ -13,8 +13,8 @@ import io.mycat.mysql.Capabilities;
 import io.mycat.mysql.CapabilityFlags;
 import io.mycat.mysql.MysqlNativePasswordPluginUtil;
 import io.mycat.mysql.packet.ErrorPacket;
+import io.mycat.mysql.packet.HandshakePacket;
 import io.mycat.mysql.packet.MySQLPacket;
-import io.mycat.mysql.packet.NewHandshakePacket;
 import io.mycat.proxy.MycatReactorThread;
 import io.mycat.proxy.NIOHandler;
 import io.mycat.proxy.ProxyRuntime;
@@ -126,7 +126,7 @@ public class MycatSession extends AbstractMySQLSession {
         this.seed = seedParts[2];
 
         // 发送握手数据包
-        NewHandshakePacket hs = new NewHandshakePacket();
+        HandshakePacket hs = new HandshakePacket();
         hs.packetId = 0;
         hs.protocolVersion = Version.PROTOCOL_VERSION;
         hs.serverVersion = new String(Version.SERVER_VERSION);
@@ -218,7 +218,7 @@ public class MycatSession extends AbstractMySQLSession {
             throw new RuntimeException("can't find backend " + backend);
         } else {
             unbindMySQLSession(backend);
-            ((MycatReactorThread) Thread.currentThread()).mysqlSessionMan.addNewMySQLSession(backend);
+            ((MycatReactorThread) Thread.currentThread()).mysqlSessionMan.addMySQLSession(backend);
         }
         // 调整curBackendIndex
         if (curSession == backend) {
@@ -342,12 +342,10 @@ public class MycatSession extends AbstractMySQLSession {
     }
 
     public void responseOKOrError(byte[] pkg) throws IOException {
-        this.curPacketInf.shift2DefRespPacket();
         super.responseOKOrError(pkg);
     }
 
     public void responseOKOrError(MySQLPacket pkg) {
-        this.curPacketInf.shift2DefRespPacket();
         super.responseOKOrError(pkg);
     }
 

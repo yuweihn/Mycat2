@@ -8,9 +8,11 @@ import io.mycat.mycat2.cmds.LoadDataCommand;
 import io.mycat.mycat2.cmds.manager.MyCatCmdDispatcher;
 import io.mycat.mycat2.sqlparser.BufferSQLContext;
 import io.mycat.mysql.MySQLPacketInf;
+import io.mycat.mysql.PacketListToPayloadReader;
 import io.mycat.proxy.NIOHandler;
 import io.mycat.util.ErrorCode;
 import io.mycat.util.LoadDataUtil;
+import io.mycat.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +21,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 
 import static io.mycat.mycat2.cmds.LoadDataState.CLIENT_2_SERVER_EMPTY_PACKET;
-import static io.mycat.mysql.MySQLPacketInf.resolveFullPayloadExpendBuffer;
+import static io.mycat.mysql.MySQLPacketInf.readFully;
 
 /**
  * 负责MycatSession的NIO事件，驱动SQLCommand命令执行，完成SQL的处理过程
@@ -38,16 +40,12 @@ public class MainMycatNIOHandler implements NIOHandler<MycatSession> {
         MySQLCommand curCmd = session.getCurSQLCommand();
         if (curCmd == null) {
             MySQLPacketInf packetInf = session.curPacketInf;
-            session.curPacketInf.proxyBuffer = session.proxyBuffer;
-            packetInf.shift2QueryPacket();
-
-            if (!resolveFullPayloadExpendBuffer(session)) {
+            if (!readFully(session)) {
                 return;
             }
             try {
                 processSQL(session);
-            }
-            catch (RuntimeException e){
+            } catch (RuntimeException e) {
                 throw e;
             } finally {
                 packetInf.recycleLargePayloadBuffer();
@@ -100,13 +98,18 @@ public class MainMycatNIOHandler implements NIOHandler<MycatSession> {
     private void doQuery(final MycatSession session) throws IOException {
         MySQLCommand command;
         try {
-            int startIndex = session.curPacketInf.largePayload.position();
-            ByteBuffer duplicate = session.curPacketInf.largePayload.duplicate();
-            byte[] a = new byte[duplicate.limit() - duplicate.position()];
-            duplicate.get(a);
-            System.out.println(new String(a));
-            int endIndex = session.curPacketInf.largePayload.limit();
-            session.parser.parse(session.curPacketInf.largePayload, startIndex, endIndex - startIndex, session.sqlContext);
+            session.curPacketInf.payloadReader.loadFirstPacket();
+            PacketListToPayloadReader reader = session.curPacketInf.payloadReader;
+            int length = reader.length();
+            byte[] bytes = new byte[length];
+            int i = 0;
+            while (i < length) {
+                bytes[i] = reader.get();
+                ++i;
+            }
+            System.out.println(new String(bytes));
+
+            session.parser.parse(bytes, session.sqlContext);
         } catch (Exception e) {
             try {
                 logger.error("sql parse error", e);

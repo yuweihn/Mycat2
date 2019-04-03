@@ -6,10 +6,10 @@ import io.mycat.mycat2.beans.conf.SchemaBean;
 import io.mycat.mysql.MySQLPacketInf;
 import io.mycat.mysql.MysqlNativePasswordPluginUtil;
 import io.mycat.mysql.PayloadType;
+import io.mycat.mysql.packet.AuthPacket;
 import io.mycat.mysql.packet.ErrorPacket;
+import io.mycat.mysql.packet.HandshakePacket;
 import io.mycat.mysql.packet.MySQLPacket;
-import io.mycat.mysql.packet.NewAuthPacket;
-import io.mycat.mysql.packet.NewHandshakePacket;
 import io.mycat.proxy.MycatReactorThread;
 import io.mycat.proxy.buffer.BufferPool;
 import io.mycat.util.ErrorCode;
@@ -29,7 +29,7 @@ import java.nio.channels.SocketChannel;
  */
 public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
     private static Logger logger = LoggerFactory.getLogger(BackendConCreateTask.class);
-    private NewHandshakePacket handshake;
+    private HandshakePacket handshake;
     private boolean welcomePkgReceived = false;
     private MySQLMetaBean mySQLMetaBean;
     private SchemaBean schema;
@@ -39,7 +39,7 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
 
     /**
      * 异步非阻塞模式创建MySQL连接，如果连接创建成功，需要把新连接加入到所在ReactorThread的连接池，则参数addConnectionPool需要设置为True
-     *
+     *该方法获得已经连接上mysql 的session会不会马上加入到mySQLSessionMap,因为callback的方法里面需要马上用到这个session
      * @param bufPool
      * @param nioSelector   在哪个Selector上注册NIO事件（即对应哪个ReactorThread）
      * @param mySQLMetaBean
@@ -56,8 +56,29 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         SocketChannel backendChannel = SocketChannel.open();
         this.mySQLMetaBean = mySQLMetaBean;
         this.schema = schema;
+
+        if (logger.isDebugEnabled()) {
+            if (backendChannel.isConnected()) {
+                logger.debug("MySQL client is not connected so start connecting" + backendChannel);
+            }
+        }
+        BackendConCreateTask backendConCreateTask = this;
         MycatReactorThread mycatReactorThread = (MycatReactorThread) Thread.currentThread();
-        mycatReactorThread.mysqlSessionMan.createSession(this, bufPool, nioSelector, backendChannel, callBack);
+        AsynTaskCallBack<MySQLSession> task = (session, sender, success, result) -> {
+            if (success) {
+                session.setMySQLMetaBean(backendConCreateTask.getMySQLMetaBean());
+                session.setSessionManager(mycatReactorThread.mysqlSessionMan);
+                callBack.finished(session, mycatReactorThread.mysqlSessionMan, success, result);
+            } else {
+                callBack.finished(session, mycatReactorThread.mysqlSessionMan, false, result);
+            }
+        };
+        backendConCreateTask.setCallback(task);
+        backendChannel.configureBlocking(false);
+        MySQLSession mySQLSession = new MySQLSession(bufPool, nioSelector, backendChannel, backendConCreateTask);
+        backendConCreateTask.setSession(mySQLSession, false);
+        mySQLSession.setMySQLMetaBean(mySQLMetaBean);
+        backendChannel.connect(backendConCreateTask.getServerAddress());
     }
 
     @Override
@@ -78,14 +99,14 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         }
 
         if (!welcomePkgReceived) {
-            handshake = new NewHandshakePacket();
+            handshake = new HandshakePacket();
             handshake.read(this.session.proxyBuffer);
 
             // 设置字符集编码
             // int charsetIndex = (handshake.characterSet & 0xff);
             int charsetIndex = handshake.characterSet;
             // 发送应答报文给后端
-            NewAuthPacket packet = new NewAuthPacket();
+            AuthPacket packet = new AuthPacket();
             packet.packetId = 1;
             packet.capabilities = MySQLSession.getClientCapabilityFlags().value;
             packet.maxPacketSize = 1024 * 1000;
@@ -145,7 +166,7 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
 
     }
 
-    public NewHandshakePacket getHandshake() {
+    public HandshakePacket getHandshake() {
         return handshake;
     }
 
