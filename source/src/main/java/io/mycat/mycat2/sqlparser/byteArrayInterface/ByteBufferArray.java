@@ -6,6 +6,7 @@ public class ByteBufferArray implements ByteArrayView {
     ByteBuffer src;
     int offset = 0;
     int length = 0;
+
     @Override
     public byte get(int index) {
         return src.get(index);
@@ -18,7 +19,7 @@ public class ByteBufferArray implements ByteArrayView {
 
     @Override
     public void set(int index, byte value) {
-    	src.put(index, value);
+        src.put(index, value);
         return;
     }
 
@@ -29,21 +30,32 @@ public class ByteBufferArray implements ByteArrayView {
     public void setSrc(ByteBuffer src) {
         this.src = src;
     }
+
     public ByteBufferArray() {
 
     }
+
     public ByteBufferArray(byte[] arg) {
         src = ByteBuffer.wrap(arg);
-        offset=0;
-        length=arg.length;
+        offset = 0;
+        length = arg.length;
     }
-    public ByteBufferArray(ByteBuffer arg) {
-        src = arg;
+
+    public ByteBufferArray(ByteBuffer arg, int offset, int length) {
+        this.src = arg;
+        this.offset = offset;
+        this.length = length;
     }
 
     public void setOffset(int offset) {
         this.offset = offset;
     }
-    public int getOffset() { return this.offset; }
-    public void setLength(int length) { this.length = length; }
+
+    public int getOffset() {
+        return this.offset;
+    }
+
+    public void setLength(int length) {
+        this.length = length;
+    }
 }

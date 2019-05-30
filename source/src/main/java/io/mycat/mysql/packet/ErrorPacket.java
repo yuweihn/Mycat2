@@ -40,6 +40,12 @@ public class ErrorPacket extends MySQLPacket {
 	public int stage;
 	public int maxStage;
 	public int progress;
+
+	public ErrorPacket() {
+	}
+
+
+
 	public String progress_info;
 	public byte mark = ' ';
 	public String sqlState = DEFAULT_SQLSTATE;

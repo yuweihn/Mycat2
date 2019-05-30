@@ -9,7 +9,6 @@ import io.mycat.mycat2.tasks.BackendSynchemaTask;
 import io.mycat.mycat2.tasks.BackendSynchronzationTask;
 import io.mycat.mysql.Capabilities;
 import io.mycat.mysql.CapabilityFlags;
-import io.mycat.proxy.NIOHandler;
 import io.mycat.proxy.buffer.BufferPool;
 
 import java.io.IOException;
@@ -31,7 +30,7 @@ public class MySQLSession extends AbstractMySQLSession {
     private MycatSession mycatSession;
 
     // 记录当前后端连接所属的MetaBean，用于后端连接归还使用
-    private MySQLMetaBean mysqlMetaBean;
+    private final MySQLMetaBean mysqlMetaBean;
 
     /**
      * 标识当前连接的闲置状态标识 ，true，闲置，false，未闲置,即在使用中
@@ -50,8 +49,9 @@ public class MySQLSession extends AbstractMySQLSession {
         return !this.isClosed() && ((System.currentTimeMillis() - this.lastActiveTime) < (this.getMySQLMetaBean().getHeartbeat().getTimeout()));
     }
 
-    public MySQLSession(BufferPool bufferPool, Selector selector, SocketChannel channel, BackendConCreateTask nioHandler) throws IOException {
+    public MySQLSession(BufferPool bufferPool, Selector selector, SocketChannel channel, BackendConCreateTask nioHandler, MySQLMetaBean mysqlMetaBean) throws IOException {
         super(bufferPool, selector, channel, SelectionKey.OP_CONNECT,nioHandler);
+        this.mysqlMetaBean = mysqlMetaBean;
     }
 
     /**
@@ -157,10 +157,6 @@ public class MySQLSession extends AbstractMySQLSession {
 
     public MySQLMetaBean getMySQLMetaBean() {
         return mysqlMetaBean;
-    }
-
-    public void setMySQLMetaBean(MySQLMetaBean metaBean) {
-        this.mysqlMetaBean = metaBean;
     }
 
     private static int initClientFlags() {

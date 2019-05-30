@@ -89,7 +89,7 @@ public class MySQLMetaBean {
 			MycatReactorThread reactorThread = reactorThreads[i % reactorSize];
 			reactorThread.addNIOJob(() -> {
 				try {
-					reactorThread.mysqlSessionMan.createMySQLSession(this, null, (optSession, sender, exeSucces, retVal) -> {
+					reactorThread.mysqlSessionMan.createMySQLSession(this, (optSession, sender, exeSucces, retVal) -> {
 						if (exeSucces) {
 							if (this.charsetLoaded == false) {
 								this.charsetLoaded = true;
@@ -164,7 +164,7 @@ public class MySQLMetaBean {
 	 * @param reason
 	 */
 	public void clearAndDestroyCons(String reason) {
-		logger.info("clear and destroy connections of {} ,for reason ", this, reason);
+		logger.info("reset and destroy connections of {} ,for reason ", this, reason);
 		ProxyRuntime runtime = ProxyRuntime.INSTANCE;
 		final MySQLMetaBean target = this;
 		MycatReactorThread[] reactorThreads = runtime.getMycatReactorThreads();

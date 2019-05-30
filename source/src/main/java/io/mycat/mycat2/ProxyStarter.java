@@ -2,6 +2,7 @@ package io.mycat.mycat2;
 
 import java.io.IOException;
 
+import io.mycat.proxy.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,12 +13,7 @@ import io.mycat.mycat2.beans.conf.ClusterConfig;
 import io.mycat.mycat2.beans.conf.ProxyBean;
 import io.mycat.mycat2.beans.conf.ProxyConfig;
 import io.mycat.mycat2.loadbalance.LBSession;
-import io.mycat.proxy.ConfigEnum;
-import io.mycat.proxy.MycatReactorThread;
-import io.mycat.proxy.NIOAcceptor;
-import io.mycat.proxy.ProxyReactorThread;
 import io.mycat.proxy.NIOAcceptor.ServerType;
-import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.buffer.DirectByteBufferPool;
 import io.mycat.proxy.man.AdminCommandResovler;
 import io.mycat.proxy.man.ClusterNode;
@@ -43,15 +39,15 @@ public class ProxyStarter {
 		acceptor.start();
 		runtime.setAcceptor(acceptor);
 
-		ClusterConfig clusterConfig = conf.getConfig(ConfigEnum.CLUSTER);
-		ClusterBean clusterBean = clusterConfig.getCluster();
-		if (clusterBean.isEnable()) {
-			// 启动集群
-			startCluster(runtime, clusterBean, acceptor);
-		} else {
+//		ClusterConfig clusterConfig = conf.getConfig(ConfigEnum.CLUSTER);
+//		ClusterBean clusterBean = clusterConfig.getCluster();
+//		if (clusterBean.isEnable()) {
+//			// 启动集群
+//			startCluster(runtime, clusterBean, acceptor);
+//		} else {
 			// 未配置集群，直接启动
 			startProxy(true);
-		}
+//		}
 	}
 
 	/**
@@ -121,14 +117,17 @@ public class ProxyStarter {
 			// create and start lbreactor threads
 			runtime.getAcceptor().startServerChannel(balancerBean.getIp(), balancerBean.getPort(),
 					ServerType.LOAD_BALANCER);
-			ProxyReactorThread<LBSession>[] nioThreads = MycatRuntime.INSTANCE.getLbReactorThreads();
+			ProxyReactorThread<LBSession>[] nioThreads = ProxyRuntime.INSTANCE.getLbReactorThreads();
 			int cpus = nioThreads.length;
 			for (int i = 0; i < cpus; i++) {
 				ProxyReactorThread<LBSession> thread = new ProxyReactorThread<>(
 						ProxyRuntime.INSTANCE.getBufferPoolFactory().getBufferPool());
 				thread.setName("LoadBalance_Thread " + (i + 1));
-				thread.start();
 				nioThreads[i] = thread;
+			}
+			//防止数据赋值还没有完成就有请求进入selector@cjw
+			for (ProxyReactorThread<LBSession> nioThread : nioThreads) {
+				nioThread.start();
 			}
 		}
 	}
@@ -144,15 +143,18 @@ public class ProxyStarter {
 
 	private void startReactor() throws IOException {
 		// Mycat 2.0 Session Manager
-		MycatReactorThread[] nioThreads = MycatRuntime.INSTANCE.getMycatReactorThreads();
+		MycatReactorThread[] nioThreads = ProxyRuntime.INSTANCE.getMycatReactorThreads();
 		int cpus = nioThreads.length;
 
 		for (int i = 0; i < cpus; i++) {
 			MycatReactorThread thread = new MycatReactorThread(
 					ProxyRuntime.INSTANCE.getBufferPoolFactory().getBufferPool());
 			thread.setName("Mycat_NIOThread " + (i + 1));
-			thread.start();
+
 			nioThreads[i] = thread;
+		}
+		for (int i = 0; i < cpus; i++) {
+			nioThreads[i] .start();
 		}
 	}
 }

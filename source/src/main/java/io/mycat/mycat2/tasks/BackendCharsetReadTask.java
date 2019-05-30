@@ -45,13 +45,14 @@ public class BackendCharsetReadTask extends BackendIOTaskWithResultSet<MySQLSess
     private MySQLMetaBean mySQLMetaBean;
 
     public BackendCharsetReadTask(MySQLSession mySQLSession, MySQLMetaBean mySQLMetaBean,AsynTaskCallBack<MySQLSession> callBack) {
+        super(mySQLSession,false);
         this.mySQLSession = mySQLSession;
         this.mySQLMetaBean = mySQLMetaBean;
         this.callBack = callBack;
     }
 
     public void readCharset() throws IOException {
-        ProxyBuffer proxyBuf = mySQLSession.proxyBuffer;
+        ProxyBuffer proxyBuf = mySQLSession.curPacketInf.getProxyBuffer();
         proxyBuf.reset();
         ComQueryPacket queryPacket = new ComQueryPacket();
         queryPacket.packetId = 0;
@@ -61,6 +62,7 @@ public class BackendCharsetReadTask extends BackendIOTaskWithResultSet<MySQLSess
         proxyBuf.readIndex = proxyBuf.writeIndex;
         try {
         	this.mySQLSession.writeToChannel();
+            mySQLSession.curPacketInf.setResponse();
 		} catch (IOException e) {
 			onRsFinish(this.mySQLSession,false,e.getMessage());
 		}
@@ -68,7 +70,7 @@ public class BackendCharsetReadTask extends BackendIOTaskWithResultSet<MySQLSess
 
     @Override
     void onRsColCount(MySQLSession session) {
-        ProxyBuffer proxyBuffer = session.proxyBuffer;
+        ProxyBuffer proxyBuffer = session.curPacketInf.getProxyBuffer();
         MySQLPacketInf curMQLPackgInf = session.curPacketInf;
         //读取有多少列
         fieldCount = (int) proxyBuffer.getLenencInt(curMQLPackgInf.startPos + MySQLPacket.packetHeaderSize);
@@ -81,7 +83,7 @@ public class BackendCharsetReadTask extends BackendIOTaskWithResultSet<MySQLSess
 
     @Override
     void onRsRow(MySQLSession session) {
-        ProxyBuffer proxyBuffer = session.proxyBuffer;
+        ProxyBuffer proxyBuffer = session.curPacketInf.getProxyBuffer();
         MySQLPacketInf curMQLPackgInf = session.curPacketInf;
         int rowDataIndex = curMQLPackgInf.startPos + MySQLPacket.packetHeaderSize;
 

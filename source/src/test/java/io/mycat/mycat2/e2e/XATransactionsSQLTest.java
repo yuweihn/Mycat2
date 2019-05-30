@@ -51,7 +51,7 @@
 //    public void xa1() {
 //        XATransactionsSQLTest xa = new XATransactionsSQLTest();
 //        xa.xaSuccess();
-//        xa.clear();
+//        xa.reset();
 //    }
 //
 //    @Test
@@ -112,7 +112,7 @@
 //    }
 //
 //    @Test
-//    public void clear() {
+//    public void reset() {
 //        using(c -> {
 //            c.createStatement().execute("delete from travelrecord where id in (10,11)");
 //        });

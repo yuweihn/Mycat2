@@ -12,7 +12,7 @@ import io.mycat.proxy.buffer.BufferPool;
 /**
  * 用来处理新的连接请求并创建Session
  * 
- * @author wuzhihui
+ * @author wuzhihui.chenjunwen
  *
  */
 public interface SessionManager<T extends Session> {
@@ -47,8 +47,16 @@ public interface SessionManager<T extends Session> {
 	 */
 	public int curSessionCount();
 
+	/**
+	 * 获取默认的Session处理句柄
+	 * @return
+	 */
 	public NIOHandler<T> getDefaultSessionHandler();
 
+	/**
+	 * 从管理器中移除Session
+	 * @param session
+	 */
 	public void removeSession(T session);
 
 }

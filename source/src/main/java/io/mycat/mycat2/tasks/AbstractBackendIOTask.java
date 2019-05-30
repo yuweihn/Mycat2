@@ -3,6 +3,8 @@ package io.mycat.mycat2.tasks;
 import java.io.IOException;
 import java.nio.channels.SelectionKey;
 
+import io.mycat.mysql.ComQueryState;
+import io.mycat.mysql.MySQLPacketInf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,10 +32,6 @@ public abstract class AbstractBackendIOTask<T extends AbstractMySQLSession> impl
 		setSession(session, useNewBuffer);
 	}
 
-	public AbstractBackendIOTask() {
-		this(null, false);
-	}
-
 	public void setSession(T session, boolean useNewBuffer) {
 		setSession(session, useNewBuffer, true);
 	}
@@ -41,8 +39,12 @@ public abstract class AbstractBackendIOTask<T extends AbstractMySQLSession> impl
 	public void setSession(T session, boolean useNewBuffer, boolean useNewCurHandler) {
 		this.useNewBuffer = useNewBuffer;
 		if (useNewBuffer) {
-			prevProxyBuffer = session.proxyBuffer;
-			session.proxyBuffer = session.allocNewProxyBuffer();
+			MySQLPacketInf curPacketInf = session.curPacketInf;
+//			if (!curPacketInf.isSingleProxyBuffer()){
+//				throw new RuntimeException("!curPacketInf.isSingleProxyBuffer()");
+//			}
+			prevProxyBuffer = curPacketInf.getProxyBuffer();
+			session.curPacketInf.setProxyBuffer( curPacketInf.allocNewProxyBuffer());
 			session.setCurBufOwner(true);
 		}
 		if (session != null && useNewCurHandler) {
@@ -53,14 +55,16 @@ public abstract class AbstractBackendIOTask<T extends AbstractMySQLSession> impl
 
 	protected void finished(boolean success) throws IOException {
 		if (useNewBuffer) {
+			this.session.setCurBufOwner(false);
 			revertPreBuffer();
 		}
 		callBack.finished(session, this, success, this.errPkg);
 	}
 
 	protected void revertPreBuffer() {
-		session.recycleAllocedBuffer(session.proxyBuffer);
-		session.proxyBuffer = this.prevProxyBuffer;
+		session.curPacketInf.recycleAllocedBuffer(session.curPacketInf.getProxyBuffer());
+		session.curPacketInf.setProxyBuffer(this.prevProxyBuffer);
+		this.prevProxyBuffer = null;
 	}
 
 	public void onConnect(SelectionKey theKey, MySQLSession userSession, boolean success, String msg)
@@ -91,9 +95,8 @@ public abstract class AbstractBackendIOTask<T extends AbstractMySQLSession> impl
 
 	@Override
 	public void onWriteFinished(T s) throws IOException {
-		s.proxyBuffer.reset();
+		s.curPacketInf.reset();
 		s.change2ReadOpts();
-
 	}
 
 }

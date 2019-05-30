@@ -26,15 +26,15 @@ public class BlockSqlCmd extends SQLAnnotationCmd {
 			errPkg.packetId = 1;
 			errPkg.errno  = ErrorCode.ERR_WRONG_USED;
 			errPkg.message = getErrMsg();
-			session.proxyBuffer.reset();
-			session.responseOKOrError(errPkg);
+			session.curPacketInf.getProxyBuffer().reset();
+			session.responseMySQLPacket(errPkg);
 			logger.error(errPkg.message);
 		return false;
 	}
 
 	@Override
 	public boolean onFrontWriteFinished(MycatSession session) throws IOException {
-		session.proxyBuffer.flip();
+		session.curPacketInf.getProxyBuffer().flip();
 		// session.chnageBothReadOpts();
 		session.takeOwner(SelectionKey.OP_READ);
 		return true;

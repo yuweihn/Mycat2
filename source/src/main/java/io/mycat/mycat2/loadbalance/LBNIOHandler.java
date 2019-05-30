@@ -46,7 +46,7 @@ public class LBNIOHandler implements NIOHandler<LBSession> {
     @Override
     public void onSocketRead(LBSession session) throws IOException {
         if (session.readFromChannel()) {
-            ProxyBuffer curBuffer = session.proxyBuffer;
+            ProxyBuffer curBuffer = session.curPacketInf.getProxyBuffer();
             curBuffer.flip();
             curBuffer.readIndex = curBuffer.writeIndex;
             session.giveupOwner(SelectionKey.OP_WRITE);
@@ -61,7 +61,7 @@ public class LBNIOHandler implements NIOHandler<LBSession> {
 
     @Override
     public void onWriteFinished(LBSession session) throws IOException {
-        session.proxyBuffer.flip();
+        session.curPacketInf.getProxyBuffer().flip();
         session.change2ReadOpts();
     }
 

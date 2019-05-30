@@ -1,13 +1,13 @@
 package io.mycat.mycat2.loadbalance;
 
+import io.mycat.proxy.AbstractSession;
+import io.mycat.proxy.NIOHandler;
+import io.mycat.proxy.buffer.BufferPool;
+
 import java.io.IOException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-
-import io.mycat.proxy.AbstractSession;
-import io.mycat.proxy.NIOHandler;
-import io.mycat.proxy.buffer.BufferPool;
 
 /**
  * 负载均衡器前端会话
@@ -19,15 +19,15 @@ public class LBSession extends AbstractSession {
 
     public LBSession(BufferPool bufferPool, Selector selector,
                      SocketChannel channel, NIOHandler nioHandler) throws IOException {
-        super(bufferPool, selector, channel,nioHandler);
+        super(bufferPool, selector, channel, nioHandler);
     }
 
     public void setCurBufOwner(boolean ownerFlag) {
-        curBufOwner = ownerFlag;
+        this.curPacketInf.setCurBufOwner(ownerFlag);
     }
 
     public void takeOwner(int intestOpts) {
-        curBufOwner = true;
+        this.curPacketInf.setCurBufOwner(true);
         if (intestOpts == SelectionKey.OP_READ) {
             change2ReadOpts();
         } else {

@@ -1,5 +1,6 @@
 package io.mycat.proxy;
 
+import io.mycat.mycat2.beans.MycatException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -189,7 +190,18 @@ public class ProxyBuffer {
     public void flip() {
         this.inReading = !this.inReading;
     }
-
+    public void flipToReading() {
+        if(this.inReading){
+            throw new MycatException("has been in reading");
+        }
+        this.inReading = true;
+    }
+    public void flipToWriting() {
+        if(!this.inReading){
+            throw new MycatException("has been in writing");
+        }
+        this.inReading = false;
+    }
     public ProxyBuffer writeBytes(byte[] bytes) {
         this.writeBytes(bytes.length, bytes);
         return this;

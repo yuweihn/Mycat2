@@ -12,13 +12,13 @@ import java.nio.channels.SelectionKey;
 public class ProxyNIOHandler implements NIOHandler<ProxySession> {
     @Override
     public void onConnect(SelectionKey curKey, ProxySession session, boolean success, String msg) throws IOException {
-        session.useSharedBuffer(session.getLbSession().proxyBuffer);
+        session.curPacketInf.useSharedBuffer(session.getLbSession().curPacketInf.getProxyBuffer());
     }
 
     @Override
     public void onSocketRead(ProxySession session) throws IOException {
         if (session.readFromChannel()) {
-            ProxyBuffer curBuffer = session.proxyBuffer;
+            ProxyBuffer curBuffer = session.curPacketInf.getProxyBuffer();
             curBuffer.flip();
             curBuffer.readIndex = curBuffer.writeIndex;
             session.giveupOwner(SelectionKey.OP_WRITE);
@@ -33,7 +33,7 @@ public class ProxyNIOHandler implements NIOHandler<ProxySession> {
 
     @Override
     public void onWriteFinished(ProxySession session) throws IOException {
-        session.proxyBuffer.flip();
+        session.curPacketInf.getProxyBuffer().flip();
         session.takeOwner(SelectionKey.OP_READ);
     }
 

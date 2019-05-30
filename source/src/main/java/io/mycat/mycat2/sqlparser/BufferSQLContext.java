@@ -164,7 +164,7 @@ public class BufferSQLContext {
         myCmdValue.init();
         catletNameStart = 0;
         catletNameLength = 0;
-        mergeAnnotation.clear();//@todo maybe clear in the end of parse
+        mergeAnnotation.clear();//@todo maybe reset in the end of parse
     }
 
     public void setTblName(int hashArrayPos) {

@@ -1,5 +1,6 @@
 package io.mycat.proxy;
 
+import io.mycat.mycat2.beans.MycatException;
 import io.mycat.proxy.buffer.BufferPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -155,10 +156,16 @@ public class ProxyReactorThread<T extends Session> extends Thread {
 							logger.warn("Socket IO err :", e);
 						}
 						key.cancel();
-
 						if (reactorEnv.curSession != null) {
 							reactorEnv.curSession.close(false, "Socket IO err:" + e);
                             reactorEnv.curSession = null;
+						}
+					}catch (Throwable t){
+						t.printStackTrace();
+						key.cancel();
+						if (reactorEnv.curSession != null) {
+							reactorEnv.curSession.close(false, "logic  err:" + t);
+							reactorEnv.curSession = null;
 						}
 					}
 				}

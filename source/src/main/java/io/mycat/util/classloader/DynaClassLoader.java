@@ -208,7 +208,7 @@ public class DynaClassLoader {
 			Map.Entry<String, DynaClass> entry = itor.next();
 			DynaClass dyCls = entry.getValue();
 			if (dyCls.lastModified < deadTime) {
-				LOGGER.info("clear unused catlet " + entry.getKey());
+				LOGGER.info("reset unused catlet " + entry.getKey());
 				dyCls.clear();
 				itor.remove();
 			}

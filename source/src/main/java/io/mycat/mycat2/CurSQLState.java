@@ -63,7 +63,7 @@ public class CurSQLState {
 	 * 清理所有状态数据
 	 */
 	public void clear() {
-		logger.debug("clear sql state,total entries  ", requestAttrMap.size());
+		logger.debug("reset sql state,total entries  ", requestAttrMap.size());
 		requestAttrMap.clear();
 	}
 

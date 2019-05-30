@@ -1,6 +1,7 @@
 package io.mycat.mycat2;
 
 import io.mycat.mycat2.beans.MySQLMetaBean;
+import io.mycat.mycat2.beans.MycatException;
 import io.mycat.mycat2.beans.conf.DNBean;
 import io.mycat.mycat2.beans.conf.SchemaBean;
 import io.mycat.mycat2.cmds.LoadDataState;
@@ -19,7 +20,7 @@ import io.mycat.proxy.MycatReactorThread;
 import io.mycat.proxy.NIOHandler;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.buffer.BufferPool;
-import io.mycat.util.ParseUtil;
+import io.mycat.util.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,17 +30,18 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.security.InvalidParameterException;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * 前端连接会话
  *
- * @author wuzhihui
+ * @author wuzhihui , cjw
  */
 public class MycatSession extends AbstractMySQLSession {
 
     private static Logger logger = LoggerFactory.getLogger(MycatSession.class);
-    private static List<Byte> masterSqlList = new ArrayList<>();
+    private static Set<Byte> masterSqlList = new HashSet<>();
 
     static {
         masterSqlList.add(BufferSQLContext.INSERT_SQL);
@@ -62,7 +64,7 @@ public class MycatSession extends AbstractMySQLSession {
         masterSqlList.add(BufferSQLContext.SET_AUTOCOMMIT_SQL);
     }
 
-    private ArrayList<MySQLSession> backends = new ArrayList<>(2);
+    private final ArrayList<MySQLSession> backends = new ArrayList<>(2);
     private int curBackendIndex = -1;
     // 当前SQL期待在哪个目标DataNode上执行
     private DNBean targetDataNode;
@@ -85,11 +87,15 @@ public class MycatSession extends AbstractMySQLSession {
     }
 
     public MycatSession(BufferPool bufPool, Selector nioSelector, SocketChannel frontChannel, NIOHandler nioHandler) throws IOException {
-        super(bufPool, nioSelector, frontChannel,nioHandler);
+        super(bufPool, nioSelector, frontChannel, nioHandler);
 
     }
 
-    protected int getServerCapabilities() {
+    /**
+     * 服务器能力@cjw
+     * @return
+     */
+    public int getServerCapabilities() {
         int flag = 0;
         flag |= Capabilities.CLIENT_LONG_PASSWORD;
         flag |= Capabilities.CLIENT_FOUND_ROWS;
@@ -116,37 +122,6 @@ public class MycatSession extends AbstractMySQLSession {
         return flag;
     }
 
-    /**
-     * 给客户端（front）发送认证报文
-     *
-     * @throws IOException
-     */
-    public void sendAuthPackge() throws IOException {
-        byte[][] seedParts = MysqlNativePasswordPluginUtil.nextSeedBuild();
-        this.seed = seedParts[2];
-
-        // 发送握手数据包
-        HandshakePacket hs = new HandshakePacket();
-        hs.packetId = 0;
-        hs.protocolVersion = Version.PROTOCOL_VERSION;
-        hs.serverVersion = new String(Version.SERVER_VERSION);
-        hs.connectionId = getSessionId();
-        hs.authPluginDataPartOne = new String(seedParts[0]);
-        hs.capabilities = new CapabilityFlags(getServerCapabilities());
-        hs.hasPartTwo = true;
-        hs.characterSet = 8;
-        hs.statusFlags = 2;
-        hs.authPluginDataLen = 21; // 有插件的话，总长度必是21, seed
-        hs.authPluginDataPartTwo = new String(seedParts[1]);
-        hs.authPluginName = MysqlNativePasswordPluginUtil.PROTOCOL_PLUGIN_NAME;
-        if (hs.calcPacketSize() + 4 > proxyBuffer.getBuffer().limit()) {
-            throw new RuntimeException("bufferPoolChunkSize is too small");
-        }
-        hs.write(proxyBuffer);
-        proxyBuffer.flip();
-        proxyBuffer.readIndex = proxyBuffer.writeIndex;
-        this.writeToChannel();
-    }
 
     /**
      * 关闭后端连接,同时向前端返回错误信息
@@ -156,7 +131,7 @@ public class MycatSession extends AbstractMySQLSession {
     public void closeAllBackendsAndResponseError(boolean normal, ErrorPacket error) {
         unbindAndCloseAllBackend(normal, error.message);
         takeBufferOwnerOnly();
-        responseOKOrError(error);
+        responseMySQLPacket(error);
     }
 
     /**
@@ -189,10 +164,10 @@ public class MycatSession extends AbstractMySQLSession {
      */
     public void sendErrorMsg(int errno, String errMsg) {
         ErrorPacket errPkg = new ErrorPacket();
-        errPkg.packetId = (byte) (proxyBuffer.getByte(curPacketInf.startPos + ParseUtil.mysql_packetHeader_length) + 1);
+        errPkg.packetId = (byte)(this.curPacketInf.getCurrPacketId()+1);
         errPkg.errno = errno;
         errPkg.message = errMsg;
-        responseOKOrError(errPkg);
+        responseMySQLPacket(errPkg);
     }
 
     /**
@@ -202,23 +177,25 @@ public class MycatSession extends AbstractMySQLSession {
      * @param backend
      */
     public void bindBackend(MySQLSession backend) {
-        if (backend == null || !backend.isIdle()) {
-            throw new RuntimeException("Mycat Session Binding failed for MySQL Session");
+        if (backend == null || !backend.isIdle()||backend.getMycatSession()!=null) {
+            throw new MycatException("Mycat Session Binding failed for MySQL Session");
         }
-        backend.setIdle(true);
-        ((MycatReactorThread) Thread.currentThread()).mysqlSessionMan.removeSession(backend);
+        ((MycatReactorThread) Thread.currentThread()).mysqlSessionMan.removeIdleMySQLSession(backend);
         this.curBackendIndex = putBackendMap(backend);
         logger.debug(" {} bind backConnection  for {}", this, backend);
     }
 
+    /**
+     *解除一个MySQLSession的绑定,标记当前使用Session在缓存中的下标
+     * @param backend
+     */
     public void unbindBackend(MySQLSession backend) {
         logger.debug(" {} unbind backConnection  for {}", this, backend);
         MySQLSession curSession = this.getCurBackend();
-        if (!backends.remove(backend)) {
-            throw new RuntimeException("can't find backend " + backend);
+        if (backend==null||!backends.remove(backend)) {
+            throw new MycatException("can't find backend " + backend);
         } else {
             unbindMySQLSession(backend);
-            ((MycatReactorThread) Thread.currentThread()).mysqlSessionMan.addMySQLSession(backend);
         }
         // 调整curBackendIndex
         if (curSession == backend) {
@@ -228,6 +205,18 @@ public class MycatSession extends AbstractMySQLSession {
         }
     }
 
+    /**
+     * 用于帮助解除MySQLSession绑定的函数,清除在mysqlSession里mycatSession的状态@cjw
+     * @param mysql
+     */
+    private static void unbindMySQLSession(MySQLSession mysql) {
+        mysql.setMycatSession(null);
+        mysql.curPacketInf.useSharedBuffer(null);
+        mysql.setCurBufOwner(true); // 设置后端连接 获取buffer 控制权
+        mysql.setIdle(true);
+        MySQLSessionManager mySessionManager = (MySQLSessionManager) (mysql.<MySQLSession>getMySessionManager());
+        mySessionManager.addIdleMySQLSession(mysql);
+    }
     /**
      * 将所有后端连接归还到ds中
      */
@@ -240,12 +229,19 @@ public class MycatSession extends AbstractMySQLSession {
         curBackendIndex = -1;
     }
 
+    /**
+     * 获取当前mycatSession使用的backend,会返回空指针@cjw
+     * @return
+     */
     public MySQLSession getCurBackend() {
         return (this.curBackendIndex == -1) ? null : this.backends.get(this.curBackendIndex);
     }
 
+    /**
+     * 使mycatSession获取Proxybuffer的所有权,同时使对应后端MysqlSession失去Proxybuffer的所有权@cjw
+     */
     public void takeBufferOwnerOnly() {
-        this.curBufOwner = true;
+        this.curPacketInf.setCurBufOwner(true);
         MySQLSession curBackend = getCurBackend();
         if (curBackend != null) {
             curBackend.setCurBufOwner(false);
@@ -259,7 +255,7 @@ public class MycatSession extends AbstractMySQLSession {
      * @return
      */
     public void takeOwner(int intestOpts) {
-        this.curBufOwner = true;
+        this.setCurBufOwner(true);
         if (intestOpts == SelectionKey.OP_READ) {
             this.change2ReadOpts();
         } else {
@@ -278,7 +274,7 @@ public class MycatSession extends AbstractMySQLSession {
      * @param intestOpts
      */
     public void giveupOwner(int intestOpts) {
-        this.curBufOwner = false;
+        this.setCurBufOwner(false);
         this.clearReadWriteOpts();
         MySQLSession curBackend = getCurBackend();
         if (curBackend != null) {
@@ -299,22 +295,42 @@ public class MycatSession extends AbstractMySQLSession {
      * @throws IOException
      */
     public void answerFront(byte[] rawPkg) throws IOException {
-        proxyBuffer.writeBytes(rawPkg);
-        proxyBuffer.flip();
-        proxyBuffer.readIndex = proxyBuffer.writeIndex;
+        this.curPacketInf.getProxyBuffer().writeBytes(rawPkg);
+        this.curPacketInf.getProxyBuffer().flip();
+        this.curPacketInf.getProxyBuffer().readIndex = this.curPacketInf.getProxyBuffer().writeIndex;
         writeToChannel();
     }
 
+    /**
+     * 关闭mycat Session
+     * 1.为了提高MySQLSession的利用效率,所以优先解除MySQLSession@cjw
+     * 2.该函数被设计成可以幂等的,可以重复调用
+     * 3.一旦调用该函数,应该彻底释放资源,同时mycatSession的handle不应该被io调用
+     * @param normal
+     * @param hint
+     */
     public void close(boolean normal, String hint) {
+        if (normal){
+            this.unbindBackends();
+        }else {
+            this.unbindAndCloseAllBackend(normal,hint);
+        }
+
         super.close(normal, hint);
-        this.unbindBackends();
     }
 
+    /**
+     *
+     */
     @Override
     protected void doTakeReadOwner() {
         this.takeOwner(SelectionKey.OP_READ);
     }
 
+    /**
+     *
+     * @return
+     */
     private String getbackendName() {
         String backendName = null;
         switch (mycatSchema.getSchemaType()) {
@@ -336,18 +352,11 @@ public class MycatSession extends AbstractMySQLSession {
                 break;
         }
         if (backendName == null) {
-            throw new InvalidParameterException("the backendName must not be null");
+            throw new MycatException("the backendName must not be null");
         }
         return backendName;
     }
 
-    public void responseOKOrError(byte[] pkg) throws IOException {
-        super.responseOKOrError(pkg);
-    }
-
-    public void responseOKOrError(MySQLPacket pkg) {
-        super.responseOKOrError(pkg);
-    }
 
     public MySQLCommand getCurSQLCommand() {
         return curSQLCommand;
@@ -355,14 +364,24 @@ public class MycatSession extends AbstractMySQLSession {
 
     /**
      * 将后端连接放入到后端连接缓存中
+     * 1.设置后端Session被占用
+     * 2.mysqlSession设置mycatSession的引用
+     * 3.mysqlSession使用mysession的Proxybuffer
+     * 4.设置回调处理句柄
+     * 5.添加到session缓存中
      *
+     * @author chenjunwen
      * @param backend
      */
     private int putBackendMap(MySQLSession backend) {
-        backend.setMycatSession(this);
-        backend.useSharedBuffer(this.proxyBuffer);
-        backend.setCurNIOHandler(this.getCurNIOHandler());
+  if (!backend.isIdle()||backend.getMycatSession()!=null) {
+
+      throw new MycatException("backend is not idle");
+  }
         backend.setIdle(false);
+        backend.setMycatSession(this);
+        backend.curPacketInf.useSharedBuffer(this.curPacketInf.getProxyBuffer());
+        backend.setCurNIOHandler(this.getCurNIOHandler());
         this.backends.add(backend);
         int total = backends.size();
         logger.debug("add backend connection in mycatSession : {}, totals : {}  ,new bind is : {}", this, total,
@@ -442,18 +461,18 @@ public class MycatSession extends AbstractMySQLSession {
         this.mycatSchema = mycatSchema;
     }
 
-    private void unbindMySQLSession(MySQLSession mysql) {
-        mysql.proxyBuffer.reset();
-        mysql.setMycatSession(null);
-        mysql.useSharedBuffer(null);
-        mysql.setCurBufOwner(true); // 设置后端连接 获取buffer 控制权
-        mysql.setIdle(true);
-    }
 
     public void switchSQLCommand(MySQLCommand newCmd) {
         logger.debug("{} switch command from {} to  {} ", this, this.curSQLCommand, newCmd);
         this.curSQLCommand = newCmd;
+    }
 
+    public ErrorPacket errorPacket(String message){
+        ErrorPacket errorPacket = new ErrorPacket();
+        errorPacket.message = message;
+        errorPacket.errno = ErrorCode.ER_UNKNOWN_ERROR;
+        errorPacket.packetId = (byte)( this.curPacketInf.getCurrPacketId()+1);
+        return errorPacket;
     }
 
 }

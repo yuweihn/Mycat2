@@ -40,6 +40,7 @@ public class BackendHeartbeatTask extends BackendIOTaskWithResultSet<MySQLSessio
 
 
     public BackendHeartbeatTask(MySQLSession optSession, MySQLDetector detector) {
+        super(optSession,false);
         this.detector = detector;
         this.metaBean = detector.getHeartbeat().getSource();
         this.repBean = metaBean.getRepBean();
@@ -47,17 +48,16 @@ public class BackendHeartbeatTask extends BackendIOTaskWithResultSet<MySQLSessio
     }
 
     public void doHeartbeat() {
-        optSession.proxyBuffer.reset();
+
         CommandPacket packet = new CommandPacket();
         packet.packetId = 0;
         packet.command = MySQLCommand.COM_QUERY;
         packet.arg = repBean.getReplicaBean().getRepType().getHearbeatSQL();
-        packet.write(optSession.proxyBuffer);
-        packet = null;
-        optSession.proxyBuffer.flip();
-        optSession.proxyBuffer.readIndex = optSession.proxyBuffer.writeIndex;
+
         try {
+            optSession.curPacketInf.writeMySQLPacket(packet);
             optSession.writeToChannel();
+            optSession.curPacketInf.setResponse();
         } catch (IOException e) {
             e.printStackTrace();
             logger.error(" The backend heartbeat task write to mysql is error . {}", e.getMessage());
@@ -68,7 +68,7 @@ public class BackendHeartbeatTask extends BackendIOTaskWithResultSet<MySQLSessio
 
     @Override
     void onRsColCount(MySQLSession session) {
-        ProxyBuffer proxyBuffer = session.proxyBuffer;
+        ProxyBuffer proxyBuffer = session.curPacketInf.getProxyBuffer();
         MySQLPacketInf curPacketInf = session.curPacketInf;
         //读取有多少列
         fieldCount = (int) proxyBuffer.getLenencInt(curPacketInf.startPos + MySQLPacket.packetHeaderSize);
@@ -77,7 +77,7 @@ public class BackendHeartbeatTask extends BackendIOTaskWithResultSet<MySQLSessio
 
     @Override
     void onRsColDef(MySQLSession session) {
-        ProxyBuffer proxyBuffer = session.proxyBuffer;
+        ProxyBuffer proxyBuffer = session.curPacketInf.getProxyBuffer();
         MySQLPacketInf curMQLPackgInf = session.curPacketInf;
 //        byte[] bytes = proxyBuffer.getBytes(curMQLPackgInf.startPos+MySQLPacket.packetHeaderSize+1,
 //        									curMQLPackgInf.pkgLength - MySQLPacket.packetHeaderSize - 1);
@@ -95,7 +95,7 @@ public class BackendHeartbeatTask extends BackendIOTaskWithResultSet<MySQLSessio
 
     @Override
     void onRsRow(MySQLSession session) {
-        ProxyBuffer proxyBuffer = session.proxyBuffer;
+        ProxyBuffer proxyBuffer = session.curPacketInf.getProxyBuffer();
         MySQLPacketInf curMQLPackgInf = session.curPacketInf;
         int rowDataIndex = curMQLPackgInf.startPos + MySQLPacket.packetHeaderSize;
 
@@ -121,7 +121,7 @@ public class BackendHeartbeatTask extends BackendIOTaskWithResultSet<MySQLSessio
     void onRsFinish(MySQLSession session, boolean success, String msg) {
         if (success) {
             //归还连接
-            session.proxyBuffer.reset();
+            session.curPacketInf.getProxyBuffer().reset();
             optSession.setIdle(true);
             switch (repBean.getReplicaBean().getRepType()) {
                 case MASTER_SLAVE:

@@ -2,10 +2,8 @@ package io.mycat.mycat2.tasks;
 
 import io.mycat.mycat2.MySQLSession;
 import io.mycat.mycat2.beans.MySQLMetaBean;
-import io.mycat.mycat2.beans.conf.SchemaBean;
 import io.mycat.mysql.MySQLPacketInf;
 import io.mycat.mysql.MysqlNativePasswordPluginUtil;
-import io.mycat.mysql.PayloadType;
 import io.mycat.mysql.packet.AuthPacket;
 import io.mycat.mysql.packet.ErrorPacket;
 import io.mycat.mysql.packet.HandshakePacket;
@@ -32,9 +30,7 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
     private HandshakePacket handshake;
     private boolean welcomePkgReceived = false;
     private MySQLMetaBean mySQLMetaBean;
-    private SchemaBean schema;
     private InetSocketAddress serverAddress;
-
 
 
     /**
@@ -43,20 +39,18 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
      * @param bufPool
      * @param nioSelector   在哪个Selector上注册NIO事件（即对应哪个ReactorThread）
      * @param mySQLMetaBean
-     * @param schema
      * @param callBack      创建连接结束（成功或失败）后的回调接口
      * @throws IOException
      */
     public BackendConCreateTask(BufferPool bufPool, Selector nioSelector, MySQLMetaBean mySQLMetaBean,
-                                SchemaBean schema, AsynTaskCallBack<MySQLSession> callBack) throws IOException {
+                                AsynTaskCallBack<MySQLSession> callBack) throws IOException {
+        super(null,false);
         String serverIP = mySQLMetaBean.getDsMetaBean().getIp();
         int serverPort = mySQLMetaBean.getDsMetaBean().getPort();
         logger.info("Connecting to backend MySQL Server " + serverIP + ":" + serverPort);
         serverAddress = new InetSocketAddress(serverIP, serverPort);
         SocketChannel backendChannel = SocketChannel.open();
         this.mySQLMetaBean = mySQLMetaBean;
-        this.schema = schema;
-
         if (logger.isDebugEnabled()) {
             if (backendChannel.isConnected()) {
                 logger.debug("MySQL client is not connected so start connecting" + backendChannel);
@@ -66,8 +60,7 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         MycatReactorThread mycatReactorThread = (MycatReactorThread) Thread.currentThread();
         AsynTaskCallBack<MySQLSession> task = (session, sender, success, result) -> {
             if (success) {
-                session.setMySQLMetaBean(backendConCreateTask.getMySQLMetaBean());
-                session.setSessionManager(mycatReactorThread.mysqlSessionMan);
+                mycatReactorThread.mysqlSessionMan.addNewMySQLSession(session);
                 callBack.finished(session, mycatReactorThread.mysqlSessionMan, success, result);
             } else {
                 callBack.finished(session, mycatReactorThread.mysqlSessionMan, false, result);
@@ -75,24 +68,32 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         };
         backendConCreateTask.setCallback(task);
         backendChannel.configureBlocking(false);
-        MySQLSession mySQLSession = new MySQLSession(bufPool, nioSelector, backendChannel, backendConCreateTask);
+        MySQLSession mySQLSession = new MySQLSession(bufPool, nioSelector, backendChannel, backendConCreateTask, mySQLMetaBean);
         backendConCreateTask.setSession(mySQLSession, false);
-        mySQLSession.setMySQLMetaBean(mySQLMetaBean);
         backendChannel.connect(backendConCreateTask.getServerAddress());
     }
 
     @Override
+    public void onWriteFinished(MySQLSession s) throws IOException {
+        session.curPacketInf.reset();
+        s.change2ReadOpts();
+    }
+
+    @Override
     public void onSocketRead(MySQLSession session) throws IOException {
-        if (!session.readFromChannel() || PayloadType.FULL_PAYLOAD != session.resolveFullPayload()) {
-            // 没有读到数据或者报文不完整
+        if (!session.readFromChannel()) {
             return;
         }
+        if (!session.curPacketInf.readFully()){
+            return;
+        }
+      //  MySQLPacketInf.simpleJudgeFullPacket()
 
         if (MySQLPacket.ERROR_PACKET == session.curPacketInf.head) {
             errPkg = new ErrorPacket();
             MySQLPacketInf curMQLPackgInf = session.curPacketInf;
-            session.proxyBuffer.readIndex = curMQLPackgInf.startPos;
-            errPkg.read(session.proxyBuffer);
+            session.curPacketInf.getProxyBuffer().readIndex = curMQLPackgInf.startPos;
+            errPkg.read(session.curPacketInf.getProxyBuffer());
             logger.warn("backend authed failed. Err No. " + errPkg.errno + "," + errPkg.message);
             this.finished(false);
             return;
@@ -100,7 +101,7 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
 
         if (!welcomePkgReceived) {
             handshake = new HandshakePacket();
-            handshake.read(this.session.proxyBuffer);
+            handshake.read(this.session.curPacketInf.getProxyBuffer());
 
             // 设置字符集编码
             // int charsetIndex = (handshake.characterSet & 0xff);
@@ -122,12 +123,12 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
             // }
 
             // 不透传的状态下，需要自己控制Buffer的状态，这里每次写数据都切回初始Write状态
-            session.proxyBuffer.reset();
-            packet.write(session.proxyBuffer);
-            session.proxyBuffer.flip();
+            session.curPacketInf.getProxyBuffer().reset();
+            packet.write(session.curPacketInf.getProxyBuffer());
+            session.curPacketInf.getProxyBuffer().flip();
             // 不透传的状态下， 自己指定需要写入到channel中的数据范围
             // 没有读取,直接透传时,需要指定 透传的数据 截止位置
-            session.proxyBuffer.readIndex = session.proxyBuffer.writeIndex;
+            session.curPacketInf.getProxyBuffer().readIndex = session.curPacketInf.getProxyBuffer().writeIndex;
             session.writeToChannel();
             welcomePkgReceived = true;
         } else {
@@ -178,9 +179,6 @@ public class BackendConCreateTask extends AbstractBackendIOTask<MySQLSession> {
         return mySQLMetaBean;
     }
 
-    public SchemaBean getSchema() {
-        return schema;
-    }
 
     public InetSocketAddress getServerAddress() {
         return serverAddress;

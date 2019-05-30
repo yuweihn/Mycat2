@@ -3,6 +3,7 @@ package io.mycat.mycat2.cmds;
 import io.mycat.mycat2.MySQLCommand;
 import io.mycat.mycat2.MySQLSession;
 import io.mycat.mycat2.MycatSession;
+import io.mycat.mysql.ComQueryState;
 import io.mycat.mysql.Fields;
 import io.mycat.mysql.packet.ColumnDefPacket;
 import io.mycat.mysql.packet.EOFPacket;
@@ -41,7 +42,7 @@ public class ShowDbCmd implements MySQLCommand {
 	@Override
 	public boolean procssSQL(MycatSession session) throws IOException {
 
-		ProxyBuffer buffer = session.proxyBuffer;
+		ProxyBuffer buffer = session.curPacketInf.getProxyBuffer();
 		buffer.reset();
 
 		// write header
@@ -91,7 +92,7 @@ public class ShowDbCmd implements MySQLCommand {
 
 	@Override
 	public boolean onFrontWriteFinished(MycatSession session) throws IOException {
-		session.proxyBuffer.flip();
+		session.curPacketInf.getProxyBuffer().flip();
 		session.takeOwner(SelectionKey.OP_READ);
 		return false;
 	}
@@ -105,7 +106,7 @@ public class ShowDbCmd implements MySQLCommand {
 	@Override
 	public void clearResouces(MycatSession session, boolean sessionCLosed) {
 		if (sessionCLosed) {
-			session.recycleAllocedBuffer(session.getProxyBuffer());
+			session.curPacketInf.reset();
 			session.unbindBackends();
 		}
 	}
