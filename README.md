@@ -9,7 +9,6 @@ Mycat 2.0 wiki(https://github.com/MyCATApache/Mycat2/wiki)
 
 Mycat 2.0 Projects(https://github.com/MyCATApache/Mycat2/projects/1)
 
-参与MyCAT 2.0 开发 联系 qq:294712221
 
 
 # 功能特性
