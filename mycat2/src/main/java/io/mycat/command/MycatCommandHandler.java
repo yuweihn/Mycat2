@@ -19,13 +19,15 @@ import io.mycat.command.CommandDispatcher.AbstractCommandHandler;
 import io.mycat.command.loaddata.LoaddataContext;
 import io.mycat.command.prepareStatement.PrepareStmtContext;
 import io.mycat.config.schema.SchemaType;
+import io.mycat.plug.loadBalance.LoadBalanceStrategy;
 import io.mycat.proxy.ProxyRuntime;
-import io.mycat.proxy.handler.backend.MySQLDataSourceQuery;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.proxy.session.SessionManager.FrontSessionManager;
 import io.mycat.router.MycatRouter;
 import io.mycat.router.MycatRouterConfig;
+import io.mycat.router.ResultRoute;
+import io.mycat.router.routeResult.OneServerResultRoute;
 import io.mycat.sqlparser.util.BufferSQLContext;
 import java.util.Map;
 
@@ -38,20 +40,21 @@ public class MycatCommandHandler extends AbstractCommandHandler {
   private MycatSession mycat;
   private PrepareStmtContext prepareContext;
   private final LoaddataContext loadDataContext = new LoaddataContext();
-  private QueryHandler queryHandler ;
+  private QueryHandler queryHandler;
+
 
   @Override
-  public void initRuntime(MycatSession mycat,ProxyRuntime runtime) {
+  public void initRuntime(MycatSession mycat, ProxyRuntime runtime) {
     this.mycat = mycat;
-    MycatRouterConfig routerConfig = new MycatRouterConfig(runtime.getConfig());
-    this.router = new MycatRouter(routerConfig);
+    this.router = new MycatRouter((MycatRouterConfig) runtime.getDefContext().get("routeConfig"));
     this.prepareContext = new PrepareStmtContext(mycat);
-    this.queryHandler = new QueryHandler(router,runtime);
+    this.queryHandler = new QueryHandler(router, runtime);
   }
 
   @Override
   public void handleQuery(byte[] sqlBytes, MycatSession mycat) {
-    queryHandler. doQuery(sqlBytes, mycat);
+    MycatSchema schema = router.getSchemaBySchemaName(mycat.getSchema());
+    queryHandler.doQuery(schema, sqlBytes, mycat);
   }
 
 
@@ -166,22 +169,22 @@ public class MycatCommandHandler extends AbstractCommandHandler {
       return;
     }
     String sql = new String(bytes);
-
     BufferSQLContext bufferSQLContext = router.simpleParse(sql);
-    boolean runOnMaster = bufferSQLContext.isSimpleSelect();
-    MySQLDataSourceQuery mySQLQuery = new MySQLDataSourceQuery();
-    mySQLQuery.setRunOnMaster(runOnMaster);
-    if (schema.getSchemaType() == SchemaType.DB_IN_ONE_SERVER) {
-      String dataNode = schema.getDefaultDataNode();
-      mycat.switchDataNode(dataNode);
-      prepareContext.newReadyPrepareStmt(sql, dataNode, mySQLQuery);
-      return;
-    } else {
-      mycat.setLastMessage(
-          "MySQLProxyPrepareStatement only support in DB_IN_ONE_SERVER or DB_IN_MULTI_SERVER");
-      mycat.writeErrorEndPacket();
+    ResultRoute resultRoute = router.enterRoute(schema, bufferSQLContext, sql);
+    switch (resultRoute.getType()) {
+      case ONE_SERVER_RESULT_ROUTE:
+        OneServerResultRoute route = (OneServerResultRoute) resultRoute;
+        LoadBalanceStrategy balance = mycat.getRuntime()
+            .getLoadBalanceByBalanceName(resultRoute.getBalance());
+        String dataNode = schema.getDefaultDataNode();
+        mycat.switchDataNode(dataNode);
+        prepareContext.newReadyPrepareStmt(sql, dataNode, route.isRunOnMaster(false), balance);
+        return;
+      default:
+        mycat.setLastMessage(
+            "MySQLProxyPrepareStatement only support in DB_IN_ONE_SERVER or DB_IN_MULTI_SERVER");
+        mycat.writeErrorEndPacket();
     }
-
   }
 
   @Override
@@ -208,7 +211,11 @@ public class MycatCommandHandler extends AbstractCommandHandler {
       int numParams,
       byte[] rest,
       MycatSession mycat) {
-    prepareContext.execute(statementId, flags, numParams, rest);
+
+    /////////////////route//////////////////
+
+    //////////////////////////////////
+    prepareContext.execute(statementId, flags, numParams, rest, mycat.getDataNode(), true, null);
   }
 
 
