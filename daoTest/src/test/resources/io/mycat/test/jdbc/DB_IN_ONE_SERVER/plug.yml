@@ -1,0 +1,4 @@
+defaultLoadBalance: BalanceRandom
+loadBalances:
+  - name: BalanceAllRead
+    clazz: io.mycat.plug.loadBalance.BalanceRandom
