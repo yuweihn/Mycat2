@@ -57,7 +57,6 @@ public class RpcServer implements Closeable {
     this.addr = addr;
     this.bind = bind;
     this.handler = handler;
-    this.timeout = timeout;
     worker = ctx.createSocket(SocketType.DEALER);
     if (bind) {
       String[] addrList = addr.split(",");
@@ -96,10 +95,6 @@ public class RpcServer implements Closeable {
     ZMsg msg = ZMsg.recvMsg(worker);
     handler.onUpdateActiveTime(this.lastActiveTime);
     byte[] data = msg.getLast().getData();
-    if (data.length==0){
-      msg.send(worker,true);
-      return;
-    }
     RpcSocketImpl rpcSocket = new RpcSocketImpl();
     rpcSocket.setFrames(msg);
     rpcSocket.setSocket(worker);
