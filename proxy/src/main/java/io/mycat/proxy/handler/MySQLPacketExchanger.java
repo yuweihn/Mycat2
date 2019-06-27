@@ -62,7 +62,7 @@ public enum MySQLPacketExchanger {
   }
 
   private static void onExceptionClearCloseInRequest(MycatSession mycat, Exception e,
-      PacketExchangerCallback callbac) {
+      PacketExchangerCallback callback) {
     logger.error("{}", e);
     MycatMonitor.onPacketExchangerWriteException(mycat, e);
     MySQLClientSession mysql = mycat.getMySQLSession();
@@ -71,7 +71,7 @@ public enum MySQLPacketExchanger {
       mysql.resetPacket();
       mysql.close(false, e);
     }
-    callbac.onRequestMySQLException(mycat, e, null);
+    callback.onRequestMySQLException(mycat, e, null);
   }
 
   private static void onClearInNormalResponse(MycatSession mycatSession, MySQLClientSession mysql) {
@@ -360,7 +360,7 @@ public enum MySQLPacketExchanger {
             callback.onRequestComQuery(mySQLPacket, sIndex, eIndex);
             break;
           case REQUEST_SEND_LONG_DATA:
-            callback.onRequestComQuery(mySQLPacket, sIndex, eIndex);
+            callback.onLoadDataRequest(mySQLPacket, sIndex, eIndex);
             break;
           case REQUEST_PREPARE:
             callback.onReqeustPrepareStatement(mySQLPacket, sIndex, eIndex);
@@ -378,25 +378,25 @@ public enum MySQLPacketExchanger {
             callback.onOk(mySQLPacket, sIndex, endPos);
             break;
           case FIRST_EOF:
-            callback.onRowOk(mySQLPacket, sIndex, eIndex);
+            callback.onEof(mySQLPacket, sIndex, eIndex);
             break;
           case COLUMN_COUNT:
-            callback.onRowOk(mySQLPacket, sIndex, eIndex);
+            callback.onColumnCount(packetResolver.getColumnCount());
             break;
           case COLUMN_DEF:
-            callback.onRowOk(mySQLPacket, sIndex, eIndex);
+            callback.onColumnDef(mySQLPacket, sIndex, eIndex);
             break;
           case COLUMN_EOF:
-            callback.onRowOk(mySQLPacket, sIndex, eIndex);
+            callback.onColumnDefEof(mySQLPacket, sIndex, eIndex);
             break;
           case TEXT_ROW:
-            callback.onRowOk(mySQLPacket, sIndex, eIndex);
+            callback.onTextRow(mySQLPacket, sIndex, eIndex);
             break;
           case BINARY_ROW:
-            callback.onRowOk(mySQLPacket, sIndex, eIndex);
+            callback.onBinaryRow(mySQLPacket, sIndex, eIndex);
             break;
           case ROW_EOF:
-            callback.onRowOk(mySQLPacket, sIndex, eIndex);
+            callback.onRowEof(mySQLPacket, sIndex, eIndex);
             break;
           case ROW_FINISHED:
             break;
