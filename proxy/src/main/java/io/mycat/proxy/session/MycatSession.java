@@ -14,28 +14,28 @@
  */
 package io.mycat.proxy.session;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.beans.MySQLServerStatus;
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
+import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
 import io.mycat.beans.mysql.packet.PacketSplitterImpl;
+import io.mycat.beans.mysql.packet.ProxyBuffer;
 import io.mycat.buffer.BufferPool;
-import io.mycat.buffer.CrossSwapThreadBufferPool;
 import io.mycat.command.CommandDispatcher;
 import io.mycat.command.CommandResolver;
 import io.mycat.command.LocalInFileRequestParseHelper.LocalInFileSession;
 import io.mycat.config.MySQLServerCapabilityFlags;
-import io.mycat.logTip.SessionTip;
-import io.mycat.proxy.buffer.ProxyBuffer;
+import io.mycat.proxy.buffer.CrossSwapThreadBufferPool;
 import io.mycat.proxy.buffer.ProxyBufferImpl;
 import io.mycat.proxy.handler.MycatHandler.MycatSessionWriteHandler;
 import io.mycat.proxy.handler.NIOHandler;
 import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.MySQLPacket;
 import io.mycat.proxy.packet.MySQLPacketResolver;
 import io.mycat.proxy.packet.MySQLPacketResolver.ComQueryState;
 import io.mycat.proxy.packet.MySQLPacketResolverImpl;
+import io.mycat.proxy.reactor.ReactorEnv;
 import io.mycat.proxy.reactor.ReactorEnvThread;
 import io.mycat.security.MycatUser;
 import io.mycat.util.CharsetUtil;
@@ -77,11 +77,13 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
   private MySQLClientSession backend;//unbindSource
   private MycatSessionWriteHandler writeHandler = WriteHandler.INSTANCE;
 
+
   public MycatSession(int sessionId, BufferPool bufferPool, NIOHandler nioHandler,
       SessionManager<MycatSession> sessionManager) {
     super(sessionId, nioHandler, sessionManager);
     this.proxyBuffer = new ProxyBufferImpl(bufferPool);
-    this.crossSwapThreadBufferPool = new CrossSwapThreadBufferPool(Thread.currentThread(),
+    this.crossSwapThreadBufferPool = new CrossSwapThreadBufferPool(
+        (ReactorEnvThread) Thread.currentThread(),
         bufferPool);
   }
 
@@ -167,7 +169,7 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
       if (dataNode.equals(this.dataNode)) {
         return;
       } else {
-        throw new MycatExpection(SessionTip.CANNOT_SWITCH_DATANODE.getMessage());
+        throw new MycatException("cannot switch dataNode  maybe session in transaction");
       }
     }
   }
@@ -190,12 +192,24 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
     }
     assert hint != null;
     try {
+      if (crossSwapThreadBufferPool != null) {
+        ReactorEnvThread source = crossSwapThreadBufferPool.getSource();
+        if (source != null) {
+          ReactorEnv reactorEnv = source.getReactorEnv();
+          source.interrupt();
+          reactorEnv.close();
+        }
+      }
+    } catch (Exception e) {
+      LOGGER.error("", e);
+    }
+    try {
       MySQLClientSession sqlSession = getMySQLSession();
       if (sqlSession != null) {
         sqlSession.close(false, hint);
       }
     } catch (Exception e) {
-      LOGGER.error("{}", e);
+      LOGGER.error("", e);
     }
     onHandlerFinishedClear();
     if (this.getMySQLSession() != null) {
@@ -222,7 +236,7 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
 
   @Override
   public void setCurrentProxyBuffer(ProxyBuffer buffer) {
-    throw new MycatExpection("unsupport!");
+    throw new MycatException("unsupport!");
   }
 
   public int getServerCapabilities() {
@@ -354,7 +368,7 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
   }
 
   public void resetSession() {
-    throw new MycatExpection("unsupport!");
+    throw new MycatException("unsupport!");
   }
 
   @Override
@@ -393,7 +407,7 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
 
   @Override
   public void switchMySQLServerWriteHandler() {
-    this.writeHandler = MySQLProxyServerSession.WriteHandler.INSTANCE;
+    this.writeHandler = WriteHandler.INSTANCE;
   }
 
   @Override
@@ -535,15 +549,34 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
     this.serverStatus.setNetWriteTimeout(netWriteTimeout);
   }
 
+  public long getNetWriteTimeout() {
+    return this.serverStatus.getNetWriteTimeout();
+  }
+
+  /**
+   * 在业务线程使用,在业务线程运行的时候设置业务线程当前的session,方便监听类获取session记录
+   */
   public void deliverWorkerThread(ReactorEnvThread thread) {
     crossSwapThreadBufferPool.bindSource(thread);
     assert thread == Thread.currentThread();
     thread.getReactorEnv().setCurSession(this);
   }
 
+  /**
+   * 业务线程执行结束,清除业务线程的session,并代表处理结束
+   */
   public void backFromWorkerThread(ReactorEnvThread thread) {
     crossSwapThreadBufferPool.unbindSource(thread);
     assert thread == Thread.currentThread();
     thread.getReactorEnv().setCurSession(null);
   }
+
+  public boolean isAccessModeReadOnly() {
+    return this.serverStatus.isAccessModeReadOnly();
+  }
+
+  public void setAccessModeReadOnly(boolean accessModeReadOnly) {
+    this.serverStatus.setAccessModeReadOnly(accessModeReadOnly);
+  }
+
 }

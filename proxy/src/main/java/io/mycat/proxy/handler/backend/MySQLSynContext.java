@@ -1,7 +1,7 @@
 package io.mycat.proxy.handler.backend;
 
+import io.mycat.MycatException;
 import io.mycat.beans.mycat.MySQLDataNode;
-import io.mycat.beans.mycat.MycatDataNode;
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
 import io.mycat.proxy.ProxyRuntime;
@@ -11,165 +11,118 @@ import java.util.Objects;
 
 public class MySQLSynContext {
 
-  String dataNodeName;
   MySQLDataNode dataNode;
   MySQLIsolation isolation;
   MySQLAutoCommit autoCommit;
   String charset;
   String characterSetResult;
-  ProxyRuntime runtime;
-
   //Statement: SET sqlSelectLimit=99
   long sqlSelectLimit = -1;
   long netWriteTimeout = -1;
+  boolean readOnly;
+  ProxyRuntime runtime;
+
 
   public MySQLSynContext(MycatSession session) {
-    this.dataNodeName = session.getDataNode();
+    this.runtime = session.getRuntime();
+    Objects.requireNonNull(runtime);
     this.isolation = session.getIsolation();
     this.autoCommit = session.getAutoCommit();
     this.charset = session.getCharsetName();
     this.characterSetResult = session.getCharacterSetResults();
+    this.dataNode = runtime.getDataNodeByName(session.getDataNode());
     this.sqlSelectLimit = session.getSelectLimit();
-    this.runtime = session.getRuntime();
-    Objects.requireNonNull(runtime);
-    this.dataNode = getDataNode();
+    this.netWriteTimeout = session.getNetWriteTimeout();
+    this.readOnly = session.isAccessModeReadOnly();
   }
 
   public MySQLSynContext(MySQLClientSession session) {
-    this(session.getDataNode().getName(),
-        (MySQLDataNode)session.getDataNode(),
+    this((MySQLDataNode) session.getDataNode(),
         session.getIsolation(),
         session.isAutomCommit(),
         session.getCharset(),
-        session.getCharacterSetResult(),
+        session.getCharacterSetResult(), session.getSelectLimit(), session.getNetWriteTimeout(),
+        session.isReadOnly(),
         session.getRuntime());
+
   }
 
 
-  public MySQLSynContext(String dataNodeName,MySQLDataNode dataNode, MySQLIsolation isolation,
-      MySQLAutoCommit autoCommit, String charset, String characterSetResult, ProxyRuntime runtime) {
-    this.dataNodeName = dataNodeName;
+  public MySQLSynContext(MySQLDataNode dataNode, MySQLIsolation isolation,
+      MySQLAutoCommit autoCommit, String charset, String characterSetResult,
+      long sqlSelectLimit,
+      long netWriteTimeout,
+      boolean readOnly,
+      ProxyRuntime runtime) {
     this.dataNode = dataNode;
     this.isolation = isolation;
     this.autoCommit = autoCommit;
     this.charset = charset;
     this.characterSetResult = characterSetResult;
+    this.sqlSelectLimit = sqlSelectLimit;
+    this.netWriteTimeout = netWriteTimeout;
+    this.readOnly = readOnly;
     this.runtime = runtime;
     Objects.requireNonNull(runtime);
   }
 
-  /**
-   * Getter for property 'dataNodeName'.
-   *
-   * @return Value for property 'dataNodeName'.
-   */
-  public String getDataNodeName() {
-    if (dataNodeName == null) {
-      Objects.requireNonNull(this.dataNode);
-      dataNodeName = this.dataNode.getName();
+  public void successSyncMySQLClientSession(MySQLClientSession mysql) {
+    mysql.setCharset(charset);
+    mysql.setDataNode(dataNode);
+    mysql.setIsolation(isolation);
+    mysql.setCharacterSetResult(characterSetResult);
+    mysql.setSelectLimit(sqlSelectLimit);
+    mysql.setNetWriteTimeout(netWriteTimeout);
+    mysql.setReadOnly(readOnly);
+    if (autoCommit != mysql.isAutomCommit()) {
+      throw new MycatException("sync " + mysql.sessionId() + " fail");
     }
-    return dataNodeName;
   }
 
-  /**
-   * Setter for property 'dataNodeName'.
-   *
-   * @param dataNodeName Value to set for property 'dataNodeName'.
-   */
-  public void setDataNodeName(String dataNodeName) {
-    this.dataNodeName = dataNodeName;
-  }
-
-  /**
-   * Getter for property 'dataNode'.
-   *
-   * @return Value for property 'dataNode'.
-   */
   public MySQLDataNode getDataNode() {
-    if (dataNode == null) {
-      Objects.requireNonNull(dataNodeName);
-      this.dataNode = runtime.getDataNodeByName(dataNodeName);
-    }
     return dataNode;
   }
 
-  /**
-   * Setter for property 'dataNode'.
-   *
-   * @param dataNode Value to set for property 'dataNode'.
-   */
+
   public void setDataNode(MySQLDataNode dataNode) {
     this.dataNode = dataNode;
   }
 
-  /**
-   * Getter for property 'isolation'.
-   *
-   * @return Value for property 'isolation'.
-   */
+
   public MySQLIsolation getIsolation() {
     return isolation;
   }
 
-  /**
-   * Setter for property 'isolation'.
-   *
-   * @param isolation Value to set for property 'isolation'.
-   */
+
   public void setIsolation(MySQLIsolation isolation) {
     this.isolation = isolation;
   }
 
-  /**
-   * Getter for property 'autoCommit'.
-   *
-   * @return Value for property 'autoCommit'.
-   */
+
   public MySQLAutoCommit getAutoCommit() {
     return autoCommit;
   }
 
-  /**
-   * Setter for property 'autoCommit'.
-   *
-   * @param autoCommit Value to set for property 'autoCommit'.
-   */
+
   public void setAutoCommit(MySQLAutoCommit autoCommit) {
     this.autoCommit = autoCommit;
   }
 
-  /**
-   * Getter for property 'charset'.
-   *
-   * @return Value for property 'charset'.
-   */
+
   public String getCharset() {
     return charset;
   }
 
-  /**
-   * Setter for property 'charset'.
-   *
-   * @param charset Value to set for property 'charset'.
-   */
+
   public void setCharset(String charset) {
     this.charset = charset;
   }
 
-  /**
-   * Getter for property 'characterSetResult'.
-   *
-   * @return Value for property 'characterSetResult'.
-   */
+
   public String getCharacterSetResult() {
     return characterSetResult;
   }
 
-  /**
-   * Setter for property 'characterSetResult'.
-   *
-   * @param characterSetResult Value to set for property 'characterSetResult'.
-   */
   public void setCharacterSetResult(String characterSetResult) {
     this.characterSetResult = characterSetResult;
   }
@@ -186,4 +139,67 @@ public class MySQLSynContext {
     this.netWriteTimeout = netWriteTimeout;
   }
 
+  public String getSyncSQL() {
+    return isolation.getCmd() + autoCommit.getCmd() + "USE " + dataNode.getSchemaName()
+        + ";" + "SET names " + charset + ";"
+        + ("SET character_set_results =" + (
+        characterSetResult == null || "".equals(characterSetResult) ? "NULL"
+            : characterSetResult)) + ";"
+        + ("SET SQL_SELECT_LIMIT=" + ((sqlSelectLimit == -1) ? "DEFAULT" : sqlSelectLimit) + ";"
+        + ("SET net_write_timeout=" + (netWriteTimeout == -1 ? "default" : netWriteTimeout)) + ";" +
+        "set session transaction " + (readOnly ? "read only" : "read write"));
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+
+    MySQLSynContext that = (MySQLSynContext) o;
+
+    if (sqlSelectLimit != that.sqlSelectLimit) {
+      return false;
+    }
+    if (netWriteTimeout != that.netWriteTimeout) {
+      return false;
+    }
+    if (readOnly != that.readOnly) {
+      return false;
+    }
+    if (dataNode != null ? !dataNode.equals(that.dataNode) : that.dataNode != null) {
+      return false;
+    }
+    if (isolation != that.isolation) {
+      return false;
+    }
+    if (autoCommit != that.autoCommit) {
+      return false;
+    }
+    if (charset != null ? !charset.equals(that.charset) : that.charset != null) {
+      return false;
+    }
+    if (characterSetResult != null ? !characterSetResult.equals(that.characterSetResult)
+        : that.characterSetResult != null) {
+      return false;
+    }
+    return runtime != null ? runtime.equals(that.runtime) : that.runtime == null;
+  }
+
+  @Override
+  public int hashCode() {
+    int result = dataNode != null ? dataNode.hashCode() : 0;
+    result = 31 * result + (isolation != null ? isolation.hashCode() : 0);
+    result = 31 * result + (autoCommit != null ? autoCommit.hashCode() : 0);
+    result = 31 * result + (charset != null ? charset.hashCode() : 0);
+    result = 31 * result + (characterSetResult != null ? characterSetResult.hashCode() : 0);
+    result = 31 * result + (int) (sqlSelectLimit ^ (sqlSelectLimit >>> 32));
+    result = 31 * result + (int) (netWriteTimeout ^ (netWriteTimeout >>> 32));
+    result = 31 * result + (readOnly ? 1 : 0);
+    result = 31 * result + (runtime != null ? runtime.hashCode() : 0);
+    return result;
+  }
 }

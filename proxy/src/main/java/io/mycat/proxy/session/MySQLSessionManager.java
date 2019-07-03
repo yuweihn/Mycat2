@@ -16,16 +16,18 @@ package io.mycat.proxy.session;
 
 import static io.mycat.beans.mysql.MySQLCommandType.COM_QUERY;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.annotations.NoExcept;
 import io.mycat.beans.mysql.MySQLCommandType;
 import io.mycat.beans.mysql.MySQLPayloadWriter;
+import io.mycat.beans.mysql.packet.ErrorPacketImpl;
 import io.mycat.collector.OneResultSetCollector;
 import io.mycat.collector.TextResultSetTransforCollector;
 import io.mycat.config.ConfigEnum;
 import io.mycat.config.GlobalConfig;
 import io.mycat.config.heartbeat.HeartbeatRootConfig;
-import io.mycat.logTip.SessionTip;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.callback.CommandCallBack;
 import io.mycat.proxy.callback.RequestCallback;
@@ -37,8 +39,9 @@ import io.mycat.proxy.handler.backend.RequestHandler;
 import io.mycat.proxy.handler.backend.ResultSetHandler;
 import io.mycat.proxy.handler.backend.TextResultSetHandler;
 import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.ErrorPacketImpl;
 import io.mycat.proxy.reactor.MycatReactorThread;
+import io.mycat.proxy.reactor.NIOJob;
+import io.mycat.proxy.reactor.ReactorEnvThread;
 import io.mycat.proxy.session.SessionManager.BackendSessionManager;
 import io.mycat.replica.MySQLDatasource;
 import io.mycat.replica.MySQLReplica;
@@ -54,8 +57,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 集中管理MySQL LocalInFileSession 是在mycat proxy中,唯一能够创建mysql session以及关闭mysqlsession的对象
@@ -66,7 +67,7 @@ import org.slf4j.LoggerFactory;
 public final class MySQLSessionManager implements
     BackendSessionManager<MySQLClientSession, MySQLDatasource> {
 
-  final static Logger LOGGER = LoggerFactory.getLogger(MySQLSessionManager.class);
+  final static MycatLogger LOGGER = MycatLoggerFactory.getLogger(MySQLSessionManager.class);
   final HashMap<Integer, MySQLClientSession> allSessions = new HashMap<>();
   final HashMap<MySQLDatasource, LinkedList<MySQLClientSession>> idleDatasourcehMap = new HashMap<>();
   final HashMap<Integer, MySQLPayloadWriter> clearTask = new HashMap<>();
@@ -82,7 +83,7 @@ public final class MySQLSessionManager implements
   @NoExcept
   @Override
   public final Collection<MySQLClientSession> getAllSessions() {
-    return Collections.unmodifiableCollection(allSessions.values());
+    return new ArrayList<>(allSessions.values());
   }
 
   /**
@@ -111,7 +112,7 @@ public final class MySQLSessionManager implements
       for (; ; ) {
         if (!datasource.isAlive()) {
           asyncTaskCallBack
-              .onException(new MycatExpection(datasource.getName() + " is not alive!"), this,
+              .onException(new MycatException(datasource.getName() + " is not alive!"), this,
                   null);
           return;
         }
@@ -123,8 +124,16 @@ public final class MySQLSessionManager implements
           assert mySQLSession.currentProxyBuffer() == null;
 
           if (!mySQLSession.isOpen()) {
-            thread.addNIOJob(() -> {
-              mySQLSession.close(false, "mysql session is close in idle");
+            thread.addNIOJob(new NIOJob() {
+              @Override
+              public void run(ReactorEnvThread reactor) throws Exception {
+                mySQLSession.close(false, "mysql session is close in idle");
+              }
+
+              @Override
+              public void stop(ReactorEnvThread reactor, Exception reason) {
+                mySQLSession.close(false, "mysql session is close in idle");
+              }
             });
             continue;
           }
@@ -358,8 +367,7 @@ public final class MySQLSessionManager implements
         try {
           session.close(true, reason);
         } catch (Exception e) {
-          LOGGER.error("", e);
-          SessionTip.UNKNOWN_CLOSE_ERROR.getMessage(e);
+          LOGGER.error("mysql session is closing but occur error", e);
         }
       }
     }
@@ -502,8 +510,16 @@ public final class MySQLSessionManager implements
   private void closeSession(MySQLClientSession mySQLClientSession, String hint) {
     mySQLClientSession.setIdle(false);
     MycatReactorThread mycatReactorThread = mySQLClientSession.getIOThread();
-    mycatReactorThread.addNIOJob(() -> {
-      mySQLClientSession.close(false, hint);
+    mycatReactorThread.addNIOJob(new NIOJob() {
+      @Override
+      public void run(ReactorEnvThread reactor) throws Exception {
+        mySQLClientSession.close(false, hint);
+      }
+
+      @Override
+      public void stop(ReactorEnvThread reactor, Exception reason) {
+        mySQLClientSession.close(false, hint);
+      }
     });
   }
 
@@ -540,7 +556,7 @@ public final class MySQLSessionManager implements
 
       public void executeInitSQL(MySQLClientSession session, String sql) {
         ResultSetHandler.DEFAULT.request(session, COM_QUERY,
-         sql.getBytes(),
+            sql.getBytes(),
             new ResultSetCallBack<MySQLClientSession>() {
               @Override
               public void onFinishedSendException(Exception exception, Object sender,
@@ -561,7 +577,7 @@ public final class MySQLSessionManager implements
                 if (monopolize) {
                   String message = "mysql session is monopolized";
                   mysql.close(false, message);
-                  callBack.onException(new MycatExpection(message), this, attr);
+                  callBack.onException(new MycatException(message), this, attr);
                 } else {
                   callBack.onSession(mysql, this, attr);
                 }
@@ -571,9 +587,9 @@ public final class MySQLSessionManager implements
               public void onErrorPacket(ErrorPacketImpl errorPacket, boolean monopolize,
                   MySQLClientSession mysql, Object sender, Object attr) {
                 String message = errorPacket.getErrorMessageString();
-                LOGGER.error("", message);
+                LOGGER.error(message);
                 mysql.close(false, message);
-                callBack.onException(new MycatExpection(message), sender, attr);
+                callBack.onException(new MycatException(message), sender, attr);
               }
             });
       }

@@ -24,8 +24,8 @@ import io.mycat.MycatCore;
 import io.mycat.MycatProxyBeanProviders;
 import io.mycat.ProxyBeanProviders;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
-import io.mycat.proxy.ProxyRuntime;
-import io.mycat.proxy.callback.AsyncTaskCallBackCounter;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.monitor.AbstractMonitorCallback;
 import io.mycat.proxy.monitor.MycatMonitorCallback;
 import io.mycat.proxy.monitor.MycatMonitorLogCallback;
@@ -46,13 +46,12 @@ import java.sql.Statement;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.Assert;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * @author jamie12221 date 2019-05-19 18:23
@@ -60,7 +59,8 @@ import org.slf4j.LoggerFactory;
 public class JdbcDao extends ModualTest {
 
   final static String DB_IN_ONE_SERVER = "DB_IN_ONE_SERVER";
-  private static final Logger LOGGER = LoggerFactory.getLogger(JdbcDao.class);
+  private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(JdbcDao.class);
+
 
   @Test
   public void startRequestAndReponseWithSplitingPacketWithMultiSatement()
@@ -111,7 +111,7 @@ public class JdbcDao extends ModualTest {
   @Test
   public void startRequestAndReponseWithSplitingPacket()
       throws IOException, ExecutionException, InterruptedException {
-    loadModule(DB_IN_ONE_SERVER,new MycatProxyBeanProviders(), new MycatMonitorLogCallback(),
+    loadModule(DB_IN_ONE_SERVER, new MycatProxyBeanProviders(), new MycatMonitorLogCallback(),
         (future, connection) -> {
           try (Statement statement = connection.createStatement()) {
             int splitPayloadSize = MySQLPacketSplitter.MAX_PACKET_SIZE - 1;
@@ -150,7 +150,7 @@ public class JdbcDao extends ModualTest {
   @Test
   public void bigResultSet()
       throws IOException, ExecutionException, InterruptedException {
-    loadModule(DB_IN_ONE_SERVER,new MycatProxyBeanProviders(), new MycatMonitorLogCallback(),
+    loadModule(DB_IN_ONE_SERVER, new MycatProxyBeanProviders(), new MycatMonitorLogCallback(),
         (future, connection) -> {
           try (Statement statement = connection.createStatement()) {
             statement.execute("truncate travelrecord;");
@@ -177,6 +177,9 @@ public class JdbcDao extends ModualTest {
             }
             ResultSet resultSet = statement.executeQuery(
                 "select * from travelrecord;select * from travelrecord;");
+          } catch (Exception e) {
+            e.printStackTrace();
+            Assert.fail();
           } finally {
             compelete(future);
           }
@@ -205,7 +208,7 @@ public class JdbcDao extends ModualTest {
         expectClose.run();
       }
     });
-    loadModule(DB_IN_ONE_SERVER,new MycatProxyBeanProviders(), callback,
+    loadModule(DB_IN_ONE_SERVER, new MycatProxyBeanProviders(), callback,
         (future) -> {
           try (Connection connection = getConnection()) {
 
@@ -221,7 +224,7 @@ public class JdbcDao extends ModualTest {
     );
   }
 
-  final static String url = "jdbc:mysql://localhost:8066/test?useServerPrepStmts=true&useCursorFetch=true&serverTimezone=UTC&allowMultiQueries=false";
+  final static String url = "jdbc:mysql://localhost:8066/TESTDB?useServerPrepStmts=true&useCursorFetch=true&serverTimezone=UTC&allowMultiQueries=false";
   final static String username = "root";
   final static String password = "123456";
 
@@ -257,6 +260,21 @@ public class JdbcDao extends ModualTest {
     });
   }
 
+  public static void main(String[] args) {
+    try (Connection connection = getConnection()) {
+      connection.setAutoCommit(false);
+      Statement statement = connection.createStatement();
+      ResultSet resultSet = statement.executeQuery("SELECT `id`, `topid` FROM `test` FOR UPDATE;");
+      connection.commit();
+    } catch (Exception e) {
+      e.printStackTrace();
+      Assert.fail(e.toString());
+    } finally {
+      MycatCore.exit();
+
+    }
+  }
+
   public static String getUrl() {
     return url;
   }
@@ -277,35 +295,40 @@ public class JdbcDao extends ModualTest {
     return connection;
   }
 
-  private void perTest(int count, AsyncTaskCallBackCounter callBackCounter) {
-    for (int i = 0; i < count; i++) {
-      int index = i;
-      new Thread(() -> {
-        try (Connection connection = getConnection()) {
-          LOGGER.debug("connectId:{}", index);
-          for (int j = 0; j < 500; j++) {
-            LOGGER.debug("per:{}", j);
-            try (
-                Statement statement = connection.createStatement()
-            ) {
-              connection.setAutoCommit(false);
-              connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-
-              connection.createStatement().execute("select 1");
-              connection.commit();
-            }
-
+  @Test
+  public void perTest() throws InterruptedException, ExecutionException, IOException {
+    loadModule(DB_IN_ONE_SERVER, new MycatProxyBeanProviders(), new MycatMonitorLogCallback(),
+        (future) -> {
+//          Thread.sleep(TimeUnit.SECONDS.toMillis(5));
+          int count = 1;
+          AtomicInteger atomicInteger = new AtomicInteger(0);
+          for (int i = 0; i < count; i++) {
+            int index = i;
+            new Thread(() -> {
+              try (Connection connection = getConnection()) {
+                for (int j = 0; j < 100000; j++) {
+                  connection.setAutoCommit(false);
+                  connection.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
+                  try (Statement statement = connection.createStatement()) {
+                    statement.execute("select 1");
+                  }
+                  connection.commit();
+                }
+                atomicInteger.incrementAndGet();
+                LOGGER.info("connectId:{} end", index);
+              } catch (Exception e) {
+                LOGGER.error("{}", e);
+                return;
+              }
+            }).start();
           }
-
-        } catch (Exception e) {
-          LOGGER.error("{}", e);
-          callBackCounter.onCountFail();
-          return;
+          while (atomicInteger.get() != count) {
+            Thread.sleep(TimeUnit.SECONDS.toMillis(10));
+          }
+          LOGGER.info("success!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
         }
-        callBackCounter.onCountSuccess();
-      }).start();
+    );
 
-    }
   }
 
   @Test
@@ -361,7 +384,7 @@ public class JdbcDao extends ModualTest {
         expectMysqlClose.run();
       }
     });
-    loadModule(DB_IN_ONE_SERVER,new MycatProxyBeanProviders(), callback,
+    loadModule(DB_IN_ONE_SERVER, new MycatProxyBeanProviders(), callback,
         (future) -> {
           try (Connection connection = getConnection()) {
             connection.createStatement().execute("select 1");
@@ -510,7 +533,6 @@ public class JdbcDao extends ModualTest {
           }
         });
   }
-
 
 //  @Test
 //  public void loadata()

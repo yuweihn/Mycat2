@@ -1,6 +1,6 @@
 package io.mycat.proxy.monitor;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.annotations.NoExcept;
 import io.mycat.proxy.packet.MySQLPayloadType;
 import io.mycat.proxy.reactor.MycatReactorThread;
@@ -16,7 +16,7 @@ import java.nio.channels.ClosedChannelException;
 @NoExcept
 public interface MycatMonitorCallback {
 
-  final MycatMonitorCallback EMPTY = new AbstractMonitorCallback() {
+  MycatMonitorCallback EMPTY = new AbstractMonitorCallback() {
 
   };
 
@@ -39,7 +39,7 @@ public interface MycatMonitorCallback {
         return mycatSession;
       }
     } else {
-      throw new MycatExpection("unknown session");
+      throw new MycatException("unknown session");
     }
   }
 
@@ -275,4 +275,10 @@ public interface MycatMonitorCallback {
   void onLoadDataLocalInFileContextStart(MycatSession mycat);
 
   void onLoadDataLocalInFileContextEnd(MycatSession mycat);
+
+  void onChange2ReadOpts(Session session);
+
+  void onChange2WriteOpts(Session session);
+
+  void onClearReadWriteOpts(Session session);
 }

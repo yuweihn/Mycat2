@@ -3,19 +3,10 @@ package io.mycat.proxy.session;
 import io.mycat.beans.mysql.MySQLErrorCode;
 import io.mycat.beans.mysql.MySQLPayloadWriter;
 import io.mycat.beans.mysql.MySQLServerStatusFlags;
-import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
+import io.mycat.beans.mysql.packet.ErrorPacketImpl;
 import io.mycat.config.MySQLServerCapabilityFlags;
 import io.mycat.proxy.MySQLPacketUtil;
-import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.ErrorPacketImpl;
-import io.mycat.proxy.packet.MySQLPacket;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.channels.ClosedChannelException;
 import java.nio.charset.Charset;
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.Queue;
 
 public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
 
@@ -99,14 +90,14 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
    */
   default void writeTextRowPacket(byte[][] row) {
     byte[] bytes = MySQLPacketUtil.generateTextRow(row);
-    writeBytes(bytes);
+    writeBytes(bytes,false);
   }
   /**
    * 写入二进制结果集行
    */
   default void writeBinaryRowPacket(byte[][] row) {
     byte[] bytes = MySQLPacketUtil.generateBinaryRow(row);
-    writeBytes(bytes);
+    writeBytes(bytes,false);
   }
 
   /**
@@ -114,7 +105,7 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
    */
   default void writeColumnCount(int count) {
     byte[] bytes = MySQLPacketUtil.generateResultSetCount(count);
-    writeBytes(bytes);
+    writeBytes(bytes,false);
   }
 
 
@@ -124,10 +115,10 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
   default void writeColumnDef(String columnName, int type) {
     byte[] bytes = MySQLPacketUtil
         .generateColumnDef(columnName, type, charsetIndex(), charset());
-    writeBytes(bytes);
+    writeBytes(bytes,false);
   }
 
-  void writeBytes(byte[] payload);
+  void writeBytes(byte[] payload,boolean end);
 
   /**
    * 写入ok包,调用该方法,就指定响应已经结束
@@ -141,19 +132,17 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
             false, ""
 
         );
-    this.setResponseFinished(true);
-    writeBytes(bytes);
+    writeBytes(bytes,true);
   }
 
   /**
    * 写入字段阶段技术报文,即字段包都写入后调用此方法
    */
   default void writeColumnEndPacket() {
-    setResponseFinished(true);
     if (isDeprecateEOF()) {
     } else {
       byte[] bytes = MySQLPacketUtil.generateEof(getWarningCount(), getServerStatus());
-      writeBytes(bytes);
+      writeBytes(bytes,true);
     }
   }
 
@@ -180,8 +169,7 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
     } else {
       bytes = MySQLPacketUtil.generateEof(getWarningCount(), getServerStatus());
     }
-    this.setResponseFinished(true);
-    writeBytes(bytes);
+    writeBytes(bytes,true);
   }
 
   /**
@@ -194,8 +182,7 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
     }
     byte[] bytes = MySQLPacketUtil
         .generateError(lastErrorCode, getLastMessage(), this.getServerStatus());
-    this.setResponseFinished(true);
-    writeBytes(bytes);
+    writeBytes(bytes,true);
   }
   default void writeErrorEndPacket(ErrorPacketImpl packet) {
     int lastErrorCode = packet.getErrorCode();
@@ -204,8 +191,7 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
     }
     try(MySQLPayloadWriter writer = new MySQLPayloadWriter()){
       packet.writePayload(writer,getCapabilities());
-      this.setResponseFinished(true);
-      writeBytes(writer.toByteArray());
+      writeBytes(writer.toByteArray(),true);
     }
   }
 

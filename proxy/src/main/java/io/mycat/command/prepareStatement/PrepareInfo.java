@@ -1,8 +1,8 @@
 package io.mycat.command.prepareStatement;
 
 import io.mycat.beans.mycat.MySQLDataNode;
-import io.mycat.beans.mycat.MycatDataNode;
 import io.mycat.beans.mysql.MySQLPayloadWriter;
+import io.mycat.beans.mysql.packet.ErrorPacketImpl;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
 import io.mycat.beans.mysql.packet.PacketSplitterImpl;
 import io.mycat.plug.loadBalance.LoadBalanceStrategy;
@@ -12,12 +12,11 @@ import io.mycat.proxy.callback.RequestCallback;
 import io.mycat.proxy.callback.ResultSetCallBack;
 import io.mycat.proxy.callback.SessionCallBack;
 import io.mycat.proxy.handler.ResponseType;
-import io.mycat.proxy.handler.backend.MySQLSessionSyncTask;
+import io.mycat.proxy.handler.backend.MySQLSessionSyncUtil;
 import io.mycat.proxy.handler.backend.MySQLSynContext;
 import io.mycat.proxy.handler.backend.PrepareStmtTask;
 import io.mycat.proxy.handler.backend.RequestHandler;
 import io.mycat.proxy.handler.backend.SessionSyncCallback;
-import io.mycat.proxy.packet.ErrorPacketImpl;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import io.mycat.proxy.session.MySQLClientSession;
 import io.mycat.proxy.session.MySQLSessionManager;
@@ -61,7 +60,7 @@ public class PrepareInfo {
           @Override
           public void onSession(MySQLClientSession session, Object sender, Object attr) {
             MySQLSynContext mySQLSyn = new MySQLSynContext(mycat);
-            MySQLSessionSyncTask syncTask = new MySQLSessionSyncTask(mySQLSyn, session,
+            MySQLSessionSyncUtil.sync(mySQLSyn, session,
                 this, new SessionSyncCallback() {
               @Override
               public void onSession(MySQLClientSession session, Object sender, Object attr) {
@@ -138,7 +137,6 @@ public class PrepareInfo {
                 callBack.onErrorPacket(errorPacket, monopolize, mysql, sender, attr);
               }
             });
-            syncTask.run();
           }
 
           @Override

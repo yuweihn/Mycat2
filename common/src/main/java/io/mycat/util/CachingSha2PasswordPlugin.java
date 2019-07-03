@@ -29,8 +29,10 @@
 
 package io.mycat.util;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.beans.mysql.ServerVersion;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.security.DigestException;
@@ -43,22 +45,22 @@ import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class CachingSha2PasswordPlugin  {
-    private static Logger logger = LoggerFactory.getLogger(MysqlNativePasswordPluginUtil.class);
+
+    private static MycatLogger LOGGER = MycatLoggerFactory
+        .getLogger(MysqlNativePasswordPluginUtil.class);
     public static final String PROTOCOL_PLUGIN_NAME = "caching_sha2_password"; // caching_sha2_password
 
     public static byte[] scrambleCachingSha2(String password, byte[] seed) {
         if (password == null || password.length() == 0) {
-            logger.warn("password is empty");
+            LOGGER.warn("password is empty");
             return new byte[0];
         }
         try {
             return SecurityUtil.scrambleCachingSha2(password.getBytes(), seed);
         } catch (DigestException e) {
-            logger.warn("no such Digest", e);
+            LOGGER.warn("no such Digest", e);
             return null;
         }
 
@@ -111,7 +113,7 @@ public class CachingSha2PasswordPlugin  {
     public static RSAPublicKey decodeRSAPublicKey(String key) throws Exception {
 
         if (key == null) {
-            throw new MycatExpection("Key parameter is null\"");
+            throw new MycatException("Key parameter is null\"");
         }
 
         int offset = key.indexOf("\n") + 1;

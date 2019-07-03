@@ -2,18 +2,18 @@ package io.mycat.sqlparser.util;
 
 import static io.mycat.sqlparser.util.TokenizerUtil.debug;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.beans.mysql.MySQLIsolation;
 import io.mycat.beans.mysql.MySQLIsolationLevel;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 
 /**
  * Created by jamie on 2017/8/31.
  */
 public class TCLSQLParser {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(TCLSQLParser.class);
+  private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(TCLSQLParser.class);
 
   /**
    * @param pos pos已经指向 commit 或者rollback 的后一个字符
@@ -241,7 +241,7 @@ public class TCLSQLParser {
     } else if (hash == TokenHash.CHARACTER_SET_RESULT) {
       ++pos;
       if ((hashArray.getType(pos) != Tokenizer.EQUAL)) {
-        throw new MycatExpection("unsupport sql:" + sql.getString(0, sql.length()));
+        throw new MycatException("unsupport sql:" + sql.getString(0, sql.length()));
       }
       ++pos;
       context.setCharsetSetResult(context.getTokenString(pos));

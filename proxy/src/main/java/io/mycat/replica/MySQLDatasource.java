@@ -15,15 +15,17 @@
 package io.mycat.replica;
 
 import io.mycat.config.datasource.DatasourceConfig;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.plug.loadBalance.LoadBalanceELement;
 import io.mycat.proxy.callback.AsyncTaskCallBackCounter;
 import io.mycat.proxy.callback.SessionCallBack;
 import io.mycat.proxy.reactor.MycatReactorThread;
+import io.mycat.proxy.reactor.NIOJob;
+import io.mycat.proxy.reactor.ReactorEnvThread;
 import io.mycat.proxy.session.MySQLClientSession;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * MySQL Seesion元信息 对外支持线程修改的属性是alive,其他属性只读
@@ -32,7 +34,7 @@ import org.slf4j.LoggerFactory;
  **/
 public abstract class MySQLDatasource implements LoadBalanceELement {
 
-  protected static final Logger logger = LoggerFactory.getLogger(MySQLDatasource.class);
+  protected static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(MySQLDatasource.class);
   protected final int index;
   protected final DatasourceConfig datasourceConfig;
   protected final MySQLReplica replica;
@@ -77,7 +79,7 @@ public abstract class MySQLDatasource implements LoadBalanceELement {
 
         @Override
         public void onException(Exception exception, Object sender, Object attr) {
-          logger.error(exception.getMessage());
+          LOGGER.error(exception.getMessage());
           callback.onCountFail();
         }
       }));
@@ -91,12 +93,23 @@ public abstract class MySQLDatasource implements LoadBalanceELement {
    * @param thread 执行的线程
    * @param callback 回调函数
    */
-  protected Runnable createMySQLSession(MycatReactorThread thread,
+  protected NIOJob createMySQLSession(MycatReactorThread thread,
       SessionCallBack<MySQLClientSession> callback) {
     Objects.requireNonNull(thread);
     Objects.requireNonNull(callback);
-    return () -> thread.getMySQLSessionManager()
-        .createSession(this, callback);
+    MySQLDatasource datasource = this;
+    return new NIOJob() {
+      @Override
+      public void run(ReactorEnvThread reactor) throws Exception {
+        thread.getMySQLSessionManager()
+            .createSession(datasource, callback);
+      }
+
+      @Override
+      public void stop(ReactorEnvThread reactor, Exception reason) {
+        callback.onException(reason, this, null);
+      }
+    };
   }
 
 //  /**

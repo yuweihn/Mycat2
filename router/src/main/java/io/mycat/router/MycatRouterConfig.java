@@ -14,12 +14,10 @@
  */
 package io.mycat.router;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.beans.mycat.DefaultTable;
 import io.mycat.beans.mycat.ERTable;
 import io.mycat.beans.mycat.GlobalTable;
-import io.mycat.beans.mycat.MySQLDataNode;
-import io.mycat.beans.mycat.MycatDataNode;
 import io.mycat.beans.mycat.MycatSchema;
 import io.mycat.beans.mycat.MycatTable;
 import io.mycat.beans.mycat.MycatTableRule;
@@ -38,9 +36,6 @@ import io.mycat.config.route.ShardingRuleRootConfig;
 import io.mycat.config.route.SharingFuntionRootConfig;
 import io.mycat.config.route.SharingTableRule;
 import io.mycat.config.route.SubShardingFuntion;
-import io.mycat.config.schema.DataNodeConfig;
-import io.mycat.config.schema.DataNodeRootConfig;
-import io.mycat.config.schema.DataNodeType;
 import io.mycat.config.schema.SchemaConfig;
 import io.mycat.config.schema.SchemaRootConfig;
 import io.mycat.config.schema.SchemaType;
@@ -60,6 +55,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -221,17 +218,25 @@ public class MycatRouterConfig {
 
   public MycatRouterConfig(ConfigReceiver cr) {
     this(cr.getConfig(ConfigEnum.SCHEMA)
-        ,cr.getConfig(ConfigEnum.FUNCTIONS),cr.getConfig(ConfigEnum.DYNAMIC_ANNOTATION),cr.getConfig(ConfigEnum.RULE));
+        , cr.getConfig(ConfigEnum.FUNCTIONS), cr.getConfig(ConfigEnum.DYNAMIC_ANNOTATION),
+        cr.getConfig(ConfigEnum.RULE));
   }
-  public MycatRouterConfig(SchemaRootConfig config,
-      SharingFuntionRootConfig funtions,
+
+  public MycatRouterConfig(SchemaRootConfig schemaConfig,
+      SharingFuntionRootConfig funtionsConfig,
       DynamicAnnotationRootConfig dynamicAnnotationConfig,
-      ShardingRuleRootConfig rule) {
-    initFunctions(funtions);
+      ShardingRuleRootConfig ruleConfig) {
+    ////////////////////////////////////check/////////////////////////////////////////////////
+//    Objects.requireNonNull(schemaConfig, "schema config can not be empty");
+//    Objects.requireNonNull(funtionsConfig, "function config can not be empty");
+//    Objects.requireNonNull(dynamicAnnotationConfig, "dynamicAnnotation config can not be empty");
+//    Objects.requireNonNull(ruleConfig, "rule config can not be empty");
+    ////////////////////////////////////check/////////////////////////////////////////////////
+    initFunctions(funtionsConfig);
     initAnnotations(dynamicAnnotationConfig);
-    initTableRule(rule);
-    iniSchema(config);
-    this.defaultSchema = initDefaultSchema(config);
+    initTableRule(ruleConfig);
+    iniSchema(schemaConfig);
+    this.defaultSchema = initDefaultSchema(schemaConfig);
   }
 
   public MycatSchema getDefaultSchema() {
@@ -272,9 +277,16 @@ public class MycatRouterConfig {
 
   private void initAnnotations(DynamicAnnotationRootConfig config) {
     MycatRouterConfig mycatRouter = this;
-    if (config != null) {
+    if (config != null && config.getDynamicAnnotations() != null) {
       List<DynamicAnnotationConfig> annotations = config.getDynamicAnnotations();
       for (DynamicAnnotationConfig a : annotations) {
+        ////////////////////////////////////check/////////////////////////////////////////////////
+        Objects.requireNonNull(a.getName(), "name of dynamicAnnotation can not be empty");
+        Objects.requireNonNull(a.getType(), "type of dynamicAnnotation can not be empty");
+        Objects.requireNonNull(a.getPattern(), "pattern of dynamicAnnotation can not be empty");
+        Objects.requireNonNull(a.getGroupNameList(),
+            "group name of dynamicAnnotation can not be empty");
+        ////////////////////////////////////check/////////////////////////////////////////////////
         mycatRouter.putDynamicAnnotation(a.getName(), a);
       }
     }
@@ -283,8 +295,14 @@ public class MycatRouterConfig {
   private void initFunctions(SharingFuntionRootConfig funtions) {
     MycatRouterConfig mycatRouter = this;
     if (funtions != null) {
-      for (ShardingFuntion funtion : funtions.getFuntions()) {
-        mycatRouter.putRuleAlgorithm(funtion);
+      if (funtions.getFuntions() != null) {
+        for (ShardingFuntion funtion : funtions.getFuntions()) {
+          ////////////////////////////////////check/////////////////////////////////////////////////
+          Objects.requireNonNull(funtion.getName(), "name of function can not be empty");
+          Objects.requireNonNull(funtion.getClazz(), "clazz of function can not be empty");
+          ////////////////////////////////////check/////////////////////////////////////////////////
+          mycatRouter.putRuleAlgorithm(funtion);
+        }
       }
     }
   }
@@ -312,6 +330,7 @@ public class MycatRouterConfig {
   }
 
   private void iniSchema(SchemaRootConfig schemaConfigs) {
+    Objects.requireNonNull(schemaConfigs);
     for (SchemaConfig schemaConfig : schemaConfigs.getSchemas()) {
       String defaultDataNode = schemaConfig.getDefaultDataNode();
       String sqlMaxLimit = schemaConfig.getSqlMaxLimit();
@@ -379,7 +398,7 @@ public class MycatRouterConfig {
                     .put(tableName, table = new ERTable(schema, tableConfig, dataNodes, tableRule));
                 break;
               default:
-                throw new MycatExpection("");
+                throw new MycatException("");
             }
           } else {
             mycatTables
@@ -399,48 +418,71 @@ public class MycatRouterConfig {
     if (rule == null) {
       return;
     }
-    for (SharingTableRule tableRule : rule.getTableRules()) {
-      String name = tableRule.getName();
-      Route rootRouteNode = null;
-      Route routeNode = null;
-      List<ShardingRule> rules = tableRule.getRules();
-      List<DynamicAnnotationConfig> list = new ArrayList<>();
-      RuleAlgorithm algorithm = null;
-      for (ShardingRule shardingRule : rules) {
-        List<String> equal = shardingRule.getEqualAnnotations();
-        if (equal != null) {
-          list.addAll(getDynamicAnnotationConfigList(shardingRule.getEqualAnnotations(),
-              AnnotationType.SHARDING_EQUAL));
+    if (rule.getTableRules() != null) {
+      for (SharingTableRule tableRule : rule.getTableRules()) {
+        String name = tableRule.getName();
+        ////////////////////////////////////check/////////////////////////////////////////////////
+        Objects.requireNonNull(name, "name of table can not be empty");
+        Objects.requireNonNull(tableRule.getRules(), "rule of table can not be empty");
+        ////////////////////////////////////check/////////////////////////////////////////////////
+        Route rootRouteNode = null;
+        Route routeNode = null;
+        List<ShardingRule> rules = tableRule.getRules();
+        List<DynamicAnnotationConfig> list = new ArrayList<>();
+        RuleAlgorithm algorithm = null;
+        for (ShardingRule shardingRule : rules) {
+          String column = shardingRule.getColumn();
+          Set<String> equalsKey = Collections.emptySet();
+          Set<String> rangeStartKey = Collections.emptySet();
+          Set<String> rangeEndKey = Collections.emptySet();
+          ////////////////////////////////////check/////////////////////////////////////////////////
+          Objects.requireNonNull(column, "column of table can not be empty");
+          ////////////////////////////////////check/////////////////////////////////////////////////
+          List<String> equal = shardingRule.getEqualAnnotations();
+          if (equal != null) {
+            list.addAll(getDynamicAnnotationConfigList(equal, AnnotationType.SHARDING_EQUAL));
+            ////////////////////////////////////check/////////////////////////////////////////////////
+            Objects.requireNonNull(shardingRule.getEqualKeys(),
+                "equal key of table can not be empty in equal annotations");
+            ////////////////////////////////////check/////////////////////////////////////////////////
+            equalsKey = new HashSet<>(
+                Arrays.asList(SplitUtil.split(shardingRule.getEqualKeys(), ",")));
+          }
+          List<String> range = shardingRule.getRangeAnnotations();
+          if (range != null) {
+            list.addAll(getDynamicAnnotationConfigList(range, AnnotationType.SHARDING_RANGE));
+            ////////////////////////////////////check/////////////////////////////////////////////////
+            Objects.requireNonNull(shardingRule.getRangeStartKey(),
+                "start key of table can not be empty in range annotations");
+            Objects.requireNonNull(shardingRule.getRangeEndKey(),
+                "end key of table can not be empty in range annotations");
+            ////////////////////////////////////check/////////////////////////////////////////////////
+            rangeStartKey = new HashSet<>(
+                Arrays.asList(SplitUtil.split(shardingRule.getRangeStartKey(), ",")));
+            rangeEndKey = new HashSet<>(
+                Arrays.asList(SplitUtil.split(shardingRule.getRangeEndKey(), ",")));
+          }
+
+          Route tmp = new Route(column, equalsKey, rangeStartKey, rangeEndKey);
+          if (rootRouteNode == null) {
+            String funtion = tableRule.getFuntion();
+            algorithm = mycatRouter.getRuleAlgorithm(funtion);
+            routeNode = rootRouteNode = tmp;
+          } else {
+            routeNode.setNextRoute(tmp);
+            routeNode = tmp;
+          }
         }
-        List<String> range = shardingRule.getRangeAnnotations();
-        if (range != null) {
-          list.addAll(getDynamicAnnotationConfigList(range, AnnotationType.SHARDING_RANGE));
-        }
-        String column = shardingRule.getColumn();
-        HashSet<String> equalsKey = new HashSet<>(
-            Arrays.asList(SplitUtil.split(shardingRule.getEqualKeys(), ",")));
-        HashSet<String> rangeStartKey = new HashSet<>(
-            Arrays.asList(SplitUtil.split(shardingRule.getRangeStartKey(), ",")));
-        HashSet<String> rangeEndKey = new HashSet<>(
-            Arrays.asList(SplitUtil.split(shardingRule.getRangeEndKey(), ",")));
-        Route tmp = new Route(column, equalsKey, rangeStartKey, rangeEndKey);
-        if (rootRouteNode == null) {
-          String funtion = tableRule.getFuntion();
-          algorithm = mycatRouter.getRuleAlgorithm(funtion);
-          routeNode = rootRouteNode = tmp;
+        DynamicAnnotationMatcherImpl matcher;
+        if (!list.isEmpty()) {
+          matcher = new DynamicAnnotationMatcherImpl(list);
         } else {
-          routeNode.setNextRoute(tmp);
-          routeNode = tmp;
+          matcher = DynamicAnnotationMatcherImpl.EMPTY;
         }
+        tableRules.put(name, new MycatTableRule(name, rootRouteNode, algorithm, matcher));
       }
-      DynamicAnnotationMatcherImpl matcher;
-      if (!list.isEmpty()) {
-        matcher = new DynamicAnnotationMatcherImpl(list);
-      } else {
-        matcher = DynamicAnnotationMatcherImpl.EMPTY;
-      }
-      tableRules.put(name, new MycatTableRule(name, rootRouteNode, algorithm, matcher));
     }
+
   }
 
 //  private void initDataNode(DataNodeRootConfig dataNode) {
@@ -452,7 +494,7 @@ public class MycatRouterConfig {
 //      switch (dataNodeType) {
 //        case MYSQL:
 //          MySQLDataNode mySQLDataNode = new MySQLDataNode(dataNodeConfig);
-//          dataNodes.put(dataNodeConfig.getName(), mySQLDataNode);
+//          dataNodes.put(dataNodeConfig.getTableName(), mySQLDataNode);
 //          break;
 //      }
 //    }
@@ -474,6 +516,15 @@ public class MycatRouterConfig {
 
   public MycatSchema getSchemaBySchemaName(String name) {
     return schemas.get(name);
+  }
+
+  public MycatSchema getSchemaOrDefaultBySchemaName(String name) {
+    MycatSchema schema = getSchemaBySchemaName(name);
+    if (schema == null) {
+      return defaultSchema;
+    } else {
+      return schema;
+    }
   }
 
   public Collection<MycatSchema> getSchemaList() {

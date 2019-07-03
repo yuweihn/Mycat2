@@ -13,11 +13,10 @@
     <module>sqlparser</module>
     <module>expression</module>
     <module>common</module>
-    <module>logTip</module>
-    <module>rpc</module>
     <module>jdbc</module>
     <module>mycat2</module>
     <module>security</module>
+    <module>grid</module>
   </modules>
   <packaging>pom</packaging>
   <name>parent</name>
@@ -42,7 +41,7 @@
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-log4j12</artifactId>
-      <version>1.7.2</version>
+      <version>1.7.26</version>
     </dependency>
     <!-- https://mvnrepository.com/artifact/org.mockito/mockito-core -->
   </dependencies>

@@ -15,40 +15,38 @@
 package io.mycat.proxy.reactor;
 
 import io.mycat.buffer.BufferPool;
-import io.mycat.logTip.ReactorTip;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.handler.BackendNIOHandler;
 import io.mycat.proxy.handler.NIOHandler;
 import io.mycat.proxy.session.Session;
 import io.mycat.proxy.session.SessionManager.FrontSessionManager;
 import io.mycat.util.nio.SelectorUtil;
-import java.io.Closeable;
 import java.io.IOException;
 import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Reactor 任务调度,内存资源单位 无论是本线程内还是其他的线程,提交任务只能通过pendingQueue
  *
  * @author jamie12221 date 2019-05-10 13:21
  **/
-public abstract class ProxyReactorThread<T extends Session> extends ReactorEnvThread implements Closeable {
+public abstract class ProxyReactorThread<T extends Session> extends ReactorEnvThread {
 
   /**
    * 定时唤醒selector的时间 1.防止写入事件得不到处理 2.处理pending队列
    */
   protected final static long SELECTOR_TIMEOUT = 100;
-  protected final static Logger LOGGER = LoggerFactory.getLogger(ProxyReactorThread.class);
+  protected final static MycatLogger LOGGER = MycatLoggerFactory
+      .getLogger(ProxyReactorThread.class);
   protected final FrontSessionManager<T> frontManager;
   protected Selector selector;
   protected final BufferPool bufPool;
-  //用于管理连接等事件
-  protected final ConcurrentLinkedQueue<Runnable> pendingJobs = new ConcurrentLinkedQueue<>();
+
 
   private static long activeTime = System.currentTimeMillis();
 
@@ -79,42 +77,27 @@ public abstract class ProxyReactorThread<T extends Session> extends ReactorEnvTh
    */
   public void acceptNewSocketChannel(Object keyAttachement, final SocketChannel socketChannel) {
     assert Thread.currentThread() instanceof NIOAcceptor;
-    pendingJobs.offer(() -> {
-      try {
-        frontManager
-            .acceptNewSocketChannel(keyAttachement, this.bufPool,
-                selector, socketChannel);
-      } catch (Exception e) {
-        LOGGER.warn(ReactorTip.REGISTER_NEW_CONNECTION.getMessage(e));
+    pendingJobs.offer(new NIOJob() {
+      @Override
+      public void run(ReactorEnvThread reactor) {
+        try {
+          frontManager
+              .acceptNewSocketChannel(keyAttachement, bufPool,
+                  selector, socketChannel);
+        } catch (Exception e) {
+          LOGGER.warn("Register new connection error", e);
+        }
+      }
+
+      @Override
+      public void stop(ReactorEnvThread reactor, Exception reason) {
+        LOGGER.warn("Register new connection error", reason);
       }
     });
   }
 
-  /**
-   * 向pending队列添加任务
-   */
-  public void addNIOJob(Runnable job) {
-    pendingJobs.offer(job);
-  }
-
   public BufferPool getBufPool() {
     return bufPool;
-  }
-
-
-  private void processNIOJob() {
-    Runnable nioJob = null;
-    while ((nioJob = pendingJobs.poll()) != null) {
-      try {
-        nioJob.run();
-      } catch (Exception e) {
-        LOGGER.error(ReactorTip.PROCESS_NIO_JOB_EEROR.getMessage(e), e);
-      }
-    }
-  }
-
-  public ReactorEnv getReactorEnv() {
-    return reactorEnv;
   }
 
   /**
@@ -237,8 +220,7 @@ public abstract class ProxyReactorThread<T extends Session> extends ReactorEnvTh
         LOGGER.warn("selector is closed");
         break;
       } catch (Throwable e) {
-        LOGGER.warn(ReactorTip.PROCESS_NIO_UNKNOWN_EEROR.getMessage(reactorEnv.getCurSession(), e),
-            e);
+        LOGGER.warn("Unknown session:{}", reactorEnv.getCurSession(), e);
       }
     }
   }
@@ -254,22 +236,24 @@ public abstract class ProxyReactorThread<T extends Session> extends ReactorEnvTh
     return activeTime;
   }
 
-  @Override
-  public void close(){
+  public void close(Exception throwable) {
+    Objects.requireNonNull(throwable);
+    super.close(throwable);
+    String message = throwable.toString();
     try {
       this.interrupt();
       if (frontManager != null) {
         for (T s : frontManager.getAllSessions()) {
           try {
-            frontManager.removeSession(s, true, "close");
+            frontManager.removeSession(s, true, message);
           } catch (Exception e) {
             LOGGER.error("{}", e);
           }
         }
       }
       selector.close();
-    }catch (Exception e){
-      LOGGER.warn("",e);
+    } catch (Exception e) {
+      LOGGER.warn("", e);
     }
     //close buffer
   }

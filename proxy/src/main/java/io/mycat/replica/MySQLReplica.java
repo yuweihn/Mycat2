@@ -14,13 +14,15 @@
  */
 package io.mycat.replica;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.ProxyBeanProviders;
 import io.mycat.beans.mycat.MycatReplica;
 import io.mycat.config.datasource.DatasourceConfig;
 import io.mycat.config.datasource.ReplicaConfig;
 import io.mycat.config.datasource.ReplicaConfig.BalanceTypeEnum;
-import io.mycat.logTip.ReplicaTip;
+import io.mycat.config.datasource.ReplicaConfig.RepTypeEnum;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.plug.loadBalance.LoadBalanceInfo;
 import io.mycat.plug.loadBalance.LoadBalanceStrategy;
 import io.mycat.proxy.ProxyRuntime;
@@ -38,8 +40,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 集群管理,该类不执行心跳,也不管理jdbc的mysqlsession,只做均衡负载 集群状态在集群相关辅助类实现,辅助类使用定时器分发到执行.辅助类只能更改此类的writeIndex属性,其他属性不是线程安全,初始化之后只读
@@ -48,7 +48,7 @@ import org.slf4j.LoggerFactory;
  **/
 public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
 
-  static final Logger logger = LoggerFactory.getLogger(MySQLReplica.class);
+  static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(MySQLReplica.class);
   private final ReplicaConfig config;
   private final List<MySQLDatasource> datasourceList = new ArrayList<>();
   private final CopyOnWriteArrayList<MySQLDatasource> writeDataSource = new CopyOnWriteArrayList<>(); //主节点默认为0
@@ -81,7 +81,24 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
             .createDatasource(runtime, index, datasourceConfig, this);
         datasourceList.add(datasource);
         if (writeIndex.contains(index)) {
-          writeDataSource.add(datasource);
+          RepTypeEnum repType = replicaConfig.getRepType();
+          Objects.requireNonNull(repType);
+          switch (repType) {
+            case SINGLE_NODE:
+            case MASTER_SLAVE: {
+              if (writeDataSource.isEmpty()) {
+                writeDataSource.add(datasource);
+              } else {
+                throw new MycatException(
+                    "replica:{} SINGLE_NODE and MASTER_SLAVE only support one master index.",
+                    replicaConfig.getName());
+              }
+              break;
+            }
+            case GARELA_CLUSTER:
+              writeDataSource.add(datasource);
+              break;
+          }
         }
       }
     }
@@ -189,8 +206,8 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
       MycatReactorThread reactor = (MycatReactorThread) Thread.currentThread();
       reactor.getMySQLSessionManager().getIdleSessionsOfIds(datasource, ids, asynTaskCallBack);
     } else {
-      MycatExpection mycatExpection = new MycatExpection(
-          ReplicaTip.ERROR_EXECUTION_THREAD.getMessage());
+      MycatException mycatExpection = new MycatException(
+          "Replica must running in MycatReactorThread");
       asynTaskCallBack.onException(mycatExpection, this, null);
       return;
     }
@@ -269,7 +286,7 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
       case MASTER_SLAVE: {
         for (int i = 0; i < this.datasourceList.size(); i++) {
           if (datasourceList.get(i).isAlive()) {
-            logger.info("{} switch master to {}", this, i);
+            LOGGER.info("{} switch master to {}", this, i);
             ///////////////////////////////
             runtime.updateReplicaMasterIndexesConfig(this, writeDataSource);
             //////////////////////////////

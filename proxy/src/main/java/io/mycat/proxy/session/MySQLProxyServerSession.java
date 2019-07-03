@@ -1,12 +1,12 @@
 package io.mycat.proxy.session;
 
 import io.mycat.beans.mysql.MySQLErrorCode;
+import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
-import io.mycat.buffer.CrossSwapThreadBufferPool;
 import io.mycat.proxy.MySQLPacketUtil;
+import io.mycat.proxy.buffer.CrossSwapThreadBufferPool;
 import io.mycat.proxy.handler.MycatHandler.MycatSessionWriteHandler;
 import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.MySQLPacket;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -51,15 +51,27 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
   /**
    * 写入payload
    */
-  default void writeBytes(byte[] payload) {
+  default void writeBytes(byte[] payload, boolean end) {
     try {
       switchMySQLServerWriteHandler();
       ByteBuffer buffer = writeBufferPool().allocate(payload);
-      writeQueue().offer(buffer);//todo 如果队列过长是否希望抛出异常
+      //todo 如果队列过长是否希望抛出异常
       if (Thread.currentThread() == getIOThread()) {
+        /**
+         * ensure data in queue
+         */
+        writeQueue().offer(buffer);
+        setResponseFinished(end);
+        /**
+         * try to write
+         */
         writeToChannel();
-      }else {
-        this.change2WriteOpts();
+      } else {
+        {
+          writeQueue().offer(buffer);
+          setResponseFinished(end);
+          this.change2WriteOpts();
+        }
       }
     } catch (Exception e) {
       this.close(false, setLastMessage(e));
@@ -127,32 +139,27 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
   }
 
 
-
-
   /**
-   * 把队列的buffer写入通道,一个buffer是一个payload,写入时候转化成packet
-   * 写入的
-   * clearReadWriteOpts
-   * byteBuffers
+   * 该函数实现Payload到packet的转化 所以队列里面都是Payload
+   *
+   * 把队列的buffer写入通道,一个buffer是一个payload,写入时候转化成packet 写入的 clearReadWriteOpts byteBuffers
    * isResponseFinished
    *
-   * 与另外一个线程的
-   * change2WriteOpts
-   * byteBuffers
-   * isResponseFinished设置
+   * 与另外一个线程的 io.mycat.proxy.session.MySQLProxyServerSession#writeBytes(byte[])
+   *
+   * change2WriteOpts byteBuffers isResponseFinished设置
    *
    * 应该互斥
-   *
    */
   static void writeToChannel(MySQLProxyServerSession session) throws IOException {
     Queue<ByteBuffer> byteBuffers = session.writeQueue();
     ByteBuffer[] packetContainer = session.packetContainer();
     MySQLPacketSplitter packetSplitter = session.packetSplitter();
     long writed;
+    boolean isEmpty = false;
     do {
       writed = 0;
-      if (byteBuffers.isEmpty()) {
-        session.clearReadWriteOpts();
+      if (isEmpty = byteBuffers.isEmpty()) {
         break;
       }
       ByteBuffer first = byteBuffers.peek();
@@ -196,7 +203,12 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
     if (writed == -1) {
       throw new ClosedChannelException();
     }
-    if (byteBuffers.isEmpty() && session.isResponseFinished()) {
+    boolean writeFinished = false;
+    writeFinished = (isEmpty = byteBuffers.isEmpty()) && session.isResponseFinished();
+    if (!writeFinished) {
+      session.change2WriteOpts();
+    }
+    if (writeFinished) {
       session.writeFinished(session);
       return;
     }

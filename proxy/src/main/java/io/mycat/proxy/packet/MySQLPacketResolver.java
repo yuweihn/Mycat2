@@ -38,17 +38,18 @@ import static io.mycat.proxy.packet.MySQLPayloadType.ROW_FINISHED;
 import static io.mycat.proxy.packet.MySQLPayloadType.ROW_OK;
 import static io.mycat.proxy.packet.MySQLPayloadType.TEXT_ROW;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.beans.mysql.MySQLServerStatusFlags;
 import io.mycat.beans.mysql.packet.EOFPacket;
+import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
 import io.mycat.beans.mysql.packet.OkPacket;
 import io.mycat.beans.mysql.packet.PreparedOKPacket;
+import io.mycat.beans.mysql.packet.ProxyBuffer;
 import io.mycat.config.MySQLServerCapabilityFlags;
-import io.mycat.proxy.buffer.ProxyBuffer;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import java.io.IOException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 报文处理类 该类实现报文解析
@@ -57,7 +58,7 @@ import org.slf4j.LoggerFactory;
  **/
 public interface MySQLPacketResolver extends OkPacket, EOFPacket, PreparedOKPacket {
 
-  Logger logger = LoggerFactory.getLogger(MySQLPacketResolver.class);
+  MycatLogger LOGGER = MycatLoggerFactory.getLogger(MySQLPacketResolver.class);
 
   /**
    * 判断一个结果集结束时候,eof/ok 包 是否后续还有结果集
@@ -467,7 +468,7 @@ public interface MySQLPacketResolver extends OkPacket, EOFPacket, PreparedOKPack
         setPacketId(packetId);
         int andIncrementPacketId = getAndIncrementPacketId();
         if (packetId != andIncrementPacketId) {
-          throw new MycatExpection(
+          throw new MycatException(
               "packetId :" + packetId + " andIncrementPacketId:" + andIncrementPacketId);
         }
 
@@ -588,7 +589,7 @@ public interface MySQLPacketResolver extends OkPacket, EOFPacket, PreparedOKPack
       case AUTH_SWITCH_OTHER_REQUEST:
       case FIRST_PACKET: {
         if (!isPacketFinished) {
-          throw new MycatExpection("unknown state!");
+          throw new MycatException("unknown state!");
         }
         if (head == 0xff) {
           setState(ComQueryState.COMMAND_END);

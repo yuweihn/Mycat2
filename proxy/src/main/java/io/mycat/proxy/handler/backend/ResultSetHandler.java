@@ -14,23 +14,23 @@
  */
 package io.mycat.proxy.handler.backend;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
+import io.mycat.beans.mysql.packet.ErrorPacketImpl;
+import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
-import io.mycat.proxy.buffer.ProxyBuffer;
+import io.mycat.beans.mysql.packet.ProxyBuffer;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.buffer.ProxyBufferImpl;
 import io.mycat.proxy.callback.ResultSetCallBack;
 import io.mycat.proxy.handler.BackendNIOHandler;
 import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.ErrorPacketImpl;
-import io.mycat.proxy.packet.MySQLPacket;
 import io.mycat.proxy.packet.MySQLPacketCallback;
 import io.mycat.proxy.packet.MySQLPacketResolver;
 import io.mycat.proxy.packet.MySQLPayloadType;
 import io.mycat.proxy.session.MySQLClientSession;
 import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 任务类接口 该类实现文本结果集的命令发送以及解析处理
@@ -39,8 +39,9 @@ import org.slf4j.LoggerFactory;
  */
 public interface ResultSetHandler extends BackendNIOHandler<MySQLClientSession>,
     MySQLPacketCallback {
-  static final byte[] EMPTY = new byte[]{};
-  Logger logger = LoggerFactory.getLogger(BackendConCreateHandler.class);
+
+  byte[] EMPTY = new byte[]{};
+  MycatLogger LOGGER = MycatLoggerFactory.getLogger(BackendConCreateHandler.class);
   ResultSetHandler DEFAULT = new ResultSetHandler() {
 
   };
@@ -55,9 +56,9 @@ public interface ResultSetHandler extends BackendNIOHandler<MySQLClientSession>,
       data = EMPTY;
     }
     assert (mysql.currentProxyBuffer() == null);
-    int chunkSize = mysql.getIOThread().getBufPool().getChunkSize();
+    int chunkSize = mysql.getIOThread().getBufPool().chunkSize();
     if (data.length > (chunkSize - 5) || data.length > MySQLPacketSplitter.MAX_PACKET_SIZE) {
-      throw new MycatExpection("ResultSetHandler unsupport request length more than 1024 bytes");
+      throw new MycatException("ResultSetHandler unsupport request length more than 1024 bytes");
     }
     mysql.setCurrentProxyBuffer(new ProxyBufferImpl(mysql.getIOThread().getBufPool()));
     MySQLPacket mySQLPacket = mysql.newCurrentProxyPacket(data.length + 5);
@@ -290,7 +291,7 @@ public interface ResultSetHandler extends BackendNIOHandler<MySQLClientSession>,
         return;
       }
     } catch (Exception e) {
-      logger.error("",e);
+      LOGGER.error("", e);
       ResultSetCallBack callBackAndReset = mysql.getCallBack();
       Objects.requireNonNull(callBackAndReset);
       mysql.setCallBack(null);
@@ -358,7 +359,7 @@ public interface ResultSetHandler extends BackendNIOHandler<MySQLClientSession>,
   @Override
   default void onException(MySQLClientSession session, Exception e) {
     MycatMonitor.onResultSetException(session, e);
-    logger.error("{}", e);
+    LOGGER.error("{}", e);
     onClear(session);
     session.close(false, e);
   }

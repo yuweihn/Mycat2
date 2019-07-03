@@ -1,24 +1,23 @@
 package io.mycat.proxy.handler.backend;
 
-import static io.mycat.logTip.SessionTip.UNKNOWN_IDLE_RESPONSE;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.handler.NIOHandler;
 import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.session.MySQLClientSession;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public enum IdleHandler implements NIOHandler<MySQLClientSession> {
   INSTANCE;
-  protected final static Logger logger = LoggerFactory.getLogger(
+  protected final static MycatLogger LOGGER = MycatLoggerFactory.getLogger(
       IdleHandler.class);
 
   @Override
   public void onSocketRead(MySQLClientSession session) {
-    String message = UNKNOWN_IDLE_RESPONSE.getMessage();
-    MycatMonitor.onIdleReadException(session,new MycatExpection(message));
-    session.close(false,message);
+    MycatMonitor.onIdleReadException(session,
+        new MycatException("mysql session:{} is idle but it receive response", session));
+    session.close(false, "mysql session  is idle but it receive response");
   }
 
   @Override
@@ -33,7 +32,7 @@ public enum IdleHandler implements NIOHandler<MySQLClientSession> {
 
   @Override
   public void onException(MySQLClientSession session, Exception e) {
-    logger.error("{}", e);
+    LOGGER.error("{}", e);
     session.close(false, e);
   }
 

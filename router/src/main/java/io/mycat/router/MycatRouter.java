@@ -14,17 +14,13 @@
  */
 package io.mycat.router;
 
+import io.mycat.MycatException;
 import io.mycat.beans.mycat.MycatSchema;
-import io.mycat.config.ConfigEnum;
-import io.mycat.config.ConfigLoader;
-import io.mycat.config.ConfigReceiverImpl;
 import io.mycat.config.schema.SchemaType;
-import io.mycat.logTip.RouteNullChecker;
 import io.mycat.router.routeResult.OneServerResultRoute;
 import io.mycat.router.routeStrategy.SqlParseRouteRouteStrategy;
 import io.mycat.sqlparser.util.BufferSQLContext;
 import io.mycat.sqlparser.util.BufferSQLParser;
-import java.io.IOException;
 
 /**
  * @author jamie12221 date 2019-05-05 17:04
@@ -33,18 +29,22 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
 
   final MycatRouterConfig config;
   final RouteContext context;
-
-  private BufferSQLParser sqlParser() {
-    return new BufferSQLParser();
-  }
-
-  private BufferSQLContext sqlContext() {
-    return new BufferSQLContext();
-  }
+  final BufferSQLContext sqlContext;
+  final BufferSQLParser parser;
 
   public MycatRouter(MycatRouterConfig config) {
     this.config = config;
-    context = new RouteContext(config);
+    this.context = new RouteContext(config);
+    this.sqlContext = new BufferSQLContext();
+    this.parser = new BufferSQLParser();
+  }
+
+  private BufferSQLParser sqlParser() {
+    return parser;
+  }
+
+  private BufferSQLContext sqlContext() {
+    return sqlContext;
   }
 
   public ResultRoute enterRoute(MycatSchema defaultSchema, String sql) {
@@ -59,7 +59,6 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
     return bufferSQLContext;
   }
 
-
   public ResultRoute enterRoute(MycatSchema defaultSchema, BufferSQLContext sqlContext,
       String sql) {
     this.context.clear();
@@ -71,39 +70,47 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
     String balance = sa.getBalance();
     Boolean runOnMaster = sa.getRunOnMaster();
 
+    OneServerResultRoute routeResult = new OneServerResultRoute();
+    routeResult.setBalanceOnce(balance);
+    routeResult.setRunOnMasterOnce(runOnMaster);
+
+    if (sa.getDataNode() != null) {
+      routeResult.setDataNodeOnce(sa.getDataNode());
+    }
 
     //判断有没有schema
     if (sa.getSchema() != null) {
       defaultSchema = config.getSchemaBySchemaName(sa.getSchema());
-      if (defaultSchema.getSchemaType()== SchemaType.DB_IN_ONE_SERVER){
-        OneServerResultRoute routeResult = new OneServerResultRoute();
-        routeResult.setDataNode(defaultSchema.getDefaultDataNode());
-        routeResult.setSql(sql);
-        return routeResult
-            .setBalance(balance).setRunOnMaster(runOnMaster);
+      if (defaultSchema == null) {
+        throw new MycatException("can not find schema:{}", sa.getSchema());
+      }
+      if (defaultSchema.getSchemaType() == SchemaType.DB_IN_ONE_SERVER) {
+        routeResult.setDataNodeOnce(defaultSchema.getDefaultDataNode());
+        routeResult.setSqlOnce(sql);
+        return routeResult;
       }
     }
-
 
     int schemaCount = sqlContext.getSchemaCount();
     if (schemaCount == 0) {
       RouteStrategy routeStrategy = defaultSchema.getRouteStrategy();
       return routeStrategy.route(defaultSchema, sql, this.context)
-          .setBalance(balance).setRunOnMaster(runOnMaster)
-          ;
+          .setBalanceOnce(balance).setRunOnMasterOnce(runOnMaster);
     }
     if (schemaCount == 1) {
       String schemaName = sqlContext.getSchemaName(0);
       MycatSchema schema = config.getSchemaBySchemaName(schemaName);
-      RouteNullChecker.CHECK_MYCAT_SCHEMA_EXIST.check(schemaName, schema != null);
+      if (schema == null) {
+        throw new MycatException("can not find schema:{}", schemaName);
+      }
       RouteStrategy routeStrategy = schema.getRouteStrategy();
       return routeStrategy.route(schema, sql, this.context)
-          .setBalance(balance).setRunOnMaster(runOnMaster)
+          .setBalanceOnce(balance).setRunOnMasterOnce(runOnMaster)
           ;
     } else {
 
       return this.route(defaultSchema, sql, this.context)
-          .setBalance(balance).setRunOnMaster(runOnMaster);
+          .setBalanceOnce(balance).setRunOnMasterOnce(runOnMaster);
     }
   }
 //
@@ -116,13 +123,15 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
 //    String defaultDataNode = defaultSchema.getDefaultDataNode();
 //    MySQLCommandRouteResultRoute result = new MySQLCommandRouteResultRoute();
 //    result.setCmd(commandPakcet);
-//    result.setDataNode(defaultDataNode);
+//    result.setDataNodeOnce(defaultDataNode);
 //    return result;
 //  }
 
   public ResultRoute enterRoute(String defaultSchemaName, String sql) {
     MycatSchema defaultSchema = config.getSchemaBySchemaName(defaultSchemaName);
-    RouteNullChecker.CHECK_MYCAT_SCHEMA_EXIST.check(defaultSchemaName, defaultSchema != null);
+    if (defaultSchema == null) {
+      throw new MycatException("can not find schema:{}", defaultSchemaName);
+    }
     return enterRoute(defaultSchema, sql);
   }
 
@@ -142,6 +151,10 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
   }
 
   public MycatSchema getSchemaBySchemaName(String db) {
-   return config.getSchemaBySchemaName(db);
+    return config.getSchemaBySchemaName(db);
+  }
+
+  public MycatSchema getSchemaOrDefaultBySchemaName(String name) {
+    return config.getSchemaOrDefaultBySchemaName(name);
   }
 }

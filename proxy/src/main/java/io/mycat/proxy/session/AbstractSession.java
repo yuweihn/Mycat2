@@ -14,14 +14,15 @@
  */
 package io.mycat.proxy.session;
 
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.handler.NIOHandler;
+import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * 实际包含运行状态的session实现 本对象封装 1.selector 2.读写通道 4.session创建时间 sessionId就是connectionId
@@ -31,7 +32,7 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractSession<T extends AbstractSession> implements Session<T> {
 
-  final static Logger LOGGER = LoggerFactory.getLogger(AbstractSession.class);
+  final static MycatLogger LOGGER = MycatLoggerFactory.getLogger(AbstractSession.class);
   protected SocketChannel channel;
   protected SelectionKey channelKey;
   protected final SessionManager<T> sessionManager;
@@ -77,28 +78,22 @@ public abstract class AbstractSession<T extends AbstractSession> implements Sess
 
   public void change2ReadOpts() {
     if ((channelKey.interestOps() & SelectionKey.OP_READ) == 0) {
-      if (LOGGER.isDebugEnabled()) {
-        LOGGER.debug("change2ReadOpts");
-      }
       channelKey.interestOps(SelectionKey.OP_READ);
+      MycatMonitor.onChange2ReadOpts(this);
     }
   }
 
   public void change2WriteOpts() {
     if ((channelKey.interestOps() & SelectionKey.OP_WRITE) == 0) {
-      if (LOGGER.isDebugEnabled()) {
-        LOGGER.debug("change2WriteOpts");
-      }
       channelKey.interestOps(SelectionKey.OP_WRITE);
+      MycatMonitor.onChange2WriteOpts(this);
     }
   }
 
   public void clearReadWriteOpts() {
     if (channelKey.interestOps() != 0) {
-      if (LOGGER.isDebugEnabled()) {
-        LOGGER.debug("clearReadWriteOpts");
-      }
       channelKey.interestOps(0);
+      MycatMonitor.onClearReadWriteOpts(this);
     }
   }
 

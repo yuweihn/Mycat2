@@ -1,6 +1,6 @@
 
 
-# mycat 2.0-schema(schema.yml,逻辑库)
+# mycat 2.0-schema(schema.yml,逻辑库,dataNode.yml,数据分片)
 
 author:junwen 2019-6-1
 
@@ -162,7 +162,7 @@ SQL中的逻辑表必须在mycat proxy session中的当前的逻辑库
 
 ## 配置
 
-### 分片节点配置
+### 分片节点配置(dataNode.yaml)
 
 ```yaml
 dataNodes:
@@ -185,14 +185,19 @@ database
 
 
 
-## 逻辑库配置
+## 逻辑库配置(schema.yaml)
 
 ```yaml
+defaultSchemaName: db1
 schemas:
   - name: db1
     schemaType: DB_IN_ONE_SERVER
     defaultDataNode: dn1
 ```
+
+defaultSchemaName
+
+默认的schema名字,如果没有设置当前schema,就会使用该schema
 
 name
 
@@ -210,7 +215,7 @@ defaultDataNode
 
 
 
-## 逻辑表配置
+## 逻辑表配置(schema.yaml)
 
 name
 
@@ -295,6 +300,12 @@ dataNodes:
     database: db4
     replica: repli
 ```
+
+
+
+proxy router对sql路由的处理方式
+
+
 
 
 

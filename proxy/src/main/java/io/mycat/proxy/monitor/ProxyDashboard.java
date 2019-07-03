@@ -3,9 +3,11 @@ package io.mycat.proxy.monitor;
 import io.mycat.beans.MySQLSessionMonopolizeType;
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
+import io.mycat.beans.mysql.packet.ProxyBuffer;
 import io.mycat.buffer.BufferPool;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.ProxyRuntime;
-import io.mycat.proxy.buffer.ProxyBuffer;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import io.mycat.proxy.session.MySQLClientSession;
 import io.mycat.proxy.session.MySQLSessionManager;
@@ -13,29 +15,25 @@ import io.mycat.proxy.session.MycatSession;
 import io.mycat.proxy.session.SessionManager.FrontSessionManager;
 import io.mycat.replica.MySQLDatasource;
 import io.mycat.security.MycatUser;
+import io.mycat.util.JavaUtils;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.Collection;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Queue;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public enum ProxyDashboard {
   INSTANCE;
-  protected final static Logger LOGGER = LoggerFactory.getLogger("resourceLogger");
+  protected final static MycatLogger LOGGER = MycatLoggerFactory.getLogger("resourceLogger");
 
   public void collectInfo(ProxyRuntime runtime) {
     LOGGER.info("---------------------------dashboard---------------------------");
+    Runtime rt = Runtime.getRuntime();
+    long used = rt.totalMemory() - rt.freeMemory();
+    LOGGER.info("heap memory used:{}", JavaUtils.bytesToString(used));
     for (MycatReactorThread thread : runtime.getMycatReactorThreads()) {
       BufferPool bufPool = thread.getBufPool();
-      //todo
-//      Map<Long, Long> memoryUsage = bufPool.getNetDirectMemoryUsage();
-//      for (Entry<Long, Long> entry : memoryUsage.entrySet()) {
-//        LOGGER.info("threadId:{}  buffer size:{}", entry.getKey(), entry.getValue());
-//      }
+      LOGGER.info("threadId:{} io off heap buffer capacity:{}", thread.getId(),
+          JavaUtils.bytesToString(bufPool.capacity()));
       FrontSessionManager<MycatSession> frontManager = thread.getFrontManager();
       for (MycatSession mycat : frontManager.getAllSessions()) {
         MycatUser user = mycat.getUser();
@@ -103,7 +101,7 @@ public enum ProxyDashboard {
     for (MySQLDatasource datasource : datasourceList) {
       String name = datasource.getName();
       int sessionCounter = datasource.getSessionCounter();
-      LOGGER.info("dataSourceName:{} sessionCounter", name, sessionCounter);
+      LOGGER.info("dataSourceName:{} sessionCounter:{}", name, sessionCounter);
     }
   }
 }

@@ -1,12 +1,13 @@
 package io.mycat.security;
 
-import io.mycat.MycatExpection;
-import io.mycat.beans.mycat.MycatSchema;
+import io.mycat.MycatException;
 import io.mycat.config.user.UserConfig;
 import io.mycat.config.user.UserRootConfig;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * @author jamie12221
@@ -15,11 +16,17 @@ import java.util.Objects;
 public class MycatSecurityConfig {
   private UserRootConfig config;
   private Map<String, UserConfig> users = new HashMap<>();
-
+  private static final Logger LOGGER = LoggerFactory.getLogger(MycatSecurityConfig.class);
   public MycatSecurityConfig(UserRootConfig config) {
     this.config = config;
+    Objects.requireNonNull(config);
+    ////////////////////////////////////check/////////////////////////////////////////////////
+    Objects.requireNonNull(config.getUsers(), "user config can not be empty");
+    ////////////////////////////////////check/////////////////////////////////////////////////
     for (UserConfig user : config.getUsers()) {
-      Objects.requireNonNull(user);
+      ////////////////////////////////////check/////////////////////////////////////////////////
+      Objects.requireNonNull(user.getName(), "user name can not be empty");
+      ////////////////////////////////////check/////////////////////////////////////////////////
       users.put(user.getName(), user);
     }
   }
@@ -27,7 +34,7 @@ public class MycatSecurityConfig {
   public String getPasswordByUserName(String userName) {
     UserConfig userConfig = users.get(userName);
     if (userConfig == null) {
-      throw new MycatExpection("not exist user name" + userName);
+      throw new MycatException("not exist user name" + userName);
     }
     String password = users.get(userName).getPassword();
     if (password == null) {
@@ -42,7 +49,7 @@ public class MycatSecurityConfig {
   }
 
 
-  public MycatUser getUser(String host, String userName) throws MycatExpection {
+  public MycatUser getUser(String host, String userName) throws MycatException {
     UserConfig userConfig = users.get(userName);
     return new UserImpl(userName, host);
   }

@@ -23,13 +23,14 @@ import io.mycat.beans.mysql.MySQLVersion;
 import io.mycat.beans.mysql.packet.AuthPacket;
 import io.mycat.beans.mysql.packet.AuthSwitchRequestPacket;
 import io.mycat.beans.mysql.packet.HandshakePacket;
+import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.config.MySQLServerCapabilityFlags;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.handler.MycatHandler;
 import io.mycat.proxy.handler.NIOHandler;
 import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.MySQLPacket;
-import io.mycat.proxy.reactor.MycatReactorThread;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.security.MycatSecurityConfig;
 import io.mycat.security.MycatUser;
@@ -37,8 +38,6 @@ import io.mycat.util.CachingSha2PasswordPlugin;
 import io.mycat.util.MysqlNativePasswordPluginUtil;
 import io.mycat.util.StringUtil;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * @author jamie12221 date 2019-05-07 13:58
@@ -47,7 +46,8 @@ import org.slf4j.LoggerFactory;
  **/
 public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
 
-    private static final Logger logger = LoggerFactory.getLogger(MySQLClientAuthHandler.class);
+    private static final MycatLogger LOGGER = MycatLoggerFactory
+        .getLogger(MySQLClientAuthHandler.class);
     public byte[] seed;
     public MycatSession mycat;
     private boolean finished = false;
@@ -93,8 +93,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
 
                         MySQLPayloadWriter mySQLPayloadWriter = new MySQLPayloadWriter(1024);
                         authSwitchRequestPacket.writePayload(mySQLPayloadWriter);
-                        mycat.setResponseFinished(true);
-                        mycat.writeBytes(mySQLPayloadWriter.toByteArray());
+                        mycat.writeBytes(mySQLPayloadWriter.toByteArray(),true);
                         return;
                     }
                     //握手包中的加密密码
@@ -172,7 +171,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
         try {
             mycat.writeToChannel();
         } catch (Exception e) {
-            logger.error("{}",e);
+            LOGGER.error("{}", e);
             onClear(mycat);
             mycat.close(false, e);
         }
@@ -192,7 +191,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
     @Override
     public void onException(MycatSession session, Exception e) {
         MycatMonitor.onAuthHandlerException(session,e);
-        logger.error("{}", e);
+        LOGGER.error("{}", e);
         onClear(mycat);
         mycat.close(false, e);
     }
@@ -223,7 +222,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
         MySQLPayloadWriter mySQLPayloadWriter = new MySQLPayloadWriter();
         hs.writePayload(mySQLPayloadWriter);
         mycat.setPakcetId(-1);//使用获取的packetId变为0
-        mycat.writeBytes(mySQLPayloadWriter.toByteArray());
+        mycat.writeBytes(mySQLPayloadWriter.toByteArray(),true);
     }
 
 
@@ -241,13 +240,10 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
             }
 //        } else if(clientAuthPluginName.equals(CachingSha2PasswordPlugin.PROTOCOL_PLUGIN_NAME)){
             encryptPass = CachingSha2PasswordPlugin.scrambleCachingSha2(rightPassword, seed);
-            if (checkBytes(password, encryptPass)) {
-                return true;
-            }
+      return checkBytes(password, encryptPass);
 //        } else {
 //            throw new RuntimeException(String.format("unknow auth plugin %s", clientAuthPluginName));
 //        }
-        return false;
     }
 
     private boolean checkBytes(byte[] encryptPass, byte[] password) {

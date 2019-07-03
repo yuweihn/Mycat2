@@ -18,7 +18,8 @@ import io.mycat.config.ConfigEnum;
 import io.mycat.config.ConfigLoader;
 import io.mycat.config.GlobalConfig;
 import io.mycat.config.heartbeat.HeartbeatRootConfig;
-import io.mycat.logTip.ReplicaTip;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.callback.AsyncTaskCallBack;
 import io.mycat.proxy.monitor.MycatMonitor;
@@ -26,20 +27,22 @@ import io.mycat.proxy.monitor.MycatMonitorCallback;
 import io.mycat.proxy.monitor.MycatMonitorLogCallback;
 import io.mycat.proxy.monitor.ProxyDashboard;
 import io.mycat.proxy.reactor.MycatReactorThread;
+import io.mycat.proxy.reactor.NIOJob;
+import io.mycat.proxy.reactor.ReactorEnvThread;
 import io.mycat.proxy.session.MySQLSessionManager;
+import io.mycat.replica.MySQLDataSourceEx;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * @author cjw
  **/
 public class MycatCore {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(MycatCore.class);
+  private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(MycatCore.class);
 
   private static ProxyRuntime runtime;
 
@@ -56,19 +59,12 @@ public class MycatCore {
         new AsyncTaskCallBack() {
           @Override
           public void onFinished(Object sender, Object result, Object attr) {
-            try {
-              Thread.sleep(TimeUnit.SECONDS.toMillis(60));
-              exit();
-              main(null);
-            } catch (Exception e) {
-              e.printStackTrace();
-            }
 
           }
 
           @Override
           public void onException(Exception e, Object sender, Object attr) {
-
+            e.printStackTrace();
           }
 
         });
@@ -76,10 +72,11 @@ public class MycatCore {
 
   }
 
-  public static void startup(String resourcesPath, ProxyRuntime runtime,
+  public static void startup(String resourcesPath, ProxyRuntime rt,
       MycatMonitorCallback callback,
       AsyncTaskCallBack startFinished)
       throws IOException {
+    runtime = rt;
     try {
       MycatMonitor.setCallback(callback);
       runtime.startReactor();
@@ -91,15 +88,15 @@ public class MycatCore {
       service.scheduleAtFixedRate(idleConnectCheck(runtime), 0, replicaIdleCheckPeriod,
           TimeUnit.SECONDS);
       long period = heartbeatRootConfig.getHeartbeat().getReplicaHeartbeatPeriod();
-//              service.scheduleAtFixedRate(new Runnable() {
-//                @Override
-//                public void run() {
-//                  Collection<MySQLDataSourceEx> datasourceList = runtime.getMySQLDatasourceList();
-//                  for (MySQLDataSourceEx datasource : datasourceList) {
-//                    datasource.heartBeat();
-//                  }
-//                }
-//              }, 0, period, TimeUnit.SECONDS);
+      service.scheduleAtFixedRate(new Runnable() {
+        @Override
+        public void run() {
+          Collection<MySQLDataSourceEx> datasourceList = runtime.getMySQLDatasourceList();
+          for (MySQLDataSourceEx datasource : datasourceList) {
+            datasource.heartBeat();
+          }
+        }
+      }, 0, period, TimeUnit.SECONDS);
       service.scheduleAtFixedRate(new Runnable() {
         @Override
         public void run() {
@@ -111,7 +108,7 @@ public class MycatCore {
           }
 
         }
-      }, 0, 5000, TimeUnit.SECONDS);
+      }, 0, 5, TimeUnit.SECONDS);
 
       runtime.startAcceptor();
       startFinished.onFinished(null, null, null);
@@ -167,14 +164,22 @@ public class MycatCore {
     return () -> {
       MycatReactorThread[] threads = runtime.getMycatReactorThreads();
       for (MycatReactorThread mycatReactorThread : threads) {
-        mycatReactorThread.addNIOJob(() -> {
-          Thread thread = Thread.currentThread();
-          if (thread instanceof MycatReactorThread) {
-            MySQLSessionManager manager = ((MycatReactorThread) thread)
-                .getMySQLSessionManager();
-            manager.idleConnectCheck();
-          } else {
-            throw new MycatExpection(ReplicaTip.ERROR_EXECUTION_THREAD.getMessage());
+        mycatReactorThread.addNIOJob(new NIOJob() {
+          @Override
+          public void run(ReactorEnvThread reactor) throws Exception {
+            Thread thread = Thread.currentThread();
+            if (thread instanceof MycatReactorThread) {
+              MySQLSessionManager manager = ((MycatReactorThread) thread)
+                  .getMySQLSessionManager();
+              manager.idleConnectCheck();
+            } else {
+              throw new MycatException("Replica must running in MycatReactorThread");
+            }
+          }
+
+          @Override
+          public void stop(ReactorEnvThread reactor, Exception reason) {
+            LOGGER.error("", reason);
           }
         });
       }
@@ -183,7 +188,12 @@ public class MycatCore {
 
   public static void exit() {
     if (runtime != null) {
-      runtime.exit();
+      runtime.exit(new MycatException("normal"));
+    }
+  }
+  public static void exit(Exception e) {
+    if (runtime != null) {
+      runtime.exit(e);
     }
   }
 }

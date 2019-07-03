@@ -34,9 +34,13 @@ import io.mycat.config.schema.DataNodeConfig;
 import io.mycat.config.schema.DataNodeRootConfig;
 import io.mycat.config.schema.DataNodeType;
 import io.mycat.config.user.UserRootConfig;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.plug.loadBalance.LoadBalanceManager;
 import io.mycat.plug.loadBalance.LoadBalanceStrategy;
 import io.mycat.proxy.buffer.ProxyBufferPoolMonitor;
+import io.mycat.proxy.callback.AsyncTaskCallBack;
+import io.mycat.proxy.callback.AsyncTaskCallBackCounter;
 import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.monitor.MycatMonitorCallback;
 import io.mycat.proxy.reactor.MycatReactorThread;
@@ -65,7 +69,7 @@ import org.slf4j.LoggerFactory;
 
 public class ProxyRuntime {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(ProxyRuntime.class);
+  private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(ProxyRuntime.class);
   private final AtomicInteger sessionIdCounter = new AtomicInteger(1);
   private final Map<String, MySQLReplica> replicaMap = new HashMap<>();
   private final List<MySQLDatasource> datasourceList = new ArrayList<>();
@@ -77,7 +81,7 @@ public class ProxyRuntime {
   private MycatReactorThread[] reactorThreads;
   private final ConfigReceiver config;
   private ProxyBeanProviders providers;
-  private final Map<String,Object> defContext = new HashMap<>();
+  private final Map<String, Object> defContext = new HashMap<>();
 
   public ProxyRuntime(ConfigReceiver configReceiver, ProxyBeanProviders providers) {
     this.config = configReceiver;
@@ -89,11 +93,12 @@ public class ProxyRuntime {
     this.initRepliac(this, providers);
     this.initDataNode(providers, configReceiver.getConfig(ConfigEnum.DATANODE));
 
-    providers.initRuntime(this,defContext);
+    providers.initRuntime(this, defContext);
   }
 
   public void startReactor() throws IOException {
     initReactor(providers, this);
+    initMinCon();
   }
 
   public void startAcceptor() throws IOException {
@@ -126,7 +131,7 @@ public class ProxyRuntime {
 
   private void initMySQLVariables() {
     MysqlServerVariablesRootConfig config = getConfig(ConfigEnum.VARIABLES);
-    Objects.requireNonNull(config.getVariables());
+    Objects.requireNonNull(config.getVariables(), "variables config config not found");
     variables = new MySQLVariables(config.getVariables());
   }
 
@@ -144,6 +149,14 @@ public class ProxyRuntime {
   }
 
   private void initDataNode(ProxyBeanProviders providers, DataNodeRootConfig dataNodeRootConfig) {
+    ////////////////////////////////////check/////////////////////////////////////////////////
+    Objects.requireNonNull(dataNodeRootConfig, "dataNode config not found");
+    Objects.requireNonNull(dataNodeRootConfig.getDataNodes(), "datNode list can not be empty");
+    for (DataNodeConfig dataNode : dataNodeRootConfig.getDataNodes()) {
+      Objects.requireNonNull(dataNode.getName(), "dataNode name can not be empty");
+      Objects.requireNonNull(dataNode.getDatabase(), "dataBase of dataNode can not be empty");
+    }
+    ////////////////////////////////////check/////////////////////////////////////////////////
     for (DataNodeConfig dataNodeConfig : dataNodeRootConfig.getDataNodes()) {
       DataNodeType dataNodeType =
           dataNodeConfig.getType() == null ? DataNodeType.MYSQL : dataNodeConfig.getType();
@@ -161,15 +174,34 @@ public class ProxyRuntime {
   private void initRepliac(ProxyRuntime runtime, ProxyBeanProviders factory) {
     ReplicasRootConfig dsConfig = getConfig(ConfigEnum.DATASOURCE);
     MasterIndexesRootConfig replicaIndexConfig = getConfig(ConfigEnum.REPLICA_INDEX);
-    Map<String, String> replicaIndexes = replicaIndexConfig.getMasterIndexes();
+    ////////////////////////////////////check/////////////////////////////////////////////////
+    Objects.requireNonNull(dsConfig, "replica config can not found");
+    Objects.requireNonNull(dsConfig.getReplicas(), "replica config can not be empty");
+    Objects.requireNonNull(replicaIndexConfig, "master indexes can not found");
+    Objects
+        .requireNonNull(replicaIndexConfig.getMasterIndexes(), "master indexes can not be empty");
+    ////////////////////////////////////check/////////////////////////////////////////////////
     List<ReplicaConfig> replicas = dsConfig.getReplicas();
+    Map<String, String> replicaIndexes = replicaIndexConfig.getMasterIndexes();
     int size = replicas.size();
     for (int i = 0; i < size; i++) {
       ReplicaConfig replicaConfig = replicas.get(i);
+      ////////////////////////////////////check/////////////////////////////////////////////////
+      Objects.requireNonNull(replicaConfig.getName(), "replica name can not be empty");
+      Objects.requireNonNull(replicaConfig.getRepType(), "replica type can not be empty");
+      Objects.requireNonNull(replicaConfig.getSwitchType(), "replica switch type can not be empty");
+      Objects
+          .requireNonNull(replicaConfig.getBalanceName(), "replica balance name can not be empty");
+      Objects
+          .requireNonNull(replicaConfig.getBalanceType(), "replica balance type can not be empty");
+      Objects.requireNonNull(replicaConfig.getMysqls(), "mysql list can not be empty");
+      ////////////////////////////////////check/////////////////////////////////////////////////
       String writeIndexText = replicaIndexes.get(replicaConfig.getName());
       Set<Integer> writeIndex;
       if (StringUtil.isEmpty(writeIndexText)) {
         writeIndex = Collections.singleton(0);
+        LOGGER.warn("master indexes is empty and set  master of {} is 0 index",
+            replicaConfig.getName());
       } else {
         if (writeIndexText.contains(",")) {
           List<String> strings = Arrays.asList(writeIndexText.split(","));
@@ -187,6 +219,18 @@ public class ProxyRuntime {
 
   private io.mycat.config.proxy.ProxyConfig getProxy() {
     ProxyRootConfig proxyRootConfig = getConfig(ConfigEnum.PROXY);
+    ////////////////////////////////////check/////////////////////////////////////////////////
+    Objects.requireNonNull(proxyRootConfig, "proxy(mycat) config can not found");
+    Objects.requireNonNull(proxyRootConfig.getProxy(), "proxy config can not be empty");
+    ProxyConfig proxy = proxyRootConfig.getProxy();
+    Objects.requireNonNull(proxy.getCommandDispatcherClass(),
+        "commandDispatcherClass can not be empty");
+    Objects.requireNonNull(proxy.getIp(), "ip can not be empty");
+    if (proxy.getReactorNumber() < 1) {
+      LOGGER.warn("ReactorNumber:{}", proxy.getReactorNumber());
+      proxy.setReactorNumber(1);
+    }
+    ////////////////////////////////////check/////////////////////////////////////////////////
     return proxyRootConfig.getProxy();
   }
 
@@ -212,13 +256,13 @@ public class ProxyRuntime {
   }
 
 
-  public void exit() {
+  public void exit(Exception message) {
     Objects.requireNonNull(acceptor);
     Objects.requireNonNull(reactorThreads);
 
-    acceptor.close();
+    acceptor.close(message);
     for (MycatReactorThread reactorThread : reactorThreads) {
-      reactorThread.close();
+      reactorThread.close(message);
     }
     reset();
   }
@@ -237,6 +281,26 @@ public class ProxyRuntime {
           new MycatSessionManager(runtime, providers), runtime);
       mycatReactorThreads[i].start();
     }
+  }
+
+  private void initMinCon() {
+    Objects.requireNonNull(reactorThreads);
+    Objects.requireNonNull(datasourceList);
+    for (MySQLDatasource datasource : datasourceList) {
+      datasource.init(reactorThreads, new AsyncTaskCallBackCounter(datasourceList.size(),
+          new AsyncTaskCallBack() {
+            @Override
+            public void onFinished(Object sender, Object result, Object attr) {
+
+            }
+
+            @Override
+            public void onException(Exception e, Object sender, Object attr) {
+
+            }
+          }));
+    }
+
   }
 
   private void initAcceptor() throws IOException {
@@ -291,6 +355,7 @@ public class ProxyRuntime {
 
   private void initSecurityManager() {
     UserRootConfig userRootConfig = getConfig(ConfigEnum.USER);
+    Objects.requireNonNull(userRootConfig, "user config can not found");
     this.securityManager = new MycatSecurityConfig(userRootConfig);
   }
 
@@ -310,7 +375,7 @@ public class ProxyRuntime {
 
   private void initPlug() {
     PlugRootConfig plugRootConfig = getConfig(ConfigEnum.PLUG);
-    Objects.requireNonNull(plugRootConfig);
+    Objects.requireNonNull(plugRootConfig, "plug config can not found");
     loadBalanceManager.load(plugRootConfig);
   }
 
@@ -329,6 +394,15 @@ public class ProxyRuntime {
 
   public Map<String, Object> getDefContext() {
     return defContext;
+  }
+
+  /**
+   * Getter for property 'providers'.
+   *
+   * @return Value for property 'providers'.
+   */
+  public ProxyBeanProviders getProviders() {
+    return providers;
   }
 
   public void updateReplicaMasterIndexesConfig(final MySQLReplica replica,
@@ -353,7 +427,6 @@ public class ProxyRuntime {
       YamlUtil.dumpToFile(config.getFilePath(), newContext);
       REPLICA_MASTER_INDEXES_LOGGER.info("switchRes from:{}", old, switchRes);
     }
-
 
   }
 }

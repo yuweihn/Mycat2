@@ -1,16 +1,16 @@
 package io.mycat.proxy;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.beans.mysql.MySQLErrorCode;
 import io.mycat.beans.mysql.MySQLPayloadWriter;
+import io.mycat.beans.mysql.packet.ErrorPacketImpl;
+import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
 import io.mycat.beans.mysql.packet.MySQLPayloadWriteView;
 import io.mycat.beans.mysql.packet.PacketSplitterImpl;
 import io.mycat.beans.mysql.packet.PreparedOKPacket;
 import io.mycat.config.MySQLServerCapabilityFlags;
 import io.mycat.proxy.packet.ColumnDefPacketImpl;
-import io.mycat.proxy.packet.ErrorPacketImpl;
-import io.mycat.proxy.packet.MySQLPacket;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
@@ -44,13 +44,16 @@ public class MySQLPacketUtil {
   }
 
   public static final byte[] generateComQueryPacket(String sql) {
-    try (MySQLPayloadWriter writer = new MySQLPayloadWriter(sql.length() + 5)) {
-      writer.write(0x3);
-      writer.writeEOFString(sql);
-      return generateMySQLPacket(0, writer.toByteArray());
-    }
+    return generateMySQLPacket(0, generateComQuery(sql));
   }
 
+  public static final byte[] generateComQueryPayload(byte[] sql) {
+    try (MySQLPayloadWriter writer = new MySQLPayloadWriter(sql.length + 5)) {
+      writer.write(0x3);
+      writer.writeEOFStringBytes(sql);
+      return writer.toByteArray();
+    }
+  }
   public static final byte[] generateResetPacket(long statementId) {
     try (MySQLPayloadWriter writer = new MySQLPayloadWriter(5)) {
       writer.write(0x1a);
@@ -123,7 +126,7 @@ public class MySQLPacketUtil {
         writer.writeFixInt(2, serverStatus);
       }
       if (sessionVariableTracking) {
-        throw new MycatExpection("unsupport!!");
+        throw new MycatException("unsupport!!");
       } else {
         if (message != null) {
           writer.writeBytes(message.getBytes());

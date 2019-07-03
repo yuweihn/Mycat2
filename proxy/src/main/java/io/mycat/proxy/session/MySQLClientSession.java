@@ -14,20 +14,19 @@
  */
 package io.mycat.proxy.session;
 
-import io.mycat.MycatExpection;
+import io.mycat.MycatException;
 import io.mycat.beans.MySQLSessionMonopolizeType;
 import io.mycat.beans.mycat.MycatDataNode;
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
 import io.mycat.beans.mysql.MySQLServerStatusFlags;
+import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
-import io.mycat.logTip.TaskTip;
-import io.mycat.proxy.buffer.ProxyBuffer;
+import io.mycat.beans.mysql.packet.ProxyBuffer;
 import io.mycat.proxy.buffer.ProxyBufferImpl;
 import io.mycat.proxy.handler.NIOHandler;
 import io.mycat.proxy.handler.ResponseType;
 import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.MySQLPacket;
 import io.mycat.proxy.packet.MySQLPacketResolver;
 import io.mycat.proxy.packet.MySQLPacketResolverImpl;
 import io.mycat.proxy.packet.MySQLPayloadType;
@@ -79,6 +78,7 @@ public class MySQLClientSession extends
 
   private long selectLimit = -1;
   private long netWriteTimeout = -1;
+  private boolean isReadOnly = false;
   /**
    * 与mycat session绑定的信息 monopolizeType 是无法解绑的原因 TRANSACTION,事务 LOAD_DATA,交换过程
    * PREPARE_STATEMENT_EXECUTE,预处理过程 CURSOR_EXISTS 游标 以上四种情况 mysql客户端的并没有结束对mysql的交互,所以无法解绑
@@ -135,7 +135,7 @@ public class MySQLClientSession extends
     try {
       getSessionManager().removeSession(this, normal, hint);
     } catch (Exception e) {
-      LOGGER.error(TaskTip.CLOSE_ERROR.getMessage(e));
+      LOGGER.error("channel close occur exception:{}", e);
     }
   }
 
@@ -446,7 +446,7 @@ public class MySQLClientSession extends
       packet1.channelWriteEndIndex(packetEndPos);
       writeToChannel();
     } else {
-      throw new MycatExpection(TaskTip.UNSUPPORT_DEF_MAX_PACKET.getMessage(payloadLen));
+      throw new MycatException("unsupport max packet {}", MySQLPacketSplitter.MAX_PACKET_SIZE);
     }
   }
 
@@ -611,5 +611,13 @@ public class MySQLClientSession extends
   }
   public void setResponseType(ResponseType responseType) {
     this.responseType = responseType;
+  }
+
+  public boolean isReadOnly() {
+    return isReadOnly;
+  }
+
+  public void setReadOnly(boolean readOnly) {
+    isReadOnly = readOnly;
   }
 }
