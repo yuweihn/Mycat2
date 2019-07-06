@@ -45,7 +45,7 @@ import static io.mycat.beans.mysql.MySQLFieldsType.FIELD_TYPE_YEAR;
 import io.mycat.MycatException;
 import io.mycat.beans.mysql.packet.ColumnDefPacket;
 import io.mycat.beans.mysql.packet.MySQLPacket;
-import io.mycat.collector.ResultSetTransfor;
+import io.mycat.mysqlapi.collector.ResultSetTransfor;
 import io.mycat.proxy.packet.ColumnDefPacketImpl;
 import java.util.function.IntPredicate;
 
@@ -120,7 +120,7 @@ public class TextResultSetHandler implements ResultSetHandler {
         mySQLPacket.packetReadStartIndex(startIndex + 1);
         switch (columnType) {
           default: {
-            throw new MycatException("unknown field type:{}", (columnType));
+            throw new MycatException("unknown field message:{}", (columnType));
           }
           case FIELD_TYPE_DECIMAL: {
             collector
@@ -238,7 +238,7 @@ public class TextResultSetHandler implements ResultSetHandler {
       }
       switch (columnType) {
         default: {
-          throw new MycatException("unknown field type:{}", (columnType));
+          throw new MycatException("unknown field message:{}", (columnType));
         }
         case FIELD_TYPE_DECIMAL: {
           collector.collectDecimal(columnIndex, columnDef, columnDef.getColumnDecimals() & 0xff,

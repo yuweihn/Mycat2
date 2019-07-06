@@ -20,14 +20,14 @@ public class MycatMonitorLogCallback implements MycatMonitorCallback {
   protected final static MycatLogger LOGGER = MycatLoggerFactory.getLogger(MycatMonitor.class);
   protected final static MycatLogger SQL_LOGGER = MycatLoggerFactory.getLogger("sqlLogger");
   final static boolean onBind = false;
-  final static boolean onSessionPool = false;
+  final static boolean onSessionPool = true;
   final static boolean onBuffer = false;
   final static boolean recordDump = false;
-  final static boolean onSQL = false;
-  final static boolean onException = false;
+  final static boolean onSQL = true;
+  final static boolean onException = true;
   final static boolean onClear = false;
   final static boolean onCommand = false;
-  final static boolean onBackend = false;
+  final static boolean onBackend = true;
   final static boolean onPayload = false;
   final static boolean readWriteOpts = false;
   @Override
@@ -196,7 +196,7 @@ public class MycatMonitorLogCallback implements MycatMonitorCallback {
   @Override
   public void onCloseMysqlSession(MySQLClientSession session, boolean normal, String reason) {
     if (onSessionPool) {
-      LOGGER.info("sessionId:{} normal:{} reason:{}", session.sessionId(), normal, reason);
+      LOGGER.info("sessionId:{} normal:{} message:{}", session.sessionId(), normal, reason);
     }
   }
 
@@ -310,6 +310,14 @@ public class MycatMonitorLogCallback implements MycatMonitorCallback {
   }
 
   @Override
+  public void onSyncSQL(MySQLSynContext context, String sql, MySQLClientSession session) {
+    if (onSQL) {
+      //    Thread.dumpStack();
+      SQL_LOGGER.debug("sync mysql session:{} sql:{}", session.sessionId(), sql);
+    }
+  }
+
+  @Override
   public final void onSynchronizationState(MySQLClientSession session) {
     if (onBind) {
       //    Thread.dumpStack();
@@ -360,7 +368,7 @@ public class MycatMonitorLogCallback implements MycatMonitorCallback {
   @Override
   public final void onCloseMycatSession(MycatSession session, boolean normal, String reason) {
     if (onSessionPool) {
-      LOGGER.debug("sessionId:{} normal:{} reason:{}", session.sessionId(), normal, reason);
+      LOGGER.debug("sessionId:{} normal:{} message:{}", session.sessionId(), normal, reason);
     }
   }
 

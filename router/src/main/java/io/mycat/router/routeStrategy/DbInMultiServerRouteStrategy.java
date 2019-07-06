@@ -26,7 +26,7 @@ import io.mycat.sqlparser.util.BufferSQLContext;
 /**
  * @author jamie12221 date 2019-05-05 16:54
  **/
-public class DbInMutilServerRouteStrategy implements RouteStrategy<RouteContext> {
+public class DbInMultiServerRouteStrategy implements RouteStrategy<RouteContext> {
 
   @Override
   public ResultRoute route(MycatSchema schema, String sql, RouteContext context) {
@@ -56,9 +56,9 @@ public class DbInMutilServerRouteStrategy implements RouteStrategy<RouteContext>
     if (schema.existTable(tableName)) {
       MycatTable tableByTable = schema.getTableByTableName(tableName);
       String dataNode = tableByTable.getDataNodes().get(0);
-      result.setDataNodeOnce(dataNode);
-      result.setSqlOnce(sql);
-      result.setRunOnMasterOnce(!context.getSqlContext().isSimpleSelect());
+      result.setDataNode(dataNode);
+      result.setSql(sql);
+      result.setRunOnMaster(!context.getSqlContext().isSimpleSelect());
       return result;
     } else {
       throw new MycatException("table {} is not exist in {}", tableName, schema.getSchemaName());

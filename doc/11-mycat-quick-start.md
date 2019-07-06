@@ -56,7 +56,7 @@ replicas:
 
 ### 步骤3
 
-修改schema.yaml,以下两个个架构选一个配置
+修改schema.yaml,dataNode.yaml,以下两个架构选一个配置
 
 #### 负载均衡
 
@@ -66,20 +66,29 @@ dataNode的database是mysql物理库的名称
 
 replica是上述的复制组的名字
 
+schema.yaml
+
 ```yaml
 schemas:
   - name: db1
     schemaType: DB_IN_ONE_SERVER
     defaultDataNode: dn1
     tables:
+```
 
+dataNode.yaml
+
+```yaml
 dataNodes:
-  - name: dn1
-    database: db1
-    replica: repli
+
+- name: dn1
+  database: db1
+  replica: repli
 ```
 
 #### 在逻辑库聚合多个mysql服务器的物理表
+
+schema.yaml
 
 ```yaml
 schemas:
@@ -90,7 +99,7 @@ schemas:
         dataNodes: dn1
       - name: travelrecord2
         dataNodes: dn2
-
+dataNode.yaml
 
 dataNodes:
   - name: dn1

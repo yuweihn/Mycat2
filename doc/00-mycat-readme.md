@@ -2,8 +2,12 @@
 
 author:junwen,zhangwy 2019-6-2
 
+author:junwen 2019-7-4
+
 [![Creative Commons License](https://i.creativecommons.org/l/by-sa/4.0/88x31.png)](http://creativecommons.org/licenses/by-sa/4.0/)
 This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-sa/4.0/).
+
+项目地址:<https://github.com/MyCATApache/Mycat2>
 
 ## 优势
 
@@ -12,7 +16,7 @@ This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 Inter
 ## 限制
 
 - 暂不支持MySQL压缩协议
-- 有限的SQL路由支持(需要指定dataNode)
+- 有限的SQL路由支持
 - 暂不支持跨节点修改SQL和查询SQL(计划中)
 
 ## 配置说明
@@ -28,6 +32,10 @@ This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 Inter
 [mysql集群配置(replicas.yml)](03-mycat-replica.md)
 
 [逻辑库配置(schema.yml)](04-mycat-schema.md)
+
+[路由行为说明](20-mycat-router.md)
+
+[JDBC内部SQL处理说明](18-proxy-sql.md)
 
 [路由规则配置(rule.yml)](05-mycat-dynamic-annotation.md)
 

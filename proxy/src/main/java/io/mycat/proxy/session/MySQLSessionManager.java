@@ -21,13 +21,13 @@ import io.mycat.annotations.NoExcept;
 import io.mycat.beans.mysql.MySQLCommandType;
 import io.mycat.beans.mysql.MySQLPayloadWriter;
 import io.mycat.beans.mysql.packet.ErrorPacketImpl;
-import io.mycat.collector.OneResultSetCollector;
-import io.mycat.collector.TextResultSetTransforCollector;
 import io.mycat.config.ConfigEnum;
 import io.mycat.config.GlobalConfig;
 import io.mycat.config.heartbeat.HeartbeatRootConfig;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
+import io.mycat.mysqlapi.collector.OneResultSetCollector;
+import io.mycat.mysqlapi.collector.TextResultSetTransforCollector;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.callback.CommandCallBack;
 import io.mycat.proxy.callback.RequestCallback;
@@ -125,14 +125,20 @@ public final class MySQLSessionManager implements
 
           if (!mySQLSession.isOpen()) {
             thread.addNIOJob(new NIOJob() {
+              static final String MESSAGE = "mysql session is close in idle";
               @Override
               public void run(ReactorEnvThread reactor) throws Exception {
-                mySQLSession.close(false, "mysql session is close in idle");
+                mySQLSession.close(false, MESSAGE);
               }
 
               @Override
               public void stop(ReactorEnvThread reactor, Exception reason) {
-                mySQLSession.close(false, "mysql session is close in idle");
+                mySQLSession.close(false, MESSAGE);
+              }
+
+              @Override
+              public String message() {
+                return MESSAGE;
               }
             });
             continue;
@@ -192,7 +198,7 @@ public final class MySQLSessionManager implements
   /**
    * @param ids 如果id失效 设置为-id
    */
-  public MySQLClientSession getIdleMySQLClientSessionsByIds(MySQLDatasource datasource,
+  private MySQLClientSession getIdleMySQLClientSessionsByIds(MySQLDatasource datasource,
       List<SessionIdAble> ids) {
     boolean random = ThreadLocalRandom.current().nextBoolean();
     //dataSource
@@ -519,6 +525,11 @@ public final class MySQLSessionManager implements
       @Override
       public void stop(ReactorEnvThread reactor, Exception reason) {
         mySQLClientSession.close(false, hint);
+      }
+
+      @Override
+      public String message() {
+        return hint;
       }
     });
   }

@@ -37,7 +37,7 @@ Implement more router and part of the database function in Mycat node. Mycat pro
 
 
 
-## Configuration
+## Configuration 
 
 the kinds of configuration that don't changed frequently.
 
@@ -46,32 +46,32 @@ the kinds of configuration that don't changed frequently.
 - #### ip
 
 
-the ip of mycat server
+the ip of mycat server 
 
 - #### port
 
 
-the port of mycat server
+the port of mycat server 
 
 - ### replicas
 
 
 a replica treated as a consistent mysql internal load balancing.
 
-- #### replica -name
+- #### replica -tableName
 
 
-the the name of replica that can be reference by data node config in schema config
+the the tableName of replica that can be reference by data node config in schema config
 
 - #### repType
 
 
-type of replica:x:
+message of replica:x:
 
 - #### balanceName
 
 
-reference load balance name that be in plug config
+reference load balance tableName that be in plug config
 
 - #### mysqls
 
@@ -80,17 +80,17 @@ configure multiple mysql connection config
 
 #### mysqls-mysql
 
-- ###### name
+- ###### tableName
 
-  the the name of mysql connection info
+  the the tableName of mysql connection info
 
 - ###### ip
 
-  the ip of mysql server
+  the ip of mysql server 
 
 - ###### port
 
-  the port of mysql server
+  the port of mysql server 
 
 - ###### user
 
@@ -121,7 +121,7 @@ masterIndexes:
   repli2: 0
 ```
 
-repli is a replica  name that in datasource config
+repli is a replica  tableName that in datasource config
 
 the number 0 is mysqls index  in datasource confg marks as matser mysql server
 
@@ -149,7 +149,7 @@ NOTE:A client only send sql or initDb command to switch it and mycat do not supp
 
 2. ###### DB IN MULTI SERVER
 
-   A table corresponds to a data node.It routes SQL by a table name in sql.And this table must exist in the current schema.It means mysql client can switch data node by a table name in SQL.It supports only one table operation.
+   A table corresponds to a data node.It routes SQL by a table tableName in sql.And this table must exist in the current schema.It means mysql client can switch data node by a table tableName in SQL.It supports only one table operation.
 
 3. ###### ANNOTATION ROUTE
 
@@ -163,10 +163,10 @@ NOTE:A client only send sql or initDb command to switch it and mycat do not supp
 
    In this case,there are some limitations to simplify the annotation routing.
 
-   1. The current schema and only a table name in SQL to determine the table.
+   1. The current schema and only a table tableName in SQL to determine the table.
    2. If continuous values on multiple data nodes is not supported in mycat proxy.Because It needs to split SQL and merge to process result set of multiple nodes. This is not suitable for processing in the proxy.
 
-
+   
 
 4. ###### SQL PARSE ROUTE:x:
 
@@ -178,23 +178,23 @@ NOTE:A client only send sql or initDb command to switch it and mycat do not supp
 
 a logic table in mycat.Corresponding to the table on the mysql server, we call it the physical table.
 
-- Generally, its name is unique in all schemas. When SQL is received, mycat can route it and process according to that name.
+- Generally, its tableName is unique in all schemas. When SQL is received, mycat can route it and process according to that tableName.
 
-- The logic table name must correspond to the name of the physical table name(Although tablename can be rewritten to support it).
+- The logic table tableName must correspond to the tableName of the physical table tableName(Although tablename can be rewritten to support it).
 
-- For SQL without a table name, Mycat responds to the SQL itself or sends it to the default data node.
+- For SQL without a table tableName, Mycat responds to the SQL itself or sends it to the default data node.
 
+  
 
+  ###### table message
 
-  ###### table type
+  - DEFAULT 
 
-  - DEFAULT
-
-    when schema type is DB IN ONE SERVER,the  type of table in the schema is dafault.The router select
+    when schema message is DB IN ONE SERVER,the  message of table in the schema is dafault.The router select 
 
     data node by the property 'dafaultDataNode' of schema.
 
-    when schema type is DB IN MULTI SERVER,the  type of table in the schema also is dafault.The router select data node by first data node name in the property 'dataNodes' of table.
+    when schema message is DB IN MULTI SERVER,the  message of table in the schema also is dafault.The router select data node by first data node tableName in the property 'dataNodes' of table.
 
   - SHARING DATABASE
 
@@ -212,7 +212,7 @@ In MySQL connection,a dataNode is a meta data, a connection with a current schem
 
 That's why you can only use one schema to access MySQL server once with dataNode by a SQL without schema .
 
-
+ 
 
 #### cconfiguration example
 
@@ -220,15 +220,15 @@ That's why you can only use one schema to access MySQL server once with dataNode
 
 ```yaml
 schemas:
-  - name: db1
+  - tableName: db1
     schemaType: DB_IN_ONE_SERVER
     defaultDataNode: dn1
     tables:
-      - name: travelrecord
+      - tableName: travelrecord
 
 
 dataNodes:
-  - name: dn1
+  - tableName: dn1
     database: db1
     replica: repli
 ```
@@ -237,20 +237,20 @@ dataNodes:
 
 ```yaml
 schemas:
-  - name: db1
+  - tableName: db1
     schemaType: DB_IN_MULTI_SERVER
     tables:
-      - name: travelrecord
+      - tableName: travelrecord
         dataNodes: dn1
-      - name: travelrecord2
+      - tableName: travelrecord2
         dataNodes: dn2
 
 
 dataNodes:
-  - name: dn1
+  - tableName: dn1
     database: db1
     replica: repli
-  - name: dn2
+  - tableName: dn2
     database: db2
     replica: repli
 ```
@@ -259,23 +259,23 @@ dataNodes:
 
 ```yaml
 schemas:
-  - name: db1
+  - tableName: db1
     schemaType: ANNOTATION_ROUTE
     tables:
-      - name: travelrecord
+      - tableName: travelrecord
         dataNodes: dn1,dn2,dn3,dn4
-        type: SHARING_DATABASE
+        message: SHARING_DATABASE
 dataNodes:
-  - name: dn1
+  - tableName: dn1
     database: db1
     replica: repli
-  - name: dn2
+  - tableName: dn2
     database: db2
     replica: repli
-  - name: dn3
+  - tableName: dn3
     database: db3
     replica: repli
-  - name: dn4
+  - tableName: dn4
     database: db4
     replica: repli
 ```
@@ -284,7 +284,7 @@ dataNodes:
 
 ### packet splitting
 
-for example,client or server  send 2^24 -1 bytes payload int two packets.
+for example,client or server  send 2^24 -1 bytes payload int two packets. 
 
 ###  session status
 
@@ -314,7 +314,7 @@ Generally,for isolation complexity to test proxy separately.
 
 MySQL packet parse designed for proxy.For the row packet,column def packet,not need to receive the complete packet to pass the message data from the backend to the front.
 
-#### A payload of request  in multi packet
+#### A payload of request  in multi packet 
 
 When the length of a SQL is exceeding 16MB,proxy must correctly reveive  it and send it to backend mysql server.Similarly,if proxy support send long (blob)  data command or load data infile,should test them.
 
@@ -322,9 +322,9 @@ so we prepare request as follow
 
 - a long query sql statement
 - a insert sql with blob prepare parameter to send long data
-- load data file
+- load data file 
 
-#### A  payload  response in multi packet
+#### A  payload  response in multi packet 
 
 When the length of a row packet of result set is exceeding 16MB,proxy must correctly reveive it from backend mysql server and maybe swap it to client during direct exchanging data in a net buffer .
 
@@ -338,19 +338,19 @@ so we prepare some data in backend mysql server as follow
 
 a ok packet,error packet or eof packet
 
-#### COM_FIELD_LIST
+#### COM_FIELD_LIST 
 
 a column count ,number of column def ,maybe  a eof packet
 
-#### COM_QUERY|COM_STMT_EXECUTE
+#### COM_QUERY|COM_STMT_EXECUTE 
 
 1. if the number of row is 0,repsonse is only a ok packet.otherwise,
 2. a result set contains a column count ,column count number of column def ,maybe a eof packet,multi row and end on ok packet or error packet.
 3. if the last ok packet (head 0xfe),its serverstatus marked more result set,response continues on step 1 .
 
-#### COM_STMT_PREPARE
+#### COM_STMT_PREPARE 
 
-COM_STMT_PREPARE_OK,num_params  number of column def and num_columns number of column def
+COM_STMT_PREPARE_OK,num_params  number of column def and num_columns number of column def 
 
 #### LOCAL INFILE Request (from server send to client)
 
@@ -394,15 +394,15 @@ Interested in the following status:
 
 ### tools
 
-two MySQL servers(no proxy) with account with
+two MySQL servers(no proxy) with account with 
 
- user name {root} and
+ user tableName {root} and 
 
 password {123456}
 
 one server  listens{localhost:3307}
 
-the other  listens{localhost:3308}
+the other  listens{localhost:3308} 
 
 with a schema named {db1}
 
@@ -415,12 +415,12 @@ CREATE TABLE `travelrecord` (
   `traveldate` date DEFAULT NULL,
   `fee` decimal(10,0) DEFAULT NULL,
   `days` int(11) DEFAULT NULL
-)
+) 
 ```
 
 when we need more schema or table,
 
-we rename db1,db2,db3...
+we rename db1,db2,db3... 
 
 travelrecord1,travelrecord2,travelrecord3...
 
@@ -438,31 +438,31 @@ SET GLOBAL max_allowed_packet = 2*10*1024*1024;//to test multi packet
 
 
 
-### mycat proxy configuration
+### mycat proxy configuration 
 
 the test cares mysql proxy instead of strategy which a function has nothing to do with network data
 
 ```yaml
 #replicas.yaml
 replicas:
-  - name: repli                   #
+  - tableName: repli                   # 
     repType: MASTER_SLAVE         # do not care
     switchType: SWITCH            # do not care
     balanceName: BalanceAllRead   # do not care
     mysqls:
-      - name: mytest3306
+      - tableName: mytest3306             
         ip: 127.0.0.1               #
-        port: 3306                  #
-        user: root                  #
-        password: 123456     		#
+        port: 3306                  # 
+        user: root                  # 
+        password: 123456     		# 
         minCon: 1                   # do not care
         maxCon: 1000                # do not care
         maxRetryCount: 3            # do not care
-      - name: mytest3307
-        ip: 127.0.0.1               #
-        port: 3307                  #
-        user: root                  #
-        password: 123456     		#
+      - tableName: mytest3307            
+        ip: 127.0.0.1               # 
+        port: 3307                  # 
+        user: root                  # 
+        password: 123456     		# 
         minCon: 1                   # do not care
         maxCon: 1000                # do not care
         maxRetryCount: 3            # do not care
@@ -471,13 +471,13 @@ replicas:
 ```yaml
 #schema.yml
 schemas:
-  - name: test
+  - tableName: test
     schemaType: DB_IN_ONE_SERVER
     defaultDataNode: dn1
     tables:
-      - name: travelrecord
+      - tableName: travelrecord
 dataNodes:
-  - name: dn1
+  - tableName: dn1
     database: db1
     replica: repli
 ```
@@ -487,7 +487,7 @@ The above is the simplest configuration to test the proxy about router
 ```yaml
 #users.yaml
 users:
-  - name: root
+  - tableName: root
     password: 123456
     schemas:
       - test
@@ -504,7 +504,7 @@ proxy:
   reactorNumber: 6        # default
 ```
 
-### exception
+### exception 
 
 1. #### reveive data exception from client
 
@@ -512,7 +512,7 @@ proxy:
 
    close mycat session
 
-2. #### write data from proxy to backend mysql server  exception
+2. #### write data from proxy to backend mysql server  exception 
 
    ##### option 1 send a error packet(default):
 
@@ -522,7 +522,7 @@ proxy:
 
    ##### option 2 retry:
 
-   set a counter
+   set a counter 
 
    close backend mysql session
 
@@ -536,13 +536,13 @@ proxy:
 
    close mycat session
 
-3. #### reveive data from backend mysql server exception
+3. #### reveive data from backend mysql server exception 
 
    close backend mysql session
 
    close mycat session
 
-4. #### write data to client exception
+4. #### write data to client exception 
 
    close backend mysql session
 
@@ -552,7 +552,7 @@ proxy:
 
 ### Platform validation
 
-mysql client (most jdbc)
+mysql client (most jdbc) 
 
 mysql server 5.5/5.6/5.7/8
 
@@ -560,9 +560,9 @@ mysql server 5.5/5.6/5.7/8
 
 ### Testing process(temporary)
 
-1. startup mycat
+1. startup mycat 
 
-2. client connects mycat and get a connection
+2. client connects mycat and get a connection 
 
 3. client sends a SQL whose length is  exceeding 16MB
 
@@ -598,7 +598,7 @@ mvn package
 path to the configuration file(resources) as MYCAT_HOME added to VM options.
 
 ```
-java -Dfile.encoding=UTF-8 -DMYCAT_HOME=D:\xxxxxxx -jar mycat2-0.1.jar
+java -Dfile.encoding=UTF-8 -DMYCAT_HOME=D:\xxxxxxx -jar mycat2-0.1.jar 
 ```
 
 ## communicate

@@ -1,6 +1,6 @@
 # mycat 2.0 proxy sql
 
-author:junwen 2019-6-14,7-1
+author:junwen 2019-6-14,7-1,7-4
 
 
 
@@ -71,7 +71,7 @@ GLOBAL级别 返回错误
 set session transaction {read only|read write}
 ```
 
-记录access_mode,并返回ok
+记录access_mode,并返回ok,不会发往后端mysql
 
 
 
@@ -164,3 +164,6 @@ select @@session.tx_read_only;
 
 [![Creative Commons License](https://i.creativecommons.org/l/by-sa/4.0/88x31.png)](http://creativecommons.org/licenses/by-sa/4.0/)
 This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-sa/4.0/).
+
+------
+

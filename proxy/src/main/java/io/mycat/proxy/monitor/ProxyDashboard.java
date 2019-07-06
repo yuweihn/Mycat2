@@ -18,6 +18,7 @@ import io.mycat.security.MycatUser;
 import io.mycat.util.JavaUtils;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Queue;
 
@@ -28,8 +29,10 @@ public enum ProxyDashboard {
   public void collectInfo(ProxyRuntime runtime) {
     LOGGER.info("---------------------------dashboard---------------------------");
     Runtime rt = Runtime.getRuntime();
+    LOGGER.info("---------------------------env---------------------------");
     long used = rt.totalMemory() - rt.freeMemory();
     LOGGER.info("heap memory used:{}", JavaUtils.bytesToString(used));
+    LOGGER.info("---------------------------env---------------------------");
     for (MycatReactorThread thread : runtime.getMycatReactorThreads()) {
       BufferPool bufPool = thread.getBufPool();
       LOGGER.info("threadId:{} io off heap buffer capacity:{}", thread.getId(),
@@ -96,7 +99,7 @@ public enum ProxyDashboard {
         LOGGER.info("idle:{},monopolizeType:{}", idle, type);
       }
     }
-    Collection<MySQLDatasource> datasourceList = runtime.getMySQLDatasourceList();
+    Collection<MySQLDatasource> datasourceList = new ArrayList<>(runtime.getMySQLDatasourceList());
     LOGGER.info("---------------------------datasource---------------------------");
     for (MySQLDatasource datasource : datasourceList) {
       String name = datasource.getName();
