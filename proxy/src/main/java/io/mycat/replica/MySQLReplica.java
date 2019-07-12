@@ -30,13 +30,11 @@ import io.mycat.proxy.callback.SessionCallBack;
 import io.mycat.proxy.handler.backend.MySQLDataSourceQuery;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import io.mycat.proxy.session.MySQLClientSession;
+import io.mycat.proxy.session.SessionManager.PartialType;
 import io.mycat.proxy.session.SessionManager.SessionIdAble;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -204,7 +202,8 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
     Objects.requireNonNull(asynTaskCallBack);
     if (Thread.currentThread() instanceof MycatReactorThread) {
       MycatReactorThread reactor = (MycatReactorThread) Thread.currentThread();
-      reactor.getMySQLSessionManager().getIdleSessionsOfIds(datasource, ids, asynTaskCallBack);
+      reactor.getMySQLSessionManager()
+          .getIdleSessionsOfIdsOrPartial(datasource, ids, PartialType.RANDOM_ID, asynTaskCallBack);
     } else {
       MycatException mycatExpection = new MycatException(
           "Replica must running in MycatReactorThread");
@@ -225,7 +224,6 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
     return Collections.unmodifiableList(datasourceList);
   }
 
-  final Map<String, Map<String, Set<String>>> metaData = new HashMap<>();
 
   public List<MySQLDatasource> getMaster() {
     int size = writeDataSource.size();
@@ -243,27 +241,6 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
       }
     }
     return datasources;
-  }
-
-  public void addMetaData(String schemaName, String tableName, String columnName) {
-    Map<String, Set<String>> schemaMap = metaData.get(schemaName);
-    if (schemaMap == null) {
-      schemaMap = new HashMap<>();
-    }
-    Set<String> table = schemaMap.get(tableName);
-    if (table == null) {
-      table = new HashSet<>();
-    }
-    table.add(columnName);
-
-    schemaMap.put(tableName, table);
-
-    metaData.put(schemaName, schemaMap);
-
-  }
-
-  public Map<String, Map<String, Set<String>>> getMetaData() {
-    return metaData;
   }
 
   public ReplicaConfig getConfig() {
