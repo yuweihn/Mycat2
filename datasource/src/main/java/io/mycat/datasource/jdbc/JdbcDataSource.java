@@ -1,26 +1,21 @@
 package io.mycat.datasource.jdbc;
 
+import io.mycat.beans.mycat.MycatDataSource;
 import io.mycat.compute.RowBaseIterator;
 import io.mycat.compute.RowMetaData;
-import io.mycat.config.ConfigEnum;
-import io.mycat.config.ConfigLoader;
-import io.mycat.config.ConfigReceiver;
 import io.mycat.config.datasource.DatasourceConfig;
-import io.mycat.config.datasource.ReplicaConfig;
-import io.mycat.config.datasource.ReplicasRootConfig;
+import io.mycat.plug.loadBalance.LoadBalanceELement;
 import java.io.IOException;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * @author jamie12221 date 2019-05-10 13:21
  **/
-public class JdbcDataSource {
+public class JdbcDataSource implements MycatDataSource, LoadBalanceELement {
 
   private final int index;
   private final DatasourceConfig datasourceConfig;
-  private volatile boolean isAlive = false;
+  private volatile boolean isAlive = true;
 
   public JdbcDataSource(int index, DatasourceConfig datasourceConfig) {
     this.index = index;
@@ -41,32 +36,23 @@ public class JdbcDataSource {
   }
 
   public static RowBaseIterator getSimple() throws IOException, SQLException {
-    ConfigReceiver configReceiver = ConfigLoader
-        .load("D:\\newgit\\f\\mycat2\\src\\main\\resources");
-    ReplicasRootConfig config = configReceiver.getConfig(ConfigEnum.DATASOURCE);
-    ReplicaConfig replicaConfig = config.getReplicas().get(0);
-    List<JdbcDataSource> jdbcDataSources = initJdbcDatasource(replicaConfig);
-    JdbcDataSource jdbcDataSource = jdbcDataSources.get(0);
-
-    JdbcDataSourceManager sourceManager = new JdbcDataSourceManager(SessionProviderImpl.INSYANCE,
-        DatasourceProviderImpl.INSTANCE);
-    JdbcSession session = sourceManager.createSession(jdbcDataSource);
-    return session.query("SELECT * FROM `information_schema`.`COLUMNS`;");
+//    ConfigReceiver configReceiver = ConfigLoader
+//        .load("D:\\newgit\\f\\mycat2\\src\\main\\resources");
+//    ReplicasRootConfig config = configReceiver.getConfig(ConfigEnum.DATASOURCE);
+//    ReplicaConfig replicaConfig = config.getReplicas().get(0);
+//    List<JdbcDataSource> jdbcDataSources = initJdbcDatasource(replicaConfig);
+//
+//
+//    JdbcDataSourceManager sourceManager = new JdbcDataSourceManager(SessionProviderImpl.INSYANCE,
+//        DatasourceProviderImpl.INSTANCE,jdbcDataSources);
+//
+//    JdbcDataSource jdbcDataSource = jdbcDataSources.get(0);
+//    JdbcSession session = sourceManager.createSession(jdbcDataSource);
+//    return session.query("SELECT * FROM `information_schema`.`COLUMNS`;");
+    return null;
   }
 
 
-  public static List<JdbcDataSource> initJdbcDatasource(ReplicaConfig replicaConfig)
-      throws SQLException {
-    List<DatasourceConfig> mysqls = replicaConfig.getMysqls();
-    List<JdbcDataSource> datasourceList = new ArrayList<>();
-    for (int index = 0; index < mysqls.size(); index++) {
-      DatasourceConfig datasourceConfig = mysqls.get(index);
-      if (datasourceConfig.getDbType() != null) {
-        datasourceList.add(new JdbcDataSource(index, datasourceConfig));
-      }
-    }
-    return datasourceList;
-  }
 
   public String getUrl() {
     return datasourceConfig.getUrl();
@@ -86,6 +72,11 @@ public class JdbcDataSource {
 
   public String getName() {
     return datasourceConfig.getName();
+  }
+
+  @Override
+  public boolean isMaster() {
+    return false;
   }
 
   @Override
@@ -111,5 +102,23 @@ public class JdbcDataSource {
     int result = index;
     result = 31 * result + (datasourceConfig != null ? datasourceConfig.hashCode() : 0);
     return result;
+  }
+
+  public int getIndex() {
+    return index;
+  }
+
+  public boolean asSelectRead() {
+    return false;
+  }
+
+  @Override
+  public int getSessionCounter() {
+    return 0;
+  }
+
+  @Override
+  public int getWeight() {
+    return 0;
   }
 }

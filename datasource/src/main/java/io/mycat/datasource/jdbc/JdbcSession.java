@@ -3,7 +3,7 @@ package io.mycat.datasource.jdbc;
 import io.mycat.MycatException;
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
-import io.mycat.compute.RowBaseIterator;
+import io.mycat.datasource.jdbc.response.JDBCResponse;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import java.sql.Connection;
@@ -33,35 +33,30 @@ public class JdbcSession {
     return key;
   }
 
-  public void sync(String schema, MySQLIsolation isolation,
-      MySQLAutoCommit autoCommit, String charset) throws SQLException {
-    switch (isolation) {
-      case READ_UNCOMMITTED:
-        connection.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
-        break;
-      case READ_COMMITTED:
-        connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
-        break;
-      case REPEATED_READ:
-        connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-        break;
-      case SERIALIZABLE:
-        connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-        break;
-    }
-    connection.setSchema(schema);
-    connection.setAutoCommit(autoCommit == MySQLAutoCommit.ON);
-    connection.setClientInfo("characterEncoding", charset);
-  }
-
-  public RowBaseIterator query(String s) throws MycatException {
+  public void sync(MySQLIsolation isolation,
+      MySQLAutoCommit autoCommit) {
     try {
-      Statement statement = connection.createStatement();
-      return new JdbcRowBaseIteratorImpl(statement.executeQuery(s));
+      switch (isolation) {
+        case READ_UNCOMMITTED:
+          connection.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
+          break;
+        case READ_COMMITTED:
+          connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+          break;
+        case REPEATED_READ:
+          connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+          break;
+        case SERIALIZABLE:
+          connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+          break;
+      }
+      connection.setAutoCommit(autoCommit == MySQLAutoCommit.ON);
+//      connection.setClientInfo("characterEncoding", charset);
     } catch (Exception e) {
       throw new MycatException(e);
     }
   }
+
 
   public void close(boolean normal, String reason) {
     LOGGER.debug("jdbc sessionId:{} normal:{} reason:{}", sessionId, normal, reason);
@@ -78,5 +73,15 @@ public class JdbcSession {
 
   public boolean isIdle() {
     return connection == null;
+  }
+
+  public JDBCResponse query(String sql) throws SQLException {
+    Statement statement = connection.createStatement();
+    return JdbcResultSetResolver.execute(statement, sql, false);
+  }
+
+  public JDBCResponse update(String sql) throws SQLException {
+    Statement statement = connection.createStatement();
+    return JdbcResultSetResolver.execute(statement, sql, false);
   }
 }
