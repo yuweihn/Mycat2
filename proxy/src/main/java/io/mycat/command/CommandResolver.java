@@ -7,14 +7,16 @@ import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.config.MySQLServerCapabilityFlags;
 import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.session.MycatSession;
+import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.Queue;
 
 public class CommandResolver {
 
-  public static void handle(MycatSession mycat, CommandDispatcher commandHandler) {
+  public static void handle(MycatSession mycat, MySQLPacket curPacket,
+      CommandDispatcher commandHandler) {
     MycatMonitor.onCommandStart(mycat);
     try {
-      MySQLPacket curPacket = mycat.currentProxyPayload();
       boolean isEmptyPayload = curPacket.readFinished();
       if (isEmptyPayload) {
         MycatMonitor.onLoadDataLocalInFileEmptyPacketStart(mycat);

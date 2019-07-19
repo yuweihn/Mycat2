@@ -60,16 +60,12 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
 
     @Override
     public void onSocketRead(MycatSession mycat) {
-        ProxyRuntime runtime = getRuntime();
+        ProxyRuntime runtime = mycat.getRuntime();
         try {
-            mycat.currentProxyBuffer().newBufferIfNeed();
             if (mycat.getCurNIOHandler() != this) {
                 return;
             }
             if (!mycat.readFromChannel()) {
-                return;
-            }
-            if (!mycat.readProxyPayloadFully()) {
                 return;
             }
             MycatSecurityConfig securityManager = runtime.getSecurityManager();
@@ -77,7 +73,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
             if(!isChangeAuthPlugin) {
                 //密码读取与验证
                 this.auth = readResponseAuthPacket(mycat);
-                if (!securityManager.isIgnorePassword()) {
+                if (true) {
                     String authPluginName = auth.getAuthPluginName();
                     int capabilities = auth.getCapabilities();
                     //切换auth_plugin
@@ -146,6 +142,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
 
             mycat.writeOkEndPacket();
         } catch (Exception e) {
+            LOGGER.error("",e);
             MycatMonitor.onAuthHandlerReadException(mycat,e);
             onClear(mycat);
             failture(mycat, e);
@@ -225,7 +222,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
         hs.setAuthPluginName(clientAuthPluginName);
         MySQLPayloadWriter mySQLPayloadWriter = new MySQLPayloadWriter();
         hs.writePayload(mySQLPayloadWriter);
-        mycat.setPakcetId(-1);//使用获取的packetId变为0
+        mycat.setPacketId(-1);//使用获取的packetId变为0
         mycat.writeBytes(mySQLPayloadWriter.toByteArray(),true);
     }
 

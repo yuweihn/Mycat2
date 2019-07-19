@@ -6,6 +6,7 @@ import io.mycat.beans.mysql.MySQLServerStatusFlags;
 import io.mycat.beans.mysql.packet.ErrorPacketImpl;
 import io.mycat.config.MySQLServerCapabilityFlags;
 import io.mycat.proxy.MySQLPacketUtil;
+import io.mycat.beans.mysql.packet.ColumnDefPacketImpl;
 import java.nio.charset.Charset;
 
 public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
@@ -15,7 +16,7 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
   /**
    * 设置上下文packetId,用于响应生成
    */
-  void setPakcetId(int packet);
+  void setPacketId(int packet);
 
   /**
    * ++packetId
@@ -34,7 +35,7 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
 
   int setServerStatus(int s);
 
-  int incrementWarningCount();
+  long incrementWarningCount();
 
   /**
    * ok packet
@@ -46,7 +47,6 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
    */
   int getServerStatus();
 
-  int setLastInsertId(int s);
 
   int getWarningCount();
 
@@ -73,10 +73,11 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
 
   /**
    * 设置响应结束,即payload写入结束
+   * @param b
    */
-  void setResponseFinished(boolean b);
+  void setResponseFinished(ProcessState b);
   /**
-   * 可能用于实现 reset connection命令
+   * 可能用于实现 clearQueue connection命令
    */
   void resetSession();
 
@@ -118,6 +119,13 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
     writeBytes(bytes,false);
   }
 
+  default void writeColumnDef(ColumnDefPacketImpl columnDefPacket) {
+    try (MySQLPayloadWriter writer = new MySQLPayloadWriter(64)) {
+      columnDefPacket.writePayload(writer);
+      writeBytes(writer.toByteArray(), false);
+    }
+  }
+
   void writeBytes(byte[] payload,boolean end);
 
   /**
@@ -134,6 +142,21 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
         );
     writeBytes(bytes,true);
   }
+  default void writeOk(boolean hasMoreResult) {
+    int serverStatus = getServerStatus();
+    if (hasMoreResult) {
+      serverStatus |= MySQLServerStatusFlags.MORE_RESULTS;
+    }
+    byte[] bytes = MySQLPacketUtil
+        .generateOk(0, getWarningCount(), serverStatus, affectedRows(),
+            getLastInsertId(),
+            MySQLServerCapabilityFlags.isClientProtocol41(getCapabilities()),
+            MySQLServerCapabilityFlags.isKnowsAboutTransactions(getCapabilities()),
+            false, ""
+
+        );
+    writeBytes(bytes, !hasMoreResult);
+  }
 
   /**
    * 写入字段阶段技术报文,即字段包都写入后调用此方法
@@ -142,7 +165,7 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
     if (isDeprecateEOF()) {
     } else {
       byte[] bytes = MySQLPacketUtil.generateEof(getWarningCount(), getServerStatus());
-      writeBytes(bytes,true);
+      writeBytes(bytes,false);
     }
   }
 
@@ -167,9 +190,9 @@ public interface MySQLServerSession<T extends Session<T>> extends Session<T> {
               MySQLServerCapabilityFlags.isSessionVariableTracking(getCapabilities()),
               getLastMessage());
     } else {
-      bytes = MySQLPacketUtil.generateEof(getWarningCount(), getServerStatus());
+      bytes = MySQLPacketUtil.generateEof(getWarningCount(), serverStatus);
     }
-    writeBytes(bytes,true);
+    writeBytes(bytes, !hasMoreResult);
   }
 
   /**

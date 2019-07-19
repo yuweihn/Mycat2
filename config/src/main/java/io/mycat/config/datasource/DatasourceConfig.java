@@ -18,7 +18,6 @@
 package io.mycat.config.datasource;
 
 import io.mycat.config.GlobalConfig;
-import java.util.Objects;
 
 /**
  * dataSource
@@ -40,34 +39,7 @@ public class DatasourceConfig {
     private String url;
     private int weight = 0;
     private String initSQL;
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        DatasourceConfig that = (DatasourceConfig) o;
-        return port == that.port &&
-                   maxCon == that.maxCon &&
-                   minCon == that.minCon &&
-                   maxRetryCount == that.maxRetryCount &&
-                   Objects.equals(name, that.name) &&
-                   Objects.equals(ip, that.ip) &&
-                   Objects.equals(user, that.user) &&
-                   Objects.equals(password, that.password) &&
-                   Objects.equals(dbType, that.dbType) &&
-                   Objects.equals(url, that.url);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects
-                   .hash(name, ip, port, user, password, maxCon, minCon, maxRetryCount, dbType,
-                       url);
-    }
+    private String initDb;
 
     public String getName() {
         return name;
@@ -163,5 +135,81 @@ public class DatasourceConfig {
 
     public void setInitSQL(String initSQL) {
         this.initSQL = initSQL;
+    }
+
+    public String getInitDb() {
+        return initDb;
+    }
+
+    public void setInitDb(String initDb) {
+        this.initDb = initDb;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        DatasourceConfig that = (DatasourceConfig) o;
+
+        if (port != that.port) {
+            return false;
+        }
+        if (maxCon != that.maxCon) {
+            return false;
+        }
+        if (minCon != that.minCon) {
+            return false;
+        }
+        if (maxRetryCount != that.maxRetryCount) {
+            return false;
+        }
+        if (weight != that.weight) {
+            return false;
+        }
+        if (name != null ? !name.equals(that.name) : that.name != null) {
+            return false;
+        }
+        if (ip != null ? !ip.equals(that.ip) : that.ip != null) {
+            return false;
+        }
+        if (user != null ? !user.equals(that.user) : that.user != null) {
+            return false;
+        }
+        if (password != null ? !password.equals(that.password) : that.password != null) {
+            return false;
+        }
+        if (dbType != null ? !dbType.equals(that.dbType) : that.dbType != null) {
+            return false;
+        }
+        if (url != null ? !url.equals(that.url) : that.url != null) {
+            return false;
+        }
+        if (initSQL != null ? !initSQL.equals(that.initSQL) : that.initSQL != null) {
+            return false;
+        }
+        return initDb != null ? initDb.equals(that.initDb) : that.initDb == null;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = name != null ? name.hashCode() : 0;
+        result = 31 * result + (ip != null ? ip.hashCode() : 0);
+        result = 31 * result + port;
+        result = 31 * result + (user != null ? user.hashCode() : 0);
+        result = 31 * result + (password != null ? password.hashCode() : 0);
+        result = 31 * result + maxCon;
+        result = 31 * result + minCon;
+        result = 31 * result + maxRetryCount;
+        result = 31 * result + (dbType != null ? dbType.hashCode() : 0);
+        result = 31 * result + (url != null ? url.hashCode() : 0);
+        result = 31 * result + weight;
+        result = 31 * result + (initSQL != null ? initSQL.hashCode() : 0);
+        result = 31 * result + (initDb != null ? initDb.hashCode() : 0);
+        return result;
     }
 }

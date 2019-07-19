@@ -1,10 +1,11 @@
-package io.mycat.compute;
+package io.mycat.mysqlapi.collector;
 
-public interface RowBaseIterator {
+import io.mycat.beans.mycat.MycatRowMetaData;
+import java.io.Closeable;
 
-//  Session session();
+public interface RowBaseIterator extends Closeable {
 
-  RowMetaData metaData();
+  MycatRowMetaData metaData();
 
   boolean next();
 

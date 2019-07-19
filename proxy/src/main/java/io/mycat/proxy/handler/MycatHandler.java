@@ -14,13 +14,12 @@
  */
 package io.mycat.proxy.handler;
 
-import io.mycat.beans.mysql.packet.ProxyBuffer;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.MySQLPacketResolver;
-import io.mycat.proxy.packet.MySQLPacketResolver.ComQueryState;
+import io.mycat.proxy.packet.FrontMySQLPacketResolver;
 import io.mycat.proxy.session.MycatSession;
+import io.mycat.proxy.session.ProcessState;
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
@@ -44,31 +43,44 @@ public enum MycatHandler implements NIOHandler<MycatSession> {
         mycat.close(false, "mysql session has closed");
         return;
       }
-      mycat.currentProxyBuffer().newBufferIfNeed();
-      if (!mycat.readFromChannel()) {
-        return;
-      }
-      MySQLPacketResolver packetResolver = mycat.getPacketResolver();
-      ProxyBuffer proxyBuffer = mycat.currentProxyBuffer();
-      int startIndex = proxyBuffer.channelReadStartIndex();
-      int endIndex = proxyBuffer.channelReadEndIndex();
-      packetResolver.setState(ComQueryState.QUERY_PACKET);
-        while (mycat.readProxyPayloadFully()) {
-          int endPos = packetResolver.getEndPos();
-          mycat.handle();
-          if (endPos<endIndex){
-            proxyBuffer.channelReadEndIndex();
-            proxyBuffer.channelReadEndIndex(endIndex);
-            continue;
-          }
-        }
-      return;
+      FrontMySQLPacketResolver resolver = mycat.getMySQLPacketResolver();
+       ProcessState processState = mycat.getProcessState();
+       if (processState == ProcessState.READY){
+         if(resolver.readFromChannel()) {
+           mycat.clearReadWriteOpts();
+           mycat.handle(resolver.getPayload());
+         } else {
+           return;
+         }
+       }else {
+         System.out.println();
+       }
+
+
+//      mycat.currentProxyBuffer().newBufferIfNeed();
+//      if (!mycat.readFromChannel()) {
+//        return;
+//      }
+//      MySQLPacketResolver packetResolver = mycat.getBackendPacketResolver();
+//      ProxyBuffer proxyBuffer = mycat.currentProxyBuffer();
+//      int startIndex = proxyBuffer.channelReadStartIndex();
+//      int endPosition = proxyBuffer.channelReadEndIndex();
+//      packetResolver.setState(ComQueryState.QUERY_PACKET);
+//      while (mycat.readProxyPayloadFully()) {
+//        int readPosition = packetResolver.getEndPos();
+//        mycat.handle();
+//        if (readPosition < endPosition) {
+//          proxyBuffer.channelReadEndIndex(endPosition);
+//          continue;
+//        }
+//      }
+//      return;
     } catch (ClosedChannelException e) {
-      MycatMonitor.onMycatHandlerCloseException(mycat,e);
+      MycatMonitor.onMycatHandlerCloseException(mycat, e);
       onException(mycat, e);
       return;
     } catch (Exception e) {
-      MycatMonitor.onMycatHandlerReadException(mycat,e);
+      MycatMonitor.onMycatHandlerReadException(mycat, e);
       onException(mycat, e);
     }
   }
@@ -76,12 +88,12 @@ public enum MycatHandler implements NIOHandler<MycatSession> {
   @Override
   public void onSocketWrite(MycatSession mycat) {
     try {
-      if ((mycat.getChannelKey().interestOps()& SelectionKey.OP_WRITE)!=0){
+      if ((mycat.getChannelKey().interestOps() & SelectionKey.OP_WRITE) != 0) {
         mycat.writeToChannel();
       }
     } catch (Exception e) {
-      MycatMonitor.onMycatHandlerWriteException(mycat,e);
-      onException(mycat,e);
+      MycatMonitor.onMycatHandlerWriteException(mycat, e);
+      onException(mycat, e);
     }
   }
 
@@ -95,14 +107,14 @@ public enum MycatHandler implements NIOHandler<MycatSession> {
         mycat.writeToChannel();
       }
     } catch (Exception e) {
-      MycatMonitor.onMycatHandlerWriteException(mycat,e);
-      onException(mycat,e);
+      MycatMonitor.onMycatHandlerWriteException(mycat, e);
+      onException(mycat, e);
     }
   }
 
   @Override
   public void onException(MycatSession mycat, Exception e) {
-    MycatMonitor.onMycatHandlerException(mycat,e);
+    MycatMonitor.onMycatHandlerException(mycat, e);
     LOGGER.error("{}", e);
     MycatSessionWriteHandler writeHandler = mycat.getWriteHandler();
     if (writeHandler != null) {

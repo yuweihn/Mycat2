@@ -55,28 +55,30 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
     try {
       switchMySQLServerWriteHandler();
       ByteBuffer buffer = writeBufferPool().allocate(payload);
-      //todo 如果队列过长是否希望抛出异常
-      if (Thread.currentThread() == getIOThread()) {
-        /**
-         * ensure data in queue
-         */
-        writeQueue().offer(buffer);
-        setResponseFinished(end);
-        /**
-         * try to write
-         */
+      boolean ioThread = Thread.currentThread() == getIOThread();
+      if (!ioThread && end) {
+        backFromWorkerThread();
+      }
+      setResponseFinished(end?ProcessState.DONE:ProcessState.DOING);
+      Queue<ByteBuffer> byteBuffers = writeQueue();
+      while (!byteBuffers.offer(buffer)) { }
+      if (end){
+        while (!byteBuffers.offer(END_PACKET)) { }
+      }
+      if (ioThread) {
         writeToChannel();
       } else {
-        {
-          writeQueue().offer(buffer);
-          setResponseFinished(end);
-          this.change2WriteOpts();
+        this.change2WriteOpts();
+        if (end) {
+          getIOThread().getSelector().wakeup();
         }
       }
     } catch (Exception e) {
       this.close(false, setLastMessage(e));
     }
   }
+
+  void backFromWorkerThread();
 
 
   default void writeToChannel() throws IOException {
@@ -97,7 +99,7 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
   default void writeErrorEndPacketBySyncInProcessError(int packetId, int errorCode) {
     setLastErrorCode(errorCode);
     switchMySQLServerWriteHandler();
-    this.setResponseFinished(true);
+    this.setResponseFinished(ProcessState.DONE);
     byte[] bytes = MySQLPacketUtil
         .generateError(errorCode, getLastMessage(),
             this.getCapabilities());
@@ -138,6 +140,8 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
 
   }
 
+  ByteBuffer END_PACKET = ByteBuffer.allocate(0);
+
 
   /**
    * 该函数实现Payload到packet的转化 所以队列里面都是Payload
@@ -156,13 +160,16 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
     ByteBuffer[] packetContainer = session.packetContainer();
     MySQLPacketSplitter packetSplitter = session.packetSplitter();
     long writed;
-    boolean isEmpty = false;
     do {
       writed = 0;
-      if (isEmpty = byteBuffers.isEmpty()) {
+      if (byteBuffers.isEmpty()) {
         break;
       }
       ByteBuffer first = byteBuffers.peek();
+
+      if (END_PACKET == first) {
+        break;
+      }
 
       if (first.position() == 0) {//一个全新的payload
         MycatMonitor.onFrontWrite(
@@ -203,12 +210,19 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
     if (writed == -1) {
       throw new ClosedChannelException();
     }
-    boolean writeFinished = false;
-    writeFinished = (isEmpty = byteBuffers.isEmpty()) && session.isResponseFinished();
+    boolean writeFinished = byteBuffers.peek() == END_PACKET;
     if (!writeFinished) {
-      session.change2WriteOpts();
-    }
-    if (writeFinished) {
+      if (writed == 0 || !byteBuffers.isEmpty()) {
+        session.change2WriteOpts();
+      } else {
+        session.clearReadWriteOpts();
+        if (!byteBuffers.isEmpty()) {
+          writeToChannel(session);
+          return;
+        }
+      }
+    } else {
+      byteBuffers.clear();
       session.writeFinished(session);
       return;
     }

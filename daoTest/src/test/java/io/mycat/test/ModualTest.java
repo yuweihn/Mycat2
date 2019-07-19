@@ -34,6 +34,24 @@ public abstract class ModualTest {
       MycatMonitorCallback callback,
         TestGettingConnetionCallback gettingConnetionCallback)
       throws IOException, ExecutionException, InterruptedException {
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    final CompletableFuture<String> future = new CompletableFuture<>();
+    executor.submit(() -> {
+      try {
+        gettingConnetionCallback.test(future);
+      }catch (Exception e){
+        e.printStackTrace();
+      }finally {
+        MycatCore.exit(new MycatException("normal"));
+        future.complete(null);
+      }
+    });
+    future.get();
+  }
+  public static void loadModule11(String module, ProxyBeanProviders proxyBeanProviders,
+      MycatMonitorCallback callback,
+      TestGettingConnetionCallback gettingConnetionCallback)
+      throws IOException, ExecutionException, InterruptedException {
     String resourcesPath = ProxyRuntime.getResourcesPath(ModualTest.class);
     String rootResourcePath = Paths.get(resourcesPath).resolve("io/mycat/test/jdbc").resolve(module).toAbsolutePath().toString();
     ConfigReceiver cr = ConfigLoader.load(rootResourcePath);

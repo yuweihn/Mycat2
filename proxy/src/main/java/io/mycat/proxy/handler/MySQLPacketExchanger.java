@@ -139,7 +139,7 @@ public enum MySQLPacketExchanger {
     MycatMonitor.onPacketExchangerRead(mysql);
     ProxyBuffer proxyBuffer = mysql.currentProxyBuffer();
     MySQLPacket mySQLPacket = (MySQLPacket) proxyBuffer;
-    MySQLPacketResolver packetResolver = mysql.getPacketResolver();
+    MySQLPacketResolver packetResolver = mysql.getBackendPacketResolver();
     int startIndex = mySQLPacket.packetReadStartIndex();
     int endPos = startIndex;
     while (mysql.readPartProxyPayload()) {
@@ -344,7 +344,7 @@ public enum MySQLPacketExchanger {
       MycatMonitor.onPacketExchangerRead(mysql);
       ProxyBuffer proxyBuffer = mysql.currentProxyBuffer();
       MySQLPacket mySQLPacket = (MySQLPacket) proxyBuffer;
-      MySQLPacketResolver packetResolver = mysql.getPacketResolver();
+      MySQLPacketResolver packetResolver = mysql.getBackendPacketResolver();
       int startIndex = mySQLPacket.packetReadStartIndex();
       int endPos = startIndex;
       while (mysql.readPartProxyPayload()) {
@@ -485,6 +485,7 @@ public enum MySQLPacketExchanger {
                   mycat.setHandleContentOfFilename(true);
                 }
               }
+              mycat.getIOThread().getSelector().wakeup();
               onClearInNormalResponse(mycat, mysql);
             }
           }

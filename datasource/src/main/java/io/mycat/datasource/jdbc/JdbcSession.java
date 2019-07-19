@@ -1,12 +1,15 @@
 package io.mycat.datasource.jdbc;
 
 import io.mycat.MycatException;
+import io.mycat.beans.MySQLServerStatus;
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
-import io.mycat.datasource.jdbc.response.JDBCResponse;
+import io.mycat.beans.mysql.MySQLIsolationLevel;
+import io.mycat.beans.mysql.MySQLServerStatusFlags;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -36,22 +39,12 @@ public class JdbcSession {
   public void sync(MySQLIsolation isolation,
       MySQLAutoCommit autoCommit) {
     try {
-      switch (isolation) {
-        case READ_UNCOMMITTED:
-          connection.setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED);
-          break;
-        case READ_COMMITTED:
-          connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
-          break;
-        case REPEATED_READ:
-          connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-          break;
-        case SERIALIZABLE:
-          connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-          break;
+      int transactionIsolation = connection.getTransactionIsolation();
+      int jdbcValue = isolation.getJdbcValue();
+      if (transactionIsolation != jdbcValue){
+        connection.setTransactionIsolation(jdbcValue);
       }
       connection.setAutoCommit(autoCommit == MySQLAutoCommit.ON);
-//      connection.setClientInfo("characterEncoding", charset);
     } catch (Exception e) {
       throw new MycatException(e);
     }
@@ -75,13 +68,61 @@ public class JdbcSession {
     return connection == null;
   }
 
-  public JDBCResponse query(String sql) throws SQLException {
-    Statement statement = connection.createStatement();
-    return JdbcResultSetResolver.execute(statement, sql, false);
+
+  public MycatUpdateResponse executeUpdate(String sql, boolean needGeneratedKeys) {
+    try (Statement statement = connection.createStatement()) {
+      statement.executeUpdate(sql,
+          needGeneratedKeys ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
+      long lastInsertId = 0L;
+      if (needGeneratedKeys) {
+        ResultSet generatedKeys = statement.getGeneratedKeys();
+        lastInsertId = generatedKeys.next() ? generatedKeys.getLong(0) : 0L;
+      }
+      return new MycatUpdateResponseImpl(statement.getUpdateCount(), lastInsertId,
+          MySQLServerStatusFlags.AUTO_COMMIT);
+    } catch (Exception e) {
+      throw new MycatException(e);
+    }
   }
 
-  public JDBCResponse update(String sql) throws SQLException {
-    Statement statement = connection.createStatement();
-    return JdbcResultSetResolver.execute(statement, sql, false);
+  public JdbcRowBaseIteratorImpl executeQuery(String sql) {
+    try {
+      Statement statement = connection.createStatement();
+      return new JdbcRowBaseIteratorImpl(statement, statement.executeQuery(sql));
+    } catch (Exception e) {
+      throw new MycatException(e);
+    }
+  }
+
+  public void commit() {
+    try {
+      connection.commit();
+    } catch (Exception e) {
+      throw new MycatException(e);
+    }
+  }
+
+  public void rollback() {
+    try {
+      connection.rollback();
+    } catch (Exception e) {
+      throw new MycatException(e);
+    }
+  }
+
+  public void setTransactionIsolation(MySQLIsolation isolation) {
+    try {
+    connection.setTransactionIsolation(isolation.getJdbcValue());
+    } catch (Exception e) {
+      throw new MycatException(e);
+    }
+  }
+
+  public void setAutomcommit(boolean on) {
+    try {
+      connection.setAutoCommit(on);
+    } catch (SQLException e) {
+      throw new MycatException(e);
+    }
   }
 }
