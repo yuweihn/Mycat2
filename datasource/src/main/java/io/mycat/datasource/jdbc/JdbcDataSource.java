@@ -1,6 +1,7 @@
 package io.mycat.datasource.jdbc;
 
 import io.mycat.beans.mycat.MycatDataSource;
+import io.mycat.beans.mycat.MycatReplica;
 import io.mycat.beans.mycat.MycatRowMetaData;
 import io.mycat.mysqlapi.collector.RowBaseIterator;
 import io.mycat.config.datasource.DatasourceConfig;
@@ -11,15 +12,17 @@ import java.sql.SQLException;
 /**
  * @author jamie12221 date 2019-05-10 13:21
  **/
-public class JdbcDataSource implements MycatDataSource, LoadBalanceElement {
+public abstract class JdbcDataSource implements MycatDataSource, LoadBalanceElement {
 
   private final int index;
   private final DatasourceConfig datasourceConfig;
-  private volatile boolean isAlive = true;
+  private final JdbcReplica replica;
 
-  public JdbcDataSource(int index, DatasourceConfig datasourceConfig) {
+  public JdbcDataSource(int index, DatasourceConfig datasourceConfig,
+      JdbcReplica replica) {
     this.index = index;
     this.datasourceConfig = datasourceConfig;
+    this.replica = replica;
   }
 
 
@@ -66,9 +69,7 @@ public class JdbcDataSource implements MycatDataSource, LoadBalanceElement {
     return datasourceConfig.getPassword();
   }
 
-  public boolean isAlive() {
-    return isAlive;
-  }
+  public abstract boolean isAlive();
 
   public String getName() {
     return datasourceConfig.getName();
@@ -76,7 +77,7 @@ public class JdbcDataSource implements MycatDataSource, LoadBalanceElement {
 
   @Override
   public boolean isMaster() {
-    return false;
+    return this.replica.isMaster(this);
   }
 
   @Override
@@ -129,4 +130,10 @@ public class JdbcDataSource implements MycatDataSource, LoadBalanceElement {
   public String getDb() {
     return  datasourceConfig.getInitDb();
   }
+
+  public JdbcReplica getReplica() {
+    return replica;
+  }
+
+  public abstract void heartBeat();
 }
