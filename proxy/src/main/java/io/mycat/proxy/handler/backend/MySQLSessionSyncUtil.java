@@ -20,6 +20,7 @@ public class MySQLSessionSyncUtil {
         .createMySQLSynContext(mysql);
     if (mySQLSynContext.equals(mycatContext)) {
       callBack.onSession(mysql, sender, null);
+      return;
     } else {
       String syncSQL = mycatContext.getSyncSQL();
       MycatMonitor.onSyncSQL(mycatContext, syncSQL, mysql);
@@ -30,7 +31,7 @@ public class MySQLSessionSyncUtil {
             public void onFinished(boolean monopolize, MySQLClientSession mysql,
                 Object sender, Object attr) {
               mycatContext.successSyncMySQLClientSession(mysql);
-              MycatMonitor.onSynchronizationState(mysql);
+              mycatContext.onSynchronizationStateLog(mysql);
               callBack.onSession(mysql, sender, attr);
             }
 
@@ -38,7 +39,7 @@ public class MySQLSessionSyncUtil {
             public void onErrorPacket(ErrorPacketImpl errorPacket, boolean monopolize,
                 MySQLClientSession mysql, Object sender, Object attr) {
               String messageString = errorPacket.getErrorMessageString();
-              LOGGER.error(messageString);
+              LOGGER.error("sync session fail:{}",messageString);
               mysql.close(false, messageString);
               if (monopolize) {
                 callBack.onException(new MycatException(messageString), this, null);
@@ -52,11 +53,13 @@ public class MySQLSessionSyncUtil {
             @Override
             public void onFinishedSendException(Exception exception, Object sender,
                 Object attr) {
+              LOGGER.error("sync session fail:",exception);
               callBack.onException(exception, sender, attr);
             }
 
             @Override
             public void onFinishedException(Exception exception, Object sender, Object attr) {
+              LOGGER.error("sync session fail:",exception);
               callBack.onException(exception, sender, attr);
             }
           });

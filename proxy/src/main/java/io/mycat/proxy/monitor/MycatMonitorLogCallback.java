@@ -3,6 +3,7 @@ package io.mycat.proxy.monitor;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.handler.backend.MySQLSynContext;
+import io.mycat.proxy.handler.backend.MySQLSynContextImpl;
 import io.mycat.proxy.packet.MySQLPacketResolver;
 import io.mycat.proxy.packet.MySQLPayloadType;
 import io.mycat.proxy.session.MySQLClientSession;
@@ -51,10 +52,19 @@ public class MycatMonitorLogCallback implements MycatMonitorCallback {
   }
 
   @Override
-  public void onRoute(Session session, String dataNode, byte[] payload) {
+  public void onRouteSQL(Session session, String dataNodeName, String sql) {
     if (onSQL) {
-      SQL_LOGGER.info("sessionId:{} dataNode:{}  payload:{} ", session.sessionId(), dataNode,
-          new String(payload));
+      SQL_LOGGER.info("sessionId:{} dataNode:{} sql:{}", session.sessionId(), dataNodeName, sql);
+    }
+  }
+
+  @Override
+  public void onRouteSQLResult(Session session, String dataNodeName, String replicaName,
+      String dataSourceName,
+      byte[] payload) {
+    if (onSQL) {
+      SQL_LOGGER.info("sessionId:{} dataNode:{} replica:{} datasource:{}", session.sessionId(), dataNodeName,
+          replicaName,dataSourceName);
     }
   }
 
@@ -327,7 +337,7 @@ public class MycatMonitorLogCallback implements MycatMonitorCallback {
   public final void onSynchronizationState(MySQLClientSession session) {
     if (onBind) {
       //    Thread.dumpStack();
-      MySQLSynContext c = new MySQLSynContext(session);
+      MySQLSynContextImpl c = new MySQLSynContextImpl(session);
       LOGGER.debug(
           "sessionId:{} dataNode:{} isolation: {} charset:{} automCommit:{} characterSetResult:{} sqlSelectLimit:{} netWriteTimeout:{}",
           session.sessionId(), c.getDataNode() != null ? c.getDataNode().getName() : null,
@@ -862,6 +872,8 @@ public class MycatMonitorLogCallback implements MycatMonitorCallback {
 
   @Override
   public void onResultSetEnd(MySQLClientSession mysql) {
-    LOGGER.debug("sessionId:{} onResultOk", mysql.sessionId());
+    if (recordDump){
+      LOGGER.debug("sessionId:{} onResultOk", mysql.sessionId());
+    }
   }
 }

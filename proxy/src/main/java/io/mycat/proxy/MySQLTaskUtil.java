@@ -22,6 +22,7 @@ import io.mycat.proxy.handler.ResponseType;
 import io.mycat.proxy.handler.backend.MySQLDataSourceQuery;
 import io.mycat.proxy.handler.backend.MySQLSessionSyncUtil;
 import io.mycat.proxy.handler.backend.MySQLSynContext;
+import io.mycat.proxy.handler.backend.MySQLSynContextImpl;
 import io.mycat.proxy.handler.backend.SessionSyncCallback;
 import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.packet.MySQLPacketCallback;
@@ -44,11 +45,15 @@ import java.util.concurrent.ThreadLocalRandom;
  * 解耦结果类和实际执行方法
  **/
 public class MySQLTaskUtil {
-
+  public static void proxyBackend(MycatSession mycat, String sql, String dataNodeName,
+      MySQLDataSourceQuery query) {
+    MycatMonitor.onRouteSQL(mycat,dataNodeName,sql);
+    MySQLPacketExchanger.INSTANCE
+        .proxyBackend(mycat, MySQLPacketUtil.generateComQuery(sql), dataNodeName, query, ResponseType.QUERY);
+  }
 
   public static void proxyBackend(MycatSession mycat, byte[] payload, String dataNodeName,
       MySQLDataSourceQuery query, ResponseType responseType) {
-    MycatMonitor.onRoute(mycat, dataNodeName, payload);
     MySQLPacketExchanger.INSTANCE
         .proxyBackend(mycat, payload, dataNodeName, query, responseType);
   }
@@ -57,7 +62,6 @@ public class MySQLTaskUtil {
       String dataNodeName,
       MySQLDataSourceQuery query, ResponseType responseType,
       MySQLPacketCallback callback) {
-    MycatMonitor.onRoute(mycat, dataNodeName, payload);
     MySQLPacketExchanger.INSTANCE
         .proxyWithCollectorCallback(mycat, payload, dataNodeName, query, responseType, callback);
   }
@@ -67,8 +71,6 @@ public class MySQLTaskUtil {
       MySQLDataSourceQuery query,
       ResponseType responseType,
       MySQLPacketCallback callback) {
-
-    MycatMonitor.onRoute(mycat, dataNodeName, payload);
     MySQLPacketExchanger.INSTANCE
         .proxyWithCollectorCallback(mycat, payload, dataNodeName, query, responseType, callback);
   }
@@ -94,7 +96,7 @@ public class MySQLTaskUtil {
    *
    * 回调执行的函数处于mycat reactor thread 所以不能编写长时间执行的代码
    */
-  public static void getMySQLSessionFromUserThread(ProxyRuntime runtime, MySQLSynContext synContext,
+  public static void getMySQLSessionFromUserThread(ProxyRuntime runtime, MySQLSynContextImpl synContext,
       MySQLDataSourceQuery query,
       SessionSyncCallback asynTaskCallBack) {
     MycatReactorThread[] threads = runtime.getMycatReactorThreads();
@@ -129,7 +131,6 @@ public class MySQLTaskUtil {
 
     assert (Thread.currentThread() instanceof MycatReactorThread);
     Objects.requireNonNull(synContext.getDataNode());
-    Objects.requireNonNull(synContext.getCharset());
     MySQLDataNode dataNode = synContext.getDataNode();
     MySQLReplica replica = (MySQLReplica) dataNode.getReplica();
     Objects.requireNonNull(replica);

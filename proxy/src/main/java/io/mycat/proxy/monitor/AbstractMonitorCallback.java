@@ -1,6 +1,7 @@
 package io.mycat.proxy.monitor;
 
 import io.mycat.proxy.handler.backend.MySQLSynContext;
+import io.mycat.proxy.handler.backend.MySQLSynContextImpl;
 import io.mycat.proxy.packet.MySQLPayloadType;
 import io.mycat.proxy.session.MySQLClientSession;
 import io.mycat.proxy.session.MycatSession;
@@ -227,7 +228,9 @@ public abstract class AbstractMonitorCallback implements MycatMonitorCallback{
   }
 
 
-  public void onRoute(Session session, String dataNode, byte[] payload) {
+  public void onRouteSQLResult(Session session, String dataNodeName, String replicaName,
+      String dataNode,
+      byte[] payload) {
 
   }
 
@@ -592,6 +595,11 @@ public abstract class AbstractMonitorCallback implements MycatMonitorCallback{
 
   @Override
   public void onResultSetEnd(MySQLClientSession mysql) {
+
+  }
+
+  @Override
+  public void onRouteSQL(Session session, String dataNodeName, String sql) {
 
   }
 }
