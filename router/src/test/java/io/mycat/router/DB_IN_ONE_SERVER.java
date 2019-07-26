@@ -1,7 +1,6 @@
 package io.mycat.router;
 
 import io.mycat.MycatException;
-import io.mycat.router.routeResult.OneServerResultRoute;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -21,9 +20,9 @@ public class DB_IN_ONE_SERVER extends MycatRouterTest {
     String sql = "select * from travelrecord;";
     String schema = "db1";
     String dn1 = "dn1";
-    ResultRoute result = loadModule(module)
+    ProxyRouteResult result = loadModule(module)
                              .enterRoute(schema, sql);
-    Assert.assertEquals(new OneServerResultRoute().setDataNode(dn1).setSql(sql), result);
+    Assert.assertEquals(new ProxyRouteResult().setDataNode(dn1).setSql(sql), result);
   }
 
   @Test
@@ -32,9 +31,9 @@ public class DB_IN_ONE_SERVER extends MycatRouterTest {
     String sql = "select * from travelrecord;";
     String schema = "errorDb";
     String dn1 = "dn1";
-    ResultRoute result = loadModule(module)
+    ProxyRouteResult result = loadModule(module)
                              .enterRoute(schema, sql);
-    Assert.assertEquals(new OneServerResultRoute().setDataNode(dn1).setSql(sql), result);
+    Assert.assertEquals(new ProxyRouteResult().setDataNode(dn1).setSql(sql), result);
   }
 
   @Test
@@ -42,9 +41,9 @@ public class DB_IN_ONE_SERVER extends MycatRouterTest {
     String sql = "select 1;";
     String schema = "db1";
     String dn1 = "dn1";
-    ResultRoute result = loadModule(module)
+    ProxyRouteResult result = loadModule(module)
                              .enterRoute(schema, sql);
-    Assert.assertEquals(new OneServerResultRoute().setDataNode(dn1).setSql(sql), result);
+    Assert.assertEquals(new ProxyRouteResult().setDataNode(dn1).setSql(sql), result);
   }
 
   /**
@@ -56,9 +55,9 @@ public class DB_IN_ONE_SERVER extends MycatRouterTest {
     String sql = "select * from db2.travelrecord";
     String schema = "db1";
     String dn1 = "dn1";
-    ResultRoute result = loadModule(module)
+    ProxyRouteResult result = loadModule(module)
                              .enterRoute(schema, sql);
-    Assert.assertEquals(new OneServerResultRoute().setDataNode(dn1).setSql(sql), result);
+    Assert.assertEquals(new ProxyRouteResult().setDataNode(dn1).setSql(sql), result);
   }
 
 
@@ -67,9 +66,9 @@ public class DB_IN_ONE_SERVER extends MycatRouterTest {
     String sql = "select 1;select 2;";
     String schema = "db1";
     String dn1 = "dn1";
-    ResultRoute result = loadModule(module)
+    ProxyRouteResult result = loadModule(module)
                              .enterRoute(schema, sql);
-    Assert.assertEquals(result, new OneServerResultRoute().setDataNode(dn1).setSql(sql));
+    Assert.assertEquals(result, new ProxyRouteResult().setDataNode(dn1).setSql(sql));
   }
 
 }

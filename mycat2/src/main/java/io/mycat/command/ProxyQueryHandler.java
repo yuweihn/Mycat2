@@ -14,8 +14,11 @@
  */
 package io.mycat.command;
 
+import static io.mycat.sqlparser.util.BufferSQLContext.DELETE_SQL;
 import static io.mycat.sqlparser.util.BufferSQLContext.DESCRIBE_SQL;
+import static io.mycat.sqlparser.util.BufferSQLContext.INSERT_SQL;
 import static io.mycat.sqlparser.util.BufferSQLContext.LOAD_SQL;
+import static io.mycat.sqlparser.util.BufferSQLContext.SELECT_FOR_UPDATE_SQL;
 import static io.mycat.sqlparser.util.BufferSQLContext.SELECT_SQL;
 import static io.mycat.sqlparser.util.BufferSQLContext.SELECT_VARIABLES;
 import static io.mycat.sqlparser.util.BufferSQLContext.SET_AUTOCOMMIT_SQL;
@@ -29,38 +32,33 @@ import static io.mycat.sqlparser.util.BufferSQLContext.SHOW_SQL;
 import static io.mycat.sqlparser.util.BufferSQLContext.SHOW_TB_SQL;
 import static io.mycat.sqlparser.util.BufferSQLContext.SHOW_VARIABLES_SQL;
 import static io.mycat.sqlparser.util.BufferSQLContext.SHOW_WARNINGS;
+import static io.mycat.sqlparser.util.BufferSQLContext.UPDATE_SQL;
 import static io.mycat.sqlparser.util.BufferSQLContext.USE_SQL;
 
 import io.mycat.MycatException;
 import io.mycat.beans.mycat.MycatSchema;
 import io.mycat.beans.mysql.MySQLAutoCommit;
-import io.mycat.beans.mysql.MySQLFieldsType;
 import io.mycat.beans.mysql.MySQLIsolation;
 import io.mycat.beans.mysql.MySQLIsolationLevel;
+import io.mycat.beans.resultset.SQLExecuter;
 import io.mycat.config.schema.SchemaType;
+import io.mycat.grid.MycatRouterResponse;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
-import io.mycat.proxy.MySQLPacketUtil;
 import io.mycat.proxy.MySQLTaskUtil;
 import io.mycat.proxy.ProxyRuntime;
-import io.mycat.proxy.handler.ResponseType;
+import io.mycat.proxy.SQLExecuterWriter;
 import io.mycat.proxy.handler.backend.MySQLDataSourceQuery;
 import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.router.MycatRouter;
 import io.mycat.router.MycatRouterConfig;
-import io.mycat.router.ResultRoute;
-import io.mycat.router.routeResult.OneServerResultRoute;
-import io.mycat.router.routeResult.ResultRouteType;
+import io.mycat.router.ProxyRouteResult;
 import io.mycat.router.util.RouterUtil;
 import io.mycat.security.MycatUser;
 import io.mycat.sequenceModifier.ModifyCallback;
 import io.mycat.sequenceModifier.SequenceModifier;
 import io.mycat.sqlparser.util.BufferSQLContext;
-import java.nio.charset.Charset;
-import java.util.Collection;
-import java.util.Map.Entry;
-import java.util.Set;
 
 /**
  * @author jamie12221 date 2019-05-17 17:37
@@ -68,6 +66,7 @@ import java.util.Set;
 public class ProxyQueryHandler {
 
   static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(ProxyQueryHandler.class);
+  static final MycatLogger IGNORED_SQL_LOGGER = MycatLoggerFactory.getLogger("IGNORED_SQL_LOGGER");
   final MycatRouter router;
   final private ProxyRuntime runtime;
 
@@ -77,20 +76,12 @@ public class ProxyQueryHandler {
   }
 
   public void doQuery(MycatSchema schema, byte[] sqlBytes, MycatSession mycat) {
-    /**
-     * 获取默认的schema
-     */
-    MycatSchema useSchema = schema;
-    if (useSchema == null) {
-      useSchema = router.getDefaultSchema();
-    }
-    MycatUser user = mycat.getUser();
-    String orgin = new String(sqlBytes);
+    final MycatSchema useSchema = schema == null ? router.getDefaultSchema() : schema;
+    final MycatUser user = mycat.getUser();
+    final String orgin = new String(sqlBytes);
     MycatMonitor.onOrginSQL(mycat, orgin);
-    String sql = RouterUtil.removeSchema(orgin, useSchema.getSchemaName());
-    BufferSQLContext sqlContext = router.simpleParse(sql);
-    sql = sql.trim();
-
+    final String sql = RouterUtil.removeSchema(orgin, useSchema.getSchemaName()).trim();
+    final BufferSQLContext sqlContext = router.simpleParse(sql);
     byte sqlType = sqlContext.getSQLType();
     if (mycat.isBindMySQLSession()) {
       MySQLTaskUtil.proxyBackend(mycat, sql,
@@ -100,26 +91,15 @@ public class ProxyQueryHandler {
     try {
       switch (sqlType) {
         case USE_SQL: {
-          String schemaName = sqlContext.getSchemaName(0);
-          useSchema(mycat, schemaName);
+          useSchema(mycat, sqlContext);
           break;
         }
         case SET_AUTOCOMMIT_SQL: {
-          Boolean autocommit = sqlContext.isAutocommit();
-          if (autocommit == null) {
-            mycat.setLastMessage("set autocommit fail!");
-            mycat.writeErrorEndPacket();
-            return;
-          } else {
-            mycat.setAutoCommit(autocommit ? MySQLAutoCommit.ON : MySQLAutoCommit.OFF);
-            mycat.writeOkEndPacket();
-            return;
-          }
+          setAutocommit(mycat, sqlContext);
+          return;
         }
         case SET_CHARSET: {
-          String charset = sqlContext.getCharset();
-          mycat.setCharset(charset);
-          mycat.writeOkEndPacket();
+          setCharset(mycat, sqlContext);
           return;
         }
         case SET_SQL_SELECT_LIMIT: {
@@ -139,43 +119,24 @@ public class ProxyQueryHandler {
           return;
         }
         case SET_TRANSACTION_SQL: {
-          if (sqlContext.isAccessMode()) {
-            mycat.setAccessModeReadOnly(true);
-            mycat.writeOkEndPacket();
-            return;
-          }
-          if (sqlContext.getTransactionLevel() == MySQLIsolationLevel.GLOBAL) {
-            LOGGER.warn("unsupport global send error", sql);
-            mycat.setLastMessage("unsupport global level");
-            mycat.writeErrorEndPacket();
-            return;
-          }
-          MySQLIsolation isolation = sqlContext.getIsolation();
-          if (isolation == null) {
-            mycat.setLastMessage("set transaction fail!");
-            mycat.writeErrorEndPacket();
-            return;
-          }
-          mycat.setIsolation(isolation);
-          mycat.writeOkEndPacket();
+          setTranscation(mycat, sql, sqlContext);
           return;
         }
         case SHOW_DB_SQL: {
           MycatRouterConfig config = router.getConfig();
-          showDb(mycat, config.getSchemaList());
+          SQLExecuterWriter.writeToMycatSession(mycat,  MycatRouterResponse.showDb(mycat, config.getSchemaList()));
           break;
         }
         case SHOW_TB_SQL: {
           String schemaName =
               sqlContext.getSchemaCount() == 1 ? sqlContext.getSchemaName(0)
                   : useSchema.getSchemaName();
-          showTable(mycat, schemaName);
+          SQLExecuterWriter.writeToMycatSession(mycat,MycatRouterResponse.showTable(router,mycat,schemaName));
           break;
         }
         case DESCRIBE_SQL:
-//          mycat.setLastMessage("unsupport desc");
-//          mycat.writeErrorEndPacket();
-//          return;
+          mycat.writeOkEndPacket();
+          return;
         case SHOW_SQL:
           String defaultDataNode = useSchema.getDefaultDataNode();
           if (defaultDataNode == null) {
@@ -185,80 +146,62 @@ public class ProxyQueryHandler {
               .proxyBackend(mycat, sql, defaultDataNode, null);
           return;
         case SHOW_VARIABLES_SQL: {
-          mycat.writeColumnCount(2);
-          mycat.writeColumnDef("Variable_name", MySQLFieldsType.FIELD_TYPE_VAR_STRING);
-          mycat.writeColumnDef("Value", MySQLFieldsType.FIELD_TYPE_VAR_STRING);
-          mycat.writeColumnEndPacket();
-
-          Set<Entry<String, String>> entries = runtime.getVariables().entries();
-          for (Entry<String, String> entry : entries) {
-            mycat.writeTextRowPacket(
-                new byte[][]{mycat.encode(entry.getKey()), mycat.encode(entry.getValue())});
-          }
-          mycat.writeRowEndPacket(false, false);
+          SQLExecuterWriter.writeToMycatSession(mycat,MycatRouterResponse.showVariables(mycat,mycat.getRuntime().getVariables().entries()));
           return;
         }
-
         case SHOW_WARNINGS: {
-          mycat.writeColumnCount(3);
-          mycat.writeColumnDef("Level", MySQLFieldsType.FIELD_TYPE_VAR_STRING);
-          mycat.writeColumnDef("Code", MySQLFieldsType.FIELD_TYPE_LONG_BLOB);
-          mycat.writeColumnDef("CMessage", MySQLFieldsType.FIELD_TYPE_VAR_STRING);
-          mycat.writeColumnEndPacket();
-          mycat.writeRowEndPacket(false, false);
+          SQLExecuterWriter.writeToMycatSession(mycat,MycatRouterResponse.showWarnnings(mycat));
           return;
         }
         case SELECT_VARIABLES: {
-          if (sqlContext.isSelectAutocommit()) {
-            mycat.writeColumnCount(1);
-            mycat.writeColumnDef("@@session.autocommit", MySQLFieldsType.FIELD_TYPE_VAR_STRING);
-            mycat.writeColumnEndPacket();
-            mycat.writeTextRowPacket(new byte[][]{mycat.encode(mycat.getAutoCommit().getText())});
-            mycat.writeRowEndPacket(false, false);
-            return;
-          } else if (sqlContext.isSelectTxIsolation()) {
-            mycat.writeColumnCount(1);
-            mycat.writeColumnDef("@@session.tx_isolation", MySQLFieldsType.FIELD_TYPE_VAR_STRING);
-            mycat.writeColumnEndPacket();
-            mycat.writeTextRowPacket(new byte[][]{mycat.encode(mycat.getIsolation().getText())});
-            mycat.writeRowEndPacket(false, false);
-            return;
-          } else if (sqlContext.isSelectTranscationReadOnly()) {
-            mycat.writeColumnCount(1);
-            mycat.writeColumnDef("@@session.transaction_read_only",
-                MySQLFieldsType.FIELD_TYPE_LONGLONG);
-            mycat.writeColumnEndPacket();
-            mycat.writeTextRowPacket(new byte[][]{mycat.encode(mycat.getIsolation().getText())});
-            mycat.writeRowEndPacket(false, false);
+          SQLExecuter sqlExecuter = MycatRouterResponse.selectVariables(mycat, sqlContext);
+          if (sqlExecuter != null) {
+            SQLExecuterWriter.writeToMycatSession(mycat,sqlExecuter);
             return;
           }
-          LOGGER.warn("maybe unsupported  sql:{}", sql);
+          IGNORED_SQL_LOGGER.warn("ignore:{}",sql);
+          execute(mycat,schema,sql,sqlContext,sqlType);
+          return;
         }
         case LOAD_SQL: {
-          LOGGER.warn("Use annotations to specify loadata data nodes whenever possible !");
+          IGNORED_SQL_LOGGER
+              .warn("Use annotations to specify loadata data nodes whenever possible !");
         }
-        case SELECT_SQL:
-        default: {
-          MycatSchema fSchema = useSchema;
-          if (useSchema.getSchemaType() == SchemaType.ANNOTATION_ROUTE) {
-            SequenceModifier modifier = useSchema.getModifier();
-            if (modifier != null) {
-              modifier.modify(fSchema.getSchemaName(), sql, new ModifyCallback() {
-                @Override
-                public void onSuccessCallback(String sql) {
-                  execute(mycat, fSchema, sql, sqlContext, sqlType);
-                }
 
-                @Override
-                public void onException(Exception e) {
-                  mycat.setLastMessage(e);
-                  mycat.writeErrorEndPacket();
-                }
-              });
-              return;
+        case INSERT_SQL:
+        case UPDATE_SQL:
+        case DELETE_SQL:
+        case SELECT_FOR_UPDATE_SQL:
+        case SELECT_SQL:{
+          if (router.existTable(schema.getSchemaName(), sqlContext.getTableName(0))) {
+            if (useSchema.getSchemaType() == SchemaType.ANNOTATION_ROUTE) {
+              SequenceModifier modifier = useSchema.getModifier();
+              if (modifier != null) {
+                modifier.modify(useSchema.getSchemaName(), sql, new ModifyCallback() {
+                  @Override
+                  public void onSuccessCallback(String sql) {
+                    execute(mycat, useSchema, sql, sqlContext, sqlType);
+                  }
+
+                  @Override
+                  public void onException(Exception e) {
+                    mycat.setLastMessage(e);
+                    mycat.writeErrorEndPacket();
+                  }
+                });
+                return;
+              }
             }
+            execute(mycat, useSchema, sql, sqlContext, sqlType);
+            return;
+          }else if (sqlType == SELECT_SQL||sqlType == SELECT_FOR_UPDATE_SQL){
+            execute(mycat, useSchema, sql, sqlContext, sqlType);
+            return;
           }
-          execute(mycat, fSchema, sql, sqlContext, sqlType);
+        }
+        default: {
+          IGNORED_SQL_LOGGER.warn("ignore:{}", sql);
+          mycat.writeOkEndPacket();
         }
       }
     } catch (Exception e) {
@@ -267,69 +210,81 @@ public class ProxyQueryHandler {
     }
   }
 
+  private void setCharset(MycatSession mycat, BufferSQLContext sqlContext) {
+    String charset = sqlContext.getCharset();
+    mycat.setCharset(charset);
+    mycat.writeOkEndPacket();
+    return;
+  }
+
+  private void useSchema(MycatSession mycat, BufferSQLContext sqlContext) {
+    String schemaName = sqlContext.getSchemaName(0);
+    useSchema(mycat, schemaName);
+    return;
+  }
+
+  private void setAutocommit(MycatSession mycat, BufferSQLContext sqlContext) {
+    Boolean autocommit = sqlContext.isAutocommit();
+    if (autocommit == null) {
+      mycat.setLastMessage("set autocommit fail!");
+      mycat.writeErrorEndPacket();
+      return;
+    } else {
+      mycat.setAutoCommit(autocommit ? MySQLAutoCommit.ON : MySQLAutoCommit.OFF);
+      mycat.writeOkEndPacket();
+      return;
+    }
+  }
+
+  private void setTranscation(MycatSession mycat, String sql, BufferSQLContext sqlContext) {
+    if (sqlContext.isAccessMode()) {
+      mycat.setAccessModeReadOnly(true);
+      mycat.writeOkEndPacket();
+      return;
+    }
+    if (sqlContext.getTransactionLevel() == MySQLIsolationLevel.GLOBAL) {
+      IGNORED_SQL_LOGGER.warn("unsupport global send error", sql);
+      mycat.setLastMessage("unsupport global level");
+      mycat.writeErrorEndPacket();
+      return;
+    }
+    MySQLIsolation isolation = sqlContext.getIsolation();
+    if (isolation == null) {
+      mycat.setLastMessage("set transaction fail!");
+      mycat.writeErrorEndPacket();
+      return;
+    }
+    mycat.setIsolation(isolation);
+    mycat.writeOkEndPacket();
+    return;
+  }
+
+
   public void execute(MycatSession mycat, MycatSchema useSchema, String sql,
       BufferSQLContext sqlContext, byte sqlType) {
     boolean simpleSelect = sqlContext.isSimpleSelect() && sqlType == SELECT_SQL;
     if (useSchema.getSchemaType() == SchemaType.DB_IN_ONE_SERVER) {
       MySQLDataSourceQuery query = new MySQLDataSourceQuery();
       query.setRunOnMaster(!simpleSelect);
-      MySQLTaskUtil.proxyBackend(mycat,
-          MySQLPacketUtil.generateComQuery(sql),
-          useSchema.getDefaultDataNode(), query, ResponseType.QUERY);
+      MySQLTaskUtil.proxyBackend(mycat, sql, useSchema.getDefaultDataNode(), query);
       return;
     }
-    ResultRoute resultRoute = router.enterRoute(useSchema, sqlContext, sql);
+    ProxyRouteResult resultRoute = router.enterRoute(useSchema, sqlContext, sql);
     if (resultRoute == null) {
       mycat.setLastMessage("can not route:" + sql);
       mycat.writeErrorEndPacket();
-    } else if (resultRoute.getType() == ResultRouteType.ONE_SERVER_RESULT_ROUTE) {
-      OneServerResultRoute resultRoute1 = (OneServerResultRoute) resultRoute;
-      MySQLDataSourceQuery query = new MySQLDataSourceQuery();
-      query.setIds(null);
-      query.setRunOnMaster(resultRoute.isRunOnMaster(!simpleSelect));
-      query.setStrategy(runtime
-          .getLoadBalanceByBalanceName(resultRoute.getBalance()));
-      MySQLTaskUtil
-          .proxyBackend(mycat, MySQLPacketUtil.generateComQuery(resultRoute1.getSql()),
-              resultRoute1.getDataNode(), query, ResponseType.QUERY);
-    } else {
-      mycat.setLastMessage("unsupport sql");
-      mycat.writeErrorEndPacket();
+      return;
     }
+    MySQLDataSourceQuery query = new MySQLDataSourceQuery();
+    query.setIds(null);
+    query.setRunOnMaster(resultRoute.isRunOnMaster(!simpleSelect));
+    query.setStrategy(runtime
+        .getLoadBalanceByBalanceName(resultRoute.getBalance()));
+    MySQLTaskUtil
+        .proxyBackend(mycat, resultRoute.getSql(), resultRoute.getDataNode(), query);
   }
 
-  public void showDb(MycatSession mycat, Collection<MycatSchema> schemaList) {
-    mycat.writeColumnCount(1);
-    byte[] bytes = MySQLPacketUtil
-        .generateColumnDefPayload("information_schema", "SCHEMATA", "SCHEMATA", "Database",
-            "SCHEMA_NAME",
-            MySQLFieldsType.FIELD_TYPE_VAR_STRING,
-            0x1, 0, mycat.charsetIndex(), 192, Charset.defaultCharset());
-    mycat.writeBytes(bytes, false);
-    mycat.writeColumnEndPacket();
-    for (MycatSchema schema : schemaList) {
-      String schemaName = schema.getSchemaName();
-      mycat.writeTextRowPacket(new byte[][]{schemaName.getBytes(mycat.charset())});
-    }
-    mycat.countDownResultSet();
-    mycat.writeRowEndPacket(mycat.hasResultset(), mycat.hasCursor());
-  }
 
-  public void showTable(MycatSession mycat, String schemaName) {
-    Collection<String> tableName = router.getConfig().getSchemaBySchemaName(schemaName)
-        .getMycatTables().keySet();
-    mycat.writeColumnCount(2);
-    mycat.writeColumnDef("Tables in " + tableName, MySQLFieldsType.FIELD_TYPE_VAR_STRING);
-    mycat.writeColumnDef("Table_type " + tableName, MySQLFieldsType.FIELD_TYPE_VAR_STRING);
-    mycat.writeColumnEndPacket();
-    MycatRouterConfig config = router.getConfig();
-    MycatSchema schema = config.getSchemaBySchemaName(schemaName);
-    byte[] basetable = mycat.encode("BASE TABLE");
-    for (String name : schema.getMycatTables().keySet()) {
-      mycat.writeTextRowPacket(new byte[][]{mycat.encode(name), basetable});
-    }
-    mycat.writeRowEndPacket(mycat.hasResultset(), mycat.hasCursor());
-  }
 
   public void useSchema(MycatSession mycat, String schemaName) {
     mycat.useSchema(schemaName);

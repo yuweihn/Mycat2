@@ -25,8 +25,7 @@ import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.router.MycatRouter;
 import io.mycat.router.MycatRouterConfig;
-import io.mycat.router.ResultRoute;
-import io.mycat.router.routeResult.OneServerResultRoute;
+import io.mycat.router.ProxyRouteResult;
 import io.mycat.sqlparser.util.BufferSQLContext;
 
 /**
@@ -44,7 +43,7 @@ public class MycatCommandHandler extends AbstractCommandHandler {
   @Override
   public void initRuntime(MycatSession mycat, ProxyRuntime runtime) {
     this.mycat = mycat;
-    this.router = new MycatRouter((MycatRouterConfig) runtime.getDefContext().get("routeConfig"));
+    this.router = new MycatRouter((MycatRouterConfig) runtime.getDefContext().get("routerConfig"));
     this.prepareContext = new PrepareStmtContext(mycat);
     this.proxyQueryHandler = new ProxyQueryHandler(router, runtime);
     this.serverQueryHandler = new BlockCommandHandler(router, runtime);
@@ -100,27 +99,21 @@ public class MycatCommandHandler extends AbstractCommandHandler {
     }
     String sql = new String(bytes);
     BufferSQLContext bufferSQLContext = router.simpleParse(sql);
-    ResultRoute resultRoute = router.enterRoute(schema, bufferSQLContext, sql);
+    ProxyRouteResult resultRoute = router.enterRoute(schema, bufferSQLContext, sql);
     if (schema.getSchemaType() != SchemaType.DB_IN_ONE_SERVER) {
       mycat.setLastMessage(
           "MySQLProxyPrepareStatement only support in DB_IN_ONE_SERVER");
       mycat.writeErrorEndPacket();
       return;
     }
-    switch (resultRoute.getType()) {
-      case ONE_SERVER_RESULT_ROUTE:
-        OneServerResultRoute route = (OneServerResultRoute) resultRoute;
-        LoadBalanceStrategy balance = mycat.getRuntime()
-            .getLoadBalanceByBalanceName(resultRoute.getBalance());
-        String dataNode = schema.getDefaultDataNode();
-        mycat.switchDataNode(dataNode);
-        prepareContext.newReadyPrepareStmt(sql, dataNode, route.isRunOnMaster(true), balance);
-        return;
-      default:
-        mycat.setLastMessage(
-            "MySQLProxyPrepareStatement only support in DB_IN_ONE_SERVER or DB_IN_MULTI_SERVER");
-        mycat.writeErrorEndPacket();
-    }
+    ProxyRouteResult route = (ProxyRouteResult) resultRoute;
+    LoadBalanceStrategy balance = mycat.getRuntime()
+        .getLoadBalanceByBalanceName(resultRoute.getBalance());
+    String dataNode = schema.getDefaultDataNode();
+    mycat.switchDataNode(dataNode);
+    prepareContext.newReadyPrepareStmt(sql, dataNode, route.isRunOnMaster(true), balance);
+    return;
+
   }
 
   @Override

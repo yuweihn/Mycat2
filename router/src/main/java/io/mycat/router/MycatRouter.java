@@ -16,10 +16,10 @@ package io.mycat.router;
 
 import io.mycat.MycatException;
 import io.mycat.beans.mycat.MycatSchema;
-import io.mycat.router.routeResult.OneServerResultRoute;
 import io.mycat.router.routeStrategy.SqlParseRouteRouteStrategy;
 import io.mycat.sqlparser.util.BufferSQLContext;
 import io.mycat.sqlparser.util.BufferSQLParser;
+import java.util.Objects;
 
 /**
  * @author jamie12221 date 2019-05-05 17:04
@@ -46,7 +46,7 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
     return sqlContext;
   }
 
-  public ResultRoute enterRoute(MycatSchema defaultSchema, String sql) {
+  public ProxyRouteResult enterRoute(MycatSchema defaultSchema, String sql) {
     BufferSQLContext bufferSQLContext = sqlContext();
     sqlParser().parse(sql.getBytes(), bufferSQLContext);
     return enterRoute(defaultSchema, bufferSQLContext, sql);
@@ -58,7 +58,12 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
     return bufferSQLContext;
   }
 
-  public ResultRoute enterRoute(MycatSchema defaultSchema, BufferSQLContext sqlContext,
+  public ProxyRouteResult enterRoute(String defaultSchema, BufferSQLContext sqlContext,
+      String sql) {
+    return enterRoute(config.getSchemaBySchemaName(defaultSchema), sqlContext, sql);
+  }
+
+  public ProxyRouteResult enterRoute(MycatSchema defaultSchema, BufferSQLContext sqlContext,
       String sql) {
     this.context.clear();
     this.context.setSqlContext(sqlContext);
@@ -69,7 +74,7 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
     String balance = sa.getBalance();
     Boolean runOnMaster = sa.getRunOnMaster();
 
-    ResultRoute routeResult = null;
+    ProxyRouteResult routeResult = null;
     try {
       routeResult = getResultRoute(defaultSchema, sqlContext, sql, sa, routeResult);
     } finally {
@@ -82,13 +87,13 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
         }
       }
     }
-    return null;
+    return routeResult;
   }
 
-  private ResultRoute getResultRoute(MycatSchema defaultSchema, BufferSQLContext sqlContext,
-      String sql, MycatProxyStaticAnnotation sa, ResultRoute routeResult) {
+  private ProxyRouteResult getResultRoute(MycatSchema defaultSchema, BufferSQLContext sqlContext,
+      String sql, MycatProxyStaticAnnotation sa, ProxyRouteResult routeResult) {
     if (sa.getDataNode() != null) {
-      OneServerResultRoute osr = new OneServerResultRoute();
+      ProxyRouteResult osr = new ProxyRouteResult();
       osr.setDataNode(sa.getDataNode());
       osr.setSql(sql);
       return routeResult = osr;
@@ -131,7 +136,7 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
 //    return result;
 //  }
 
-  public ResultRoute enterRoute(String defaultSchemaName, String sql) {
+  public ProxyRouteResult enterRoute(String defaultSchemaName, String sql) {
     MycatSchema defaultSchema = config.getSchemaBySchemaName(defaultSchemaName);
     if (defaultSchema == null) {
       throw new MycatException("can not find schema:{}", defaultSchemaName);
@@ -140,10 +145,9 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
   }
 
   @Override
-  public ResultRoute route(MycatSchema schema, String sql, RouteContext routeContext) {
+  public ProxyRouteResult route(MycatSchema schema, String sql, RouteContext routeContext) {
     SqlParseRouteRouteStrategy strategy = routeContext.getSqlParseRouteRouteStrategy();
-    strategy.route(schema, sql, context);
-    return null;
+    return strategy.route(schema, sql, context);
   }
 
   public MycatRouterConfig getConfig() {
@@ -160,5 +164,26 @@ public class MycatRouter implements RouteStrategy<RouteContext> {
 
   public MycatSchema getSchemaOrDefaultBySchemaName(String name) {
     return config.getSchemaOrDefaultBySchemaName(name);
+  }
+  public String getRandomDataNode(String schema){
+   return getRandomDataNode(config.getSchemaOrDefaultBySchemaName(schema));
+  }
+  public String getRandomDataNode(MycatSchema schema) {
+    Objects.requireNonNull(schema);
+    String defaultDataNode = schema.getDefaultDataNode();
+    if (defaultDataNode == null) {
+      return schema.getMycatTables().values().iterator().next().getDataNodes().get(0);
+    } else {
+      return defaultDataNode;
+    }
+  }
+
+  public boolean existTable(String schemaName, String tableName) {
+    MycatSchema schemaBySchema = config.getSchemaBySchemaName(schemaName);
+    if (schemaBySchema != null){
+      return schemaBySchema.getMycatTables().containsKey(tableName);
+    }else {
+      return false;
+    }
   }
 }

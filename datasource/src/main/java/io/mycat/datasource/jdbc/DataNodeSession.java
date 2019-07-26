@@ -2,7 +2,11 @@ package io.mycat.datasource.jdbc;
 
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
+import io.mycat.beans.resultset.MycatResultSetResponse;
+import io.mycat.beans.resultset.MycatUpdateResponse;
 import io.mycat.plug.loadBalance.LoadBalanceStrategy;
+import io.mycat.proxy.monitor.MycatMonitor;
+import io.mycat.proxy.session.MycatSession;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,10 +37,15 @@ public class DataNodeSession {
     }
   }
 
-  public MycatResultSetResponse executeQuery(String dataNode, String sql, boolean runOnMaster,
+  public MycatResultSetResponse executeQuery(MycatSession mycat, String dataNode, String sql,
+      boolean runOnMaster,
       LoadBalanceStrategy strategy) {
     JdbcSession session = getBackendSession(dataNode, runOnMaster, strategy);
-    return new MycatResultSetResponseImpl(session.executeQuery(sql), this);
+    JdbcDataSource datasource = session.getDatasource();
+    MycatMonitor
+        .onRouteResult(mycat, dataNode, datasource.getReplica().getName(), datasource.getName(),
+            sql);
+    return new SingleDataNodeResultSetResponse(session.executeQuery(sql), this);
   }
 
   private JdbcSession getBackendSession(String dataNode, boolean runOnMaster,
@@ -55,10 +64,15 @@ public class DataNodeSession {
     return session;
   }
 
-  public MycatUpdateResponse executeUpdate(String dataNode, String sql, boolean runOnMaster,
+  public MycatUpdateResponse executeUpdate(MycatSession mycat, String dataNode, String sql,
+      boolean runOnMaster,
       LoadBalanceStrategy strategy) {
     try {
       JdbcSession session = getBackendSession(dataNode, runOnMaster, strategy);
+      JdbcDataSource datasource = session.getDatasource();
+      MycatMonitor
+          .onRouteResult(mycat, dataNode, datasource.getReplica().getName(), datasource.getName(),
+              sql);
       return session.executeUpdate(sql, true);
     } finally {
       finish();

@@ -1,14 +1,14 @@
-package io.mycat.datasource.jdbc;
+package io.mycat.beans.resultset;
 
 import java.io.IOException;
 
 public class MycatUpdateResponseImpl implements MycatUpdateResponse {
 
   final int updateCount;
-  final long lastInsertId;
+  final int lastInsertId;
   final int serverstatus;
 
-  public MycatUpdateResponseImpl(int updateCount, long lastInsertId,int serverstatus) {
+  public MycatUpdateResponseImpl(int updateCount, int lastInsertId,int serverstatus) {
     this.updateCount = updateCount;
     this.lastInsertId = lastInsertId;
     this.serverstatus = serverstatus;
