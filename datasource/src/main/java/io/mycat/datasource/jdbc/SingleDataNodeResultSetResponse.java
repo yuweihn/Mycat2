@@ -1,7 +1,7 @@
 package io.mycat.datasource.jdbc;
 
+import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.beans.resultset.MycatResultSetResponse;
-import io.mycat.mysqlapi.collector.RowBaseIterator;
 import io.mycat.proxy.MySQLPacketUtil;
 import java.io.IOException;
 import java.util.Iterator;
@@ -9,11 +9,9 @@ import java.util.Iterator;
 public class SingleDataNodeResultSetResponse implements MycatResultSetResponse {
 
   final RowBaseIterator rowBaseIterator;
-  private DataNodeSession session;
 
-  public SingleDataNodeResultSetResponse(RowBaseIterator rowBaseIterator, DataNodeSession session) {
+  public SingleDataNodeResultSetResponse(RowBaseIterator rowBaseIterator) {
     this.rowBaseIterator = rowBaseIterator;
-    this.session = session;
   }
 
   @Override
@@ -35,15 +33,16 @@ public class SingleDataNodeResultSetResponse implements MycatResultSetResponse {
       @Override
       public byte[] next() {
         return MySQLPacketUtil
-            .generateColumnDefPayload(SingleDataNodeResultSetResponse.this.rowBaseIterator.metaData(),
+            .generateColumnDefPayload(
+                SingleDataNodeResultSetResponse.this.rowBaseIterator.metaData(),
                 index++);
       }
     };
   }
 
   @Override
-  public Iterator<byte[][]> rowIterator() {
-    return new Iterator<byte[][]>() {
+  public Iterator<byte[]> rowIterator() {
+    return new Iterator<byte[]>() {
       final int count = SingleDataNodeResultSetResponse.this.columnCount();
 
       @Override
@@ -52,13 +51,14 @@ public class SingleDataNodeResultSetResponse implements MycatResultSetResponse {
       }
 
       @Override
-      public byte[][] next() {
-        byte[][] bytes = new byte[count][];
+      public byte[] next() {
+        //todo optimize to remove tmp array
         RowBaseIterator rowBaseIterator = SingleDataNodeResultSetResponse.this.rowBaseIterator;
+        byte[][] bytes = new byte[count][];
         for (int i = 0, j = 1; i < count; i++, j++) {
           bytes[i] = rowBaseIterator.getBytes(j);
         }
-        return bytes;
+        return MySQLPacketUtil.generateTextRow(bytes);
       }
     };
   }
@@ -66,6 +66,5 @@ public class SingleDataNodeResultSetResponse implements MycatResultSetResponse {
   @Override
   public void close() throws IOException {
     rowBaseIterator.close();
-    session.finish();
   }
 }

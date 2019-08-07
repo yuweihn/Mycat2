@@ -146,7 +146,8 @@ public class ProxyQueryHandler {
               .proxyBackend(mycat, sql, defaultDataNode, null);
           return;
         case SHOW_VARIABLES_SQL: {
-          SQLExecuterWriter.writeToMycatSession(mycat,MycatRouterResponse.showVariables(mycat,mycat.getRuntime().getVariables().entries()));
+          MySQLTaskUtil
+              .proxyBackend(mycat, sql, router.getRandomDataNode(schema), null);
           return;
         }
         case SHOW_WARNINGS: {
@@ -194,7 +195,8 @@ public class ProxyQueryHandler {
             }
             execute(mycat, useSchema, sql, sqlContext, sqlType);
             return;
-          }else if (sqlType == SELECT_SQL||sqlType == SELECT_FOR_UPDATE_SQL){
+          } else if (sqlType == SELECT_SQL || sqlType == SELECT_FOR_UPDATE_SQL
+              || schema.getSchemaType() == SchemaType.DB_IN_ONE_SERVER) {
             execute(mycat, useSchema, sql, sqlContext, sqlType);
             return;
           }

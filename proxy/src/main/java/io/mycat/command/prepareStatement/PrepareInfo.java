@@ -115,6 +115,7 @@ public class PrepareInfo {
                             mysql.setMycatSession(null);
                             mysql.switchNioHandler(null);
                             manager.addIdleSession(mysql);
+                            mycat.onHandlerFinishedClear();
                           }
                         }
 

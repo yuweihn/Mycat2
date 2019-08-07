@@ -18,6 +18,7 @@ import io.mycat.MycatException;
 import io.mycat.beans.MySQLServerStatus;
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
+import io.mycat.beans.mysql.MySQLServerStatusFlags;
 import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
 import io.mycat.beans.mysql.packet.PacketSplitterImpl;
@@ -111,6 +112,7 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
   public void onHandlerFinishedClear() {
     resetPacket();
     setResponseFinished(ProcessState.READY);
+    this.change2ReadOpts();
   }
 
   public MySQLAutoCommit getAutoCommit() {
@@ -574,4 +576,11 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
   }
 
 
+  public void setAutoCommit(boolean autocommit) {
+    this.setAutoCommit(autocommit ? MySQLAutoCommit.ON : MySQLAutoCommit.OFF);
+  }
+
+  public boolean isInTransaction() {
+    return serverStatus.isServerStatusFlag(MySQLServerStatusFlags.IN_TRANSACTION);
+  }
 }

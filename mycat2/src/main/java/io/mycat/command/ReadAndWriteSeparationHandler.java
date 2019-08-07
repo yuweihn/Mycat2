@@ -7,6 +7,7 @@ import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.MySQLTaskUtil;
 import io.mycat.proxy.ProxyRuntime;
+import io.mycat.proxy.handler.ResponseType;
 import io.mycat.proxy.handler.backend.MySQLDataSourceQuery;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.router.MycatProxyStaticAnnotation;
@@ -32,7 +33,7 @@ public class ReadAndWriteSeparationHandler extends AbstractCommandHandler {
     this.sqlContext = new BufferSQLContext();
     this.sqlParser = new BufferSQLParser();
     this.prepareContext = new PrepareStmtContext(session);
-    this.config = (MycatRouterConfig) runtime.getDefContext().get("routeConfig");
+    this.config = (MycatRouterConfig) runtime.getDefContext().get("routerConfig");
     MycatSchema schema = config.getDefaultSchema();
     Objects.requireNonNull(schema, "please config default schema");
     session.setSchema(schema.getSchemaName());
@@ -41,39 +42,16 @@ public class ReadAndWriteSeparationHandler extends AbstractCommandHandler {
   }
 
   @Override
-  public void handleQuery(byte[] sql, MycatSession session) {
-    boolean simpleSelect = false;
-    MySQLDataSourceQuery query = new MySQLDataSourceQuery();
-    try {
-      sqlParser.parse(sql, sqlContext);
-      simpleSelect = sqlContext.isSimpleSelect();
-      MycatProxyStaticAnnotation sa = sqlContext.getStaticAnnotation()
-          .toMapAndClear(map);
-      String balance = sa.getBalance();
-      Boolean runOnMaster = sa.getRunOnMaster();
-      query.setRunOnMaster(!simpleSelect);
-      if (balance!=null){
-        query.setStrategy(session.getRuntime().getLoadBalanceByBalanceName(balance));
-      }
-      if (runOnMaster!=null){
-        query.setRunOnMaster(runOnMaster);
-      }
-      switch (sqlContext.getSQLType()){
-        case BufferSQLContext.SET_TRANSACTION_SQL:{
-          session.setIsolation(sqlContext.getIsolation());
-          break;
-        }
-        case BufferSQLContext.SET_AUTOCOMMIT_SQL:{
-          session.setAutoCommit(sqlContext.getAutocommit());
-          break;
-        }
-      }
-    } catch (Exception e) {
-      LOGGER.error("", e);
+  public void handleQuery(byte[] bytes, MycatSession session) {
+    if (session.isBindMySQLSession()) {
+      MySQLTaskUtil.proxyBackend(session, bytes,
+          session.getDataNode(), null, ResponseType.QUERY);
+      return;
     }
     try {
-      MySQLTaskUtil.proxyBackend(session, new String(sql),
-          session.getDataNode(), query);
+      String sql = new String(bytes);
+      MySQLTaskUtil.proxyBackend(session, sql,
+          session.getDataNode(), getDataSourceQuery(bytes, session));
     } catch (Exception e) {
       LOGGER.error("", e);
       session.setLastMessage(e);
@@ -81,6 +59,46 @@ public class ReadAndWriteSeparationHandler extends AbstractCommandHandler {
     }finally {
       map.clear();
     }
+  }
+
+  private MySQLDataSourceQuery getDataSourceQuery(byte[] sql, MycatSession session) {
+    boolean simpleSelect;
+    MySQLDataSourceQuery query = new MySQLDataSourceQuery();
+    query.setRunOnMaster(true);
+    try {
+      try {
+        sqlParser.parse(sql, sqlContext);
+      } catch (Exception e) {
+        query.setRunOnMaster(true);
+        LOGGER.warn("sql:{} parse maybe occur wrong so route to master", new String(sql));
+        return query;
+      }
+      simpleSelect = sqlContext.isSimpleSelect();
+      MycatProxyStaticAnnotation sa = sqlContext.getStaticAnnotation()
+          .toMapAndClear(map);
+      String balance = sa.getBalance();
+      Boolean runOnMaster = sa.getRunOnMaster();
+      query.setRunOnMaster(!simpleSelect);
+      if (balance != null) {
+        query.setStrategy(session.getRuntime().getLoadBalanceByBalanceName(balance));
+      }
+      if (runOnMaster != null) {
+        query.setRunOnMaster(runOnMaster);
+      }
+      switch (sqlContext.getSQLType()) {
+        case BufferSQLContext.SET_TRANSACTION_SQL: {
+          session.setIsolation(sqlContext.getIsolation());
+          break;
+        }
+        case BufferSQLContext.SET_AUTOCOMMIT_SQL: {
+          session.setAutoCommit(sqlContext.getAutocommit());
+          break;
+        }
+      }
+    } catch (Exception e) {
+      LOGGER.error("", e);
+    }
+    return query;
   }
 
   void error(MycatSession session) {
@@ -130,6 +148,12 @@ public class ReadAndWriteSeparationHandler extends AbstractCommandHandler {
   @Override
   public void handlePrepareStatementReset(long statementId, MycatSession session) {
     prepareContext.reset(statementId);
+  }
+
+  @Override
+  public void handleInitDb(String db, MycatSession mycat) {
+    mycat.useSchema(db);
+    mycat.writeOkEndPacket();
   }
 
   @Override

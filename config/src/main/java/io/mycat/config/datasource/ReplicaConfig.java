@@ -72,8 +72,9 @@ public class ReplicaConfig {
   private RepTypeEnum repType;
   private RepSwitchTypeEnum switchType;
   private String balanceName;
-  private List<DatasourceConfig> mysqls;
+  private List<DatasourceConfig> datasources;
   private BalanceTypeEnum balanceType;
+  private long slaveThreshold;
 
   public String getName() {
     return name;
@@ -107,12 +108,12 @@ public class ReplicaConfig {
     this.balanceName = balanceName;
   }
 
-  public List<DatasourceConfig> getMysqls() {
-    return mysqls;
+  public List<DatasourceConfig> getDatasources() {
+    return datasources;
   }
 
-  public void setMysqls(List<DatasourceConfig> mysqls) {
-    this.mysqls = mysqls;
+  public void setDatasources(List<DatasourceConfig> datasources) {
+    this.datasources = datasources;
   }
 
   public BalanceTypeEnum getBalanceType() {
@@ -123,10 +124,26 @@ public class ReplicaConfig {
     this.balanceType = balanceType;
   }
 
+
+  public long getSlaveThreshold() {
+    return slaveThreshold;
+  }
+
+
+  public void setSlaveThreshold(long slaveThreshold) {
+    this.slaveThreshold = slaveThreshold;
+  }
+
   @Override
   public String toString() {
-    return "ReplicaConfig{" + "name='" + name + '\'' + ", repType=" + repType + ", switchType="
-        + switchType + ", balanceName=" + balanceName
-        + ", mysqls=" + mysqls + '}';
+    return "ReplicaConfig{" +
+        "name='" + name + '\'' +
+        ", repType=" + repType +
+        ", switchType=" + switchType +
+        ", balanceName='" + balanceName + '\'' +
+        ", datasources=" + datasources +
+        ", balanceType=" + balanceType +
+        ", slaveThreshold=" + slaveThreshold +
+        '}';
   }
 }

@@ -91,7 +91,7 @@ public class ProxyRuntime {
       throws Exception {
     this.config = configReceiver;
     ProxyRootConfig config = this.config.getConfig(ConfigEnum.PROXY);
-    Objects.requireNonNull(config, "proxy.yaml was not found");
+    Objects.requireNonNull(config, "mycat.yaml was not found");
     String proxyBeanProviders = config.getProxy().getProxyBeanProviders();
     Objects.requireNonNull(proxyBeanProviders, "proxyBeanProviders was not found");
     this.providers = (ProxyBeanProviders) Class.forName(proxyBeanProviders).newInstance();
@@ -228,7 +228,9 @@ public class ProxyRuntime {
       Objects
           .requireNonNull(replicaConfig.getBalanceType(),
               "replica balance message can not be empty");
-      Objects.requireNonNull(replicaConfig.getMysqls(), "mysql list can not be empty");
+      if (replicaConfig.getDatasources() == null) {
+        return;
+      }
       ////////////////////////////////////check/////////////////////////////////////////////////
       Set<Integer> writeIndex = getReplicaIndexes(replicaIndexes, replicaConfig);
       MySQLReplica replica = factory

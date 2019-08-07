@@ -19,6 +19,7 @@ import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.plug.loadBalance.LoadBalanceStrategy;
 import io.mycat.proxy.ProxyRuntime;
+import io.mycat.proxy.session.MycatSession;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -39,6 +40,8 @@ public class GridRuntime {
   final Map<String, JdbcDataNode> jdbcDataNodeMap = new HashMap<>();
   final Map<String, JdbcDataSource> jdbcDataSourceMap = new HashMap<>();
   final GridBeanProviders providers;
+  final boolean isJTA;
+  private final DatasourceProvider datasourceProvider;
 
   public GridRuntime(ProxyRuntime proxyRuntime) throws Exception {
     this.proxyRuntime = proxyRuntime;
@@ -50,13 +53,13 @@ public class GridRuntime {
     JdbcDriverRootConfig jdbcDriverRootConfig = proxyRuntime.getConfig(ConfigEnum.JDBC_DRIVER);
     String datasourceProviderClass = jdbcDriverRootConfig.getDatasourceProviderClass();
     Objects.requireNonNull(datasourceProviderClass);
-    DatasourceProvider datasourceProvider;
     try {
-      datasourceProvider = (DatasourceProvider) Class.forName(datasourceProviderClass)
+      this.datasourceProvider = (DatasourceProvider) Class.forName(datasourceProviderClass)
           .newInstance();
     } catch (Exception e) {
       throw new MycatException("can not load datasourceProvider:{}", datasourceProviderClass);
     }
+    isJTA = datasourceProvider.isJTA();
     initJdbcReplica(dsConfig, replicaIndexConfig, jdbcDriverRootConfig.getJdbcDriver(),
         datasourceProvider);
     DataNodeRootConfig dataNodeRootConfig = proxyRuntime.getConfig(ConfigEnum.DATANODE);
@@ -77,9 +80,11 @@ public class GridRuntime {
     }, 0, period, TimeUnit.SECONDS);
 
   }
-  public MySQLVariables getVariables(){
-   return proxyRuntime.getVariables();
+
+  public MySQLVariables getVariables() {
+    return proxyRuntime.getVariables();
   }
+
   public Map<String, Object> getDefContext() {
     return proxyRuntime.getDefContext();
   }
@@ -95,6 +100,7 @@ public class GridRuntime {
       MySQLIsolation isolation,
       MySQLAutoCommit autoCommit,
       JdbcDataSourceQuery query) {
+    Objects.requireNonNull(dataNodeName);
     JdbcDataNode jdbcDataNode = jdbcDataNodeMap.get(dataNodeName);
     JdbcReplica replica = jdbcDataNode.getReplica();
     JdbcSession session = replica
@@ -144,10 +150,12 @@ public class GridRuntime {
       for (DataNodeConfig dataNode : dataNodes) {
         JdbcReplica jdbcReplica = jdbcReplicaMap.get(dataNode.getReplica());
         try {
-          Objects.requireNonNull(jdbcReplica);
+          if (jdbcReplica == null) {
+            continue;
+          }
           jdbcDataNodeMap.put(dataNode.getName(),
               new JdbcDataNode(jdbcReplica, dataNode));
-        }catch (Exception e){
+        } catch (Exception e) {
           e.printStackTrace();
         }
 
@@ -156,7 +164,7 @@ public class GridRuntime {
   }
 
   private static List<DatasourceConfig> getJdbcDatasourceList(ReplicaConfig replicaConfig) {
-    List<DatasourceConfig> mysqls = replicaConfig.getMysqls();
+    List<DatasourceConfig> mysqls = replicaConfig.getDatasources();
     if (mysqls == null) {
       return Collections.emptyList();
     }
@@ -185,5 +193,17 @@ public class GridRuntime {
 
   public GridBeanProviders getProvider() {
     return providers;
+  }
+
+  public DataNodeSession createDataNodeSession(MycatSession session) {
+    if (isJTA) {
+      return new JTADataNodeSession(session,this);
+    } else {
+      return new SimpleDataNodeSession(session,this);
+    }
+  }
+
+  public DatasourceProvider getDatasourceProvider() {
+    return datasourceProvider;
   }
 }

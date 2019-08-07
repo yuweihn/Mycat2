@@ -16,7 +16,6 @@ package io.mycat.replica;
 
 import io.mycat.MycatException;
 import io.mycat.ProxyBeanProviders;
-import io.mycat.beans.mycat.MycatDataSource;
 import io.mycat.beans.mycat.MycatReplica;
 import io.mycat.config.datasource.DatasourceConfig;
 import io.mycat.config.datasource.ReplicaConfig;
@@ -67,7 +66,7 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
     this.runtime = runtime;
     assert replicaConfig != null;
     assert writeIndex.size() > 0;
-    List<DatasourceConfig> mysqls = replicaConfig.getMysqls();
+    List<DatasourceConfig> mysqls = replicaConfig.getDatasources();
     defaultLoadBalanceStrategy = runtime
         .getLoadBalanceByBalanceName(replicaConfig.getBalanceName());
     assert mysqls != null;
@@ -75,7 +74,9 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
     for (int index = 0; index < mysqls.size(); index++) {
       DatasourceConfig datasourceConfig = mysqls.get(index);
       assert datasourceConfig != null;
-      if (datasourceConfig.getDbType() == null) {
+      if (datasourceConfig.getUrl() == null
+          || datasourceConfig.getDbType() != null && datasourceConfig.getDbType().toUpperCase()
+          .contains("MYSQL")) {
         MySQLDatasource datasource = dataSourceFactory
             .createDatasource(runtime, index, datasourceConfig, this);
         datasourceList.add(datasource);
@@ -234,7 +235,8 @@ public abstract class MySQLReplica implements MycatReplica, LoadBalanceInfo {
     int size = writeDataSource.size();
     if (writeDataSource.size() == 1) {
       datasource = writeDataSource.get(0);
-      return (List<MySQLDatasource>)(datasource.isAlive() ? Collections.singletonList(datasource) : Collections.emptyList());
+      return (List<MySQLDatasource>) (datasource.isAlive() ? Collections.singletonList(datasource)
+          : Collections.emptyList());
     }
     ArrayList<MySQLDatasource> datasources = new ArrayList<>(size);
     for (int i = 0; i < size; i++) {

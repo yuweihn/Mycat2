@@ -14,10 +14,10 @@
  */
 package io.mycat.replica.heartbeat.strategy;
 
+import io.mycat.api.collector.CommonSQLCallback;
 import io.mycat.config.GlobalConfig;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
-import io.mycat.mysqlapi.collector.CommonSQLCallback;
 import io.mycat.replica.heartbeat.DatasourceStatus;
 import io.mycat.replica.heartbeat.HeartbeatDetector;
 import java.util.List;
@@ -30,11 +30,12 @@ public class MySQLMasterSlaveBeatStrategy implements CommonSQLCallback {
 
   private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(
       MySQLMasterSlaveBeatStrategy.class);
-  final int slaveThreshold = 1000; //延迟阈值
+  final long slaveThreshold; //延迟阈值
   protected final HeartbeatDetector heartbeatDetector;
 
   public MySQLMasterSlaveBeatStrategy(HeartbeatDetector heartbeatDetector) {
     this.heartbeatDetector = heartbeatDetector;
+    this.slaveThreshold = heartbeatDetector.getReplica().getSlaveThreshold();
   }
 
   public String getSql() {
