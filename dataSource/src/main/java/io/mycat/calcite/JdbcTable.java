@@ -1,7 +1,6 @@
 package io.mycat.calcite;
 
 import org.apache.calcite.DataContext;
-import org.apache.calcite.adapter.java.JavaTypeFactory;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.plan.RelOptTable;
@@ -18,61 +17,107 @@ import org.apache.calcite.schema.*;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-public class JdbcTable implements TranslatableTable, FilterableTable {
+public class JdbcTable implements TranslatableTable, ProjectableFilterableTable {
     private final String schemaName;
     private final String tableName;
     private final RelProtoDataType relProtoDataType;
     private final RowSignature rowSignature;
+    private final DataMappingEvaluator dataMappingRule;
     private final List<BackEndTableInfo> backStoreList;
+    private final static Logger LOGGER = LoggerFactory.getLogger(JdbcTable.class);
 
-    public JdbcTable(String schemaName, String tableName, List<BackEndTableInfo> value, RelProtoDataType relProtoDataType, RowSignature rowSignature) {
+    public JdbcTable(String schemaName, String tableName, List<BackEndTableInfo> value, RelProtoDataType relProtoDataType, RowSignature rowSignature, DataMappingEvaluator dataMappingRule) {
         this.schemaName = schemaName;
         this.tableName = tableName;
         this.backStoreList = value;
         this.relProtoDataType = relProtoDataType;
         this.rowSignature = rowSignature;
+        this.dataMappingRule = dataMappingRule;
     }
 
-    @Override
-    public Enumerable<Object[]> scan(DataContext root, List<RexNode> filters) {
-        final String[] filterValues = new String[this.rowSignature.getColumnCount()];
-        filters.removeIf((filter) -> this.addFilter(filter, filterValues));
-        final JavaTypeFactory typeFactory = root.getTypeFactory();
-        for (RexNode filter : filters) {
-            if (filter.isA(SqlKind.EQUALS)) {
-
-            }
-        }
-
-        return null;
-    }
-
-    private boolean addFilter(RexNode filter, Object[] filterValues) {
+    private boolean addFilter(RexNode filter) {
         if (filter.isA(SqlKind.AND)) {
-            ((RexCall) filter).getOperands().forEach((subFilter) -> {
-                this.addFilter(subFilter, filterValues);
-            });
+            List<RexNode> operands = ((RexCall) filter).getOperands();
+            if (operands.size() == 2) {
+                RexNode left = operands.get(0);
+                RexNode right = operands.get(1);
+                if (left instanceof RexCall && right instanceof RexCall) {
+                    if (left.isA(SqlKind.GREATER_THAN_OR_EQUAL) && right.isA(SqlKind.LESS_THAN_OR_EQUAL)) {
+                        RexNode fisrtExpr = ((RexCall) left).getOperands().get(0);
+                        RexNode secondExpr = ((RexCall) right).getOperands().get(0);
+                        if (fisrtExpr instanceof RexInputRef && secondExpr instanceof RexInputRef) {
+                            int index = ((RexInputRef) fisrtExpr).getIndex();
+                            if (index == ((RexInputRef) secondExpr).getIndex()) {
+                                RexNode start = ((RexCall) left).getOperands().get(1);
+                                RexNode end = ((RexCall) right).getOperands().get(1);
+                                if (start instanceof RexLiteral && end instanceof RexLiteral) {
+                                    String startValue = ((RexLiteral) start).getValue2().toString();
+                                    String endValue = ((RexLiteral) end).getValue2().toString();
+                                    dataMappingRule.assignmentRange(false, index, startValue, endValue);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                for (RexNode operand : operands) {
+                    if (!addFilter(operand)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
         } else if (filter.isA(SqlKind.EQUALS)) {
             RexCall call = (RexCall) filter;
             RexNode left = (RexNode) call.getOperands().get(0);
             if (left.isA(SqlKind.CAST)) {
                 left = (RexNode) ((RexCall) left).operands.get(0);
             }
-
             RexNode right = (RexNode) call.getOperands().get(1);
             if (left instanceof RexInputRef && right instanceof RexLiteral) {
                 int index = ((RexInputRef) left).getIndex();
-                if (filterValues[index] == null) {
-                    filterValues[index] = ((RexLiteral) right).getValue2().toString();
-                    return true;
-                }
+                String value = ((RexLiteral) right).getValue2().toString();
+                return dataMappingRule.assignment(false, index, value);
             }
         }
-
         return false;
+    }
+
+    private boolean addOrFilter(RexNode filter) {
+        if (filter.isA(SqlKind.OR)) {
+            List<RexNode> operands = ((RexCall) filter).getOperands();
+            int size = operands.size();
+            int i = 0;
+            for (; i < size; i++) {
+                RexCall f = (RexCall) operands.get(i);
+                if (f.isA(SqlKind.EQUALS)) {
+                    RexCall call = (RexCall) f;
+                    RexNode left = (RexNode) call.getOperands().get(0);
+                    if (left.isA(SqlKind.CAST)) {
+                        left = (RexNode) ((RexCall) left).operands.get(0);
+                    }
+                    RexNode right = (RexNode) call.getOperands().get(1);
+                    if (left instanceof RexInputRef && right instanceof RexLiteral) {
+                        int index = ((RexInputRef) left).getIndex();
+                        String value = ((RexLiteral) right).getValue2().toString();
+                        dataMappingRule.assignment(true, index, value);
+                        continue;
+                    }
+                }
+                break;
+            }
+            return i == size;
+        }
+        return addFilter(filter);
     }
 
     @Override
@@ -83,7 +128,12 @@ public class JdbcTable implements TranslatableTable, FilterableTable {
 
     @Override
     public RelDataType getRowType(RelDataTypeFactory typeFactory) {
-        return null;
+        try {
+            return this.rowSignature.getRelDataType(typeFactory);
+        } catch (Exception e) {
+            LOGGER.error("", e);
+            return null;
+        }
     }
 
 
@@ -116,5 +166,54 @@ public class JdbcTable implements TranslatableTable, FilterableTable {
     @Override
     public boolean rolledUpColumnValidInsideAgg(String column, SqlCall call, SqlNode parent, CalciteConnectionConfig config) {
         return false;
+    }
+
+    @Override
+    public Enumerable<Object[]> scan(DataContext root, List<RexNode> filters, int[] projects) {
+        String filterText = "";
+        if (!filters.isEmpty()) {
+            filters.removeIf((filter) -> addOrFilter(filter));
+            filterText = dataMappingRule.getFilterExpr();
+        }
+        List<BackEndTableInfo> backStoreList = this.backStoreList;
+        int[] calculate = dataMappingRule.calculate();
+
+        if (filters.isEmpty()){
+            if (calculate.length == 0) {
+                backStoreList = this.backStoreList;
+            }
+            if (calculate.length == 1) {
+                backStoreList = Collections.singletonList(this.backStoreList.get(calculate[0]));
+            }
+
+            if (calculate.length > 1) {
+                backStoreList = new ArrayList<>(calculate.length);
+                int size = this.backStoreList.size();
+                for (int i1 : calculate) {
+                    if (i1 >= size) {
+                        backStoreList = this.backStoreList;
+                        break;
+                    } else {
+                        backStoreList.add(this.backStoreList.get(i1));
+                    }
+                }
+            }
+        }
+        final AtomicBoolean cancelFlag = DataContext.Variable.CANCEL_FLAG.get(root);
+        if (projects == null) {
+
+            return new MyCatResultSetEnumerable(cancelFlag,backStoreList, "*", filterText);
+        } else {
+            StringBuilder projectText = new StringBuilder();
+            List<String> rowOrder = rowSignature.getRowOrder();
+            for (int i = 0; i < projects.length; i++) {
+                if (i == 0) {
+                    projectText.append(rowOrder.get(projects[i]));
+                } else {
+                    projectText.append(",").append(rowOrder.get(projects[i]));
+                }
+            }
+            return new MyCatResultSetEnumerable(cancelFlag, backStoreList, projectText.toString(), filterText);
+        }
     }
 }
