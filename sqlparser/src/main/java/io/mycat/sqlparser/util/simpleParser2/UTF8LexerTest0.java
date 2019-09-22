@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public class UTF8LexerTest {
+public class UTF8LexerTest0 {
 
     public static void main(String[] args) throws IOException {
 //        String message = "SELECT * FROM `db1`.`mycat_sequence` LIMIT 0, 1000;";
@@ -19,7 +19,7 @@ public class UTF8LexerTest {
         Stream<String> lines = Files.lines(Paths.get("D:\\newgit2\\mycat4\\Mycat2\\sqlparser\\src\\test\\resources\\sql_tokens.txt"));
         Map<String, Object> collect = lines.map(i -> i.trim()).map(i -> new String[]{i.toUpperCase(), i.toLowerCase()}).flatMap(i -> Stream.of(i)).distinct().collect(Collectors.toMap(k -> k, v -> v));
 
-        GroupPatternBuilder patternBuilder = new GroupPatternBuilder();
+        GroupPatternBuilder patternBuilder = new GroupPatternBuilder(0,collect);
         int id = patternBuilder.addRule("SELECT {name1} FROM `db1`.`travelrecord` LIMIT 0,;1111");
         int id2 = patternBuilder.addRule("SELECT 2,{name3} , {name4} FROM `db1`.{table} LIMIT 0,;222");
 
