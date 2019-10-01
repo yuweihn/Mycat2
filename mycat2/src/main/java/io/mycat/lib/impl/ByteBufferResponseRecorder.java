@@ -1,4 +1,4 @@
-package io.mycat.lib;
+package io.mycat.lib.impl;
 
 import io.mycat.beans.resultset.MycatResultSetResponse;
 import io.mycat.beans.resultset.MycatResultSetType;
@@ -9,10 +9,13 @@ import java.util.Iterator;
 public class ByteBufferResponseRecorder implements MycatResultSetResponse {
     private final ResultSetCacheRecorder cache;
     private final MycatResultSetResponse resultSetResponse;
+    private final Runnable runnable;
 
-    public ByteBufferResponseRecorder(ResultSetCacheRecorder cache, MycatResultSetResponse resultSetResponse) {
+
+    public ByteBufferResponseRecorder(ResultSetCacheRecorder cache, MycatResultSetResponse resultSetResponse, Runnable runnable) {
         this.cache = cache;
         this.resultSetResponse = resultSetResponse;
+        this.runnable = runnable;
     }
 
     @Override
@@ -33,13 +36,17 @@ public class ByteBufferResponseRecorder implements MycatResultSetResponse {
         return new Iterator<byte[]>() {
             @Override
             public boolean hasNext() {
-                return iterator.hasNext();
+                boolean b = iterator.hasNext();
+                if (!b) {
+                    cache.startRecordRow();
+                }
+                return b;
             }
 
             @Override
             public byte[] next() {
                 byte[] next = iterator.next();
-                cache.addColumnDefBytes( next);
+                cache.addColumnDefBytes(next);
                 return next;
             }
         };
@@ -65,9 +72,25 @@ public class ByteBufferResponseRecorder implements MycatResultSetResponse {
 
     @Override
     public void close() throws IOException {
-       cache.sync();
-       cache.close();
+        cache.sync();
+        runnable.run();
     }
-
+    public void cache() {
+        ByteBufferResponseRecorder byteBufferResponseRecorder = this;
+        byteBufferResponseRecorder.columnCount();
+        Iterator<byte[]> iterator = byteBufferResponseRecorder.columnDefIterator();
+        while (iterator.hasNext()) {
+            iterator.next();
+        }
+        Iterator<byte[]> iterator1 = byteBufferResponseRecorder.rowIterator();
+        while (iterator1.hasNext()) {
+            iterator1.next();
+        }
+        try {
+            byteBufferResponseRecorder.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
 }

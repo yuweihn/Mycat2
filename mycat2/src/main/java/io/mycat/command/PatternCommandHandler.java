@@ -2,14 +2,12 @@ package io.mycat.command;
 
 import cn.lightfish.pattern.DynamicSQLMatcher;
 import cn.lightfish.pattern.Instruction;
-import io.mycat.lib.Response;
+import io.mycat.lib.impl.Response;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.pattern.PatternRuntime;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.session.MycatSession;
-
-import java.nio.ByteBuffer;
 
 public class PatternCommandHandler extends AbstractCommandHandler{
     DynamicSQLMatcher matcher;
@@ -26,8 +24,19 @@ public class PatternCommandHandler extends AbstractCommandHandler{
         String sqlText = new String(sql);
         LOGGER.debug(sqlText);
         Instruction match = matcher.match(sqlText);
-        Response response = match.execute(session, matcher);
-        response.apply(session,matcher);
+        if (match != null){
+            try {
+                Response response = match.execute(session, matcher);
+                response.apply(session, matcher);
+            }catch (Exception e){
+                LOGGER.error("{}",e);
+                throw e;
+            }
+        }else {
+            LOGGER.error("unknown sql:{}",sqlText);
+            session.setLastMessage("unknown sql:"+sqlText);
+            session.writeErrorEndPacket();
+        }
     }
 
     @Override

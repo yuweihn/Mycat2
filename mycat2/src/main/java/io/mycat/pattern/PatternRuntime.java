@@ -5,7 +5,6 @@ import cn.lightfish.pattern.DynamicSQLMatcherBuilder;
 import io.mycat.ConfigRuntime;
 import io.mycat.config.ConfigFile;
 import io.mycat.config.pattern.PatternRootConfig;
-import io.mycat.proxy.session.MycatSession;
 
 import java.util.Collections;
 import java.util.List;
@@ -47,7 +46,9 @@ public enum PatternRuntime {
             }
             List<String> lib = patternRootConfig.getLib();
             if (lib == null) lib = Collections.emptyList();
-            builder.build("io.mycat.proxy.session.MycatSession",lib, false);
+
+            String schemaName = patternRootConfig.getSchemaName();
+            builder.build("io.mycat.proxy.session.MycatSession",patternRootConfig.getInitCode()==null?Collections.emptyList():patternRootConfig.getInitCode(),lib,schemaName, false);
             this.builder = builder;
         }
     }

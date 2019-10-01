@@ -1,17 +1,46 @@
+lib:
+  - io.mycat.lib.ProxyExport
+  - io.mycat.lib.FinalCacheExport
+  - io.mycat.lib.SQLModifierExport
+  - io.mycat.lib.JdbcExport
+  - io.mycat.lib.SessionMapExport
+  - io.mycat.lib.CalciteExport
+  - io.mycat.lib.CacheExport
+schemaName: TESTDB1.TRAVELRECORD,TESTDB1.ADDRESS,TESTDB2.*
 sql:
   - sql: use {schema}
     code: useSchemaThenResponseOk(matcher.getNameAsString("schema"))
+
+  - sql: show databases
+    code: responseFinalCache("/sql/show_databases.sql")
+
+  - sql:  show full tables from `TESTDB1` where table_type = 'BASE TABLE'
+    code: responseFinalCache("/sql/show_full_tables_from_testdb1.sql")
+
+  - sql:  show full tables from `TESTDB2` where table_type = 'BASE TABLE'
+    code: responseFinalCache("/sql/show_full_tables_from_testdb2.sql")
+
+  - sql:  describe `TESTDB1`.`travelrecord`
+    code: responseFinalCache("/sql/describe_testdb1_travelrecord.sql")
+
+  - sql:  describe `TESTDB1`.`address`
+    code: responseFinalCache("/sql/describe_testdb1_address.sql")
+
   - sql: /*!40101 set @@session.wait_timeout=28800 */
     code: responseOk()
-  - sql: show databases
-    code: cacheLocalFileThenResponse("show_database")
-  - sql: select 1;
-    code: cacheLocalFileThenResponse("select_1")
-schema:
-  - table: DB1.TABLE,DB2.TABLE2
-    defaultCode: return Integer.valueOf(3);
-    sql:
-      - sql: select * from {tables}
-        code: return Integer.valueOf(2);
-lib:
-  - io.mycat.lib.BaseLib
+
+  - sql: commit {n}
+    code: commitOnJdbc()
+
+  - sql: begin
+    code: beginOnJdbc()
+
+  - sql: select {n}
+    code: responseQueryCalcite(matcher.getSQLAsString())
+initCode:
+  - initFinalCacheFile("d:/cache")
+  - finalCacheFile("/sql/show_databases.sql")
+  - finalCacheFile("/sql/show_full_tables_from_testdb1.sql")
+  - finalCacheFile("/sql/show_full_tables_from_testdb2.sql")
+  - finalCacheFile("/sql/describe_testdb1_travelrecord.sql")
+  - finalCacheFile("/sql/describe_testdb1_address.sql")

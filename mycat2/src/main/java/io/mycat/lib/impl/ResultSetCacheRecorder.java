@@ -1,4 +1,4 @@
-package io.mycat.lib;
+package io.mycat.lib.impl;
 
 import io.mycat.beans.resultset.MycatResultSetResponse;
 
@@ -11,7 +11,7 @@ public interface ResultSetCacheRecorder {
 
     void close() throws IOException;
 
-    void startRecordColumn(long columnCount);
+    void startRecordColumn(int columnCount);
 
     void addColumnDefBytes(byte[] bytes);
 

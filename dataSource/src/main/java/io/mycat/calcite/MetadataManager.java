@@ -1,25 +1,38 @@
 /**
  * Copyright (C) <2019>  <chen junwen>
- *
+ * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
  * License, or (at your option) any later version.
- *
+ * <p>
  * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
  * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
- *
+ * <p>
  * You should have received a copy of the GNU General Public License along with this program.  If
  * not, see <http://www.gnu.org/licenses/>.
  */
 package io.mycat.calcite;
 
+import com.alibaba.fastsql.DbType;
+import com.alibaba.fastsql.sql.ast.SQLStatement;
+import com.alibaba.fastsql.sql.parser.Lexer;
+import com.alibaba.fastsql.sql.parser.SQLParserUtils;
+import com.alibaba.fastsql.sql.parser.SQLStatementParser;
+import com.alibaba.fastsql.sql.parser.Token;
+import com.alibaba.fastsql.sql.transform.SQLRefactorVisitor;
+import com.alibaba.fastsql.sql.transform.TableMapping;
 import io.mycat.ConfigRuntime;
+import io.mycat.MycatException;
 import io.mycat.config.ConfigFile;
 import io.mycat.config.YamlUtil;
 import io.mycat.config.shardingQuery.ShardingQueryRootConfig;
+import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
 import io.mycat.router.RuleAlgorithm;
 import io.mycat.router.function.PartitionRuleAlgorithmManager;
+import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.schema.impl.AbstractSchema;
@@ -28,8 +41,10 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * @author Junwen Chen
@@ -37,9 +52,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public enum MetadataManager {
     INSATNCE;
     private final static Logger LOGGER = LoggerFactory.getLogger(MetadataManager.class);
-    final Map<String, Map<String, List<BackEndTableInfo>>> schemaBackendMetaMap = new ConcurrentHashMap<>();
+    final ConcurrentHashMap<String, Map<String, List<BackEndTableInfo>>> schemaBackendMetaMap = new ConcurrentHashMap<>();
     final ConcurrentHashMap<String, Map<String, List<SimpleColumnInfo>>> schemaColumnMetaMap = new ConcurrentHashMap<>();
     final ConcurrentHashMap<String, Map<String, DataMappingConfig>> schemaDataMappingMetaMap = new ConcurrentHashMap<>();
+    final ConcurrentHashMap<JdbcDataSource, Set<SchemaInfo>> physicalTableMap = new ConcurrentHashMap<>();
 
     MetadataManager() {
         final String charset = "UTF-8";
@@ -82,10 +98,10 @@ public enum MetadataManager {
             addTableDataMapping("TESTDB", "ADDRESS", Arrays.asList("ID"), "partitionByLong", properties, Collections.emptyMap());
 
             ShardingQueryRootConfig rootConfig = new ShardingQueryRootConfig();
-            Map<String, Map<String, ShardingQueryRootConfig.LogicTableConfig>> metaMap = rootConfig.getSchemas();
+            List<ShardingQueryRootConfig.LogicSchemaConfig> metaMap = rootConfig.getSchemas();
             schemaBackendMetaMap.forEach((schemaName, tableList) -> {
-                Map<String, ShardingQueryRootConfig.LogicTableConfig> tableConfigs;
-                metaMap.put(schemaName, tableConfigs = new HashMap<>());
+                List<ShardingQueryRootConfig.LogicTableConfig> list = new ArrayList<>();
+                metaMap.add(new ShardingQueryRootConfig.LogicSchemaConfig(schemaName, list));
                 for (Map.Entry<String, List<BackEndTableInfo>> entry : tableList.entrySet()) {
                     String tableName = entry.getKey();
                     List<ShardingQueryRootConfig.BackEndTableInfoConfig> backEndTableInfoConfigList = new ArrayList<>();
@@ -95,40 +111,85 @@ public enum MetadataManager {
                                 b.getDataNodeName(), b.getReplicaName(), b.getHostName(), b.getSchemaName(), b.getTableName()));
                     }
                     DataMappingConfig dataMappingConfig = this.schemaDataMappingMetaMap.get(schemaName).get(tableName);
-                    ShardingQueryRootConfig.LogicTableConfig logicTableConfig = new ShardingQueryRootConfig.LogicTableConfig(backEndTableInfoConfigList,dataMappingConfig.columnName,
+                    ShardingQueryRootConfig.LogicTableConfig logicTableConfig = new ShardingQueryRootConfig.LogicTableConfig(tableName, backEndTableInfoConfigList, dataMappingConfig.columnName,
                             dataMappingConfig.ruleAlgorithm.name(), dataMappingConfig.ruleAlgorithm.getProt(), dataMappingConfig.ruleAlgorithm.getRanges()
                     );
-                    tableConfigs.put(entry.getKey(), logicTableConfig);
+                    list.add(logicTableConfig);
                 }
             });
 
             String dump = YamlUtil.dump(rootConfig);
+
         } else {
-            for (Map.Entry<String, Map<String, ShardingQueryRootConfig.LogicTableConfig>> entry : shardingQueryRootConfig.getSchemas().entrySet()) {
-                String schemaName = entry.getKey();
+            for (ShardingQueryRootConfig.LogicSchemaConfig entry : shardingQueryRootConfig.getSchemas()) {
+                String schemaName = entry.getSchemaName();
                 addSchema(schemaName);
-                for (Map.Entry<String, ShardingQueryRootConfig.LogicTableConfig> tableConfigEntry : entry.getValue().entrySet()) {
-                    String tableName = tableConfigEntry.getKey();
-                    ShardingQueryRootConfig.LogicTableConfig logicTableConfig = tableConfigEntry.getValue();
+                for (ShardingQueryRootConfig.LogicTableConfig tableConfigEntry : entry.getTables()) {
+                    String tableName = tableConfigEntry.getTableName();
                     ArrayList<BackEndTableInfo> list = new ArrayList<>();
-                    for (ShardingQueryRootConfig.BackEndTableInfoConfig b : logicTableConfig.getQueryPhysicalTable()) {
+                    for (ShardingQueryRootConfig.BackEndTableInfoConfig b : tableConfigEntry.getQueryPhysicalTable()) {
                         list.add(new BackEndTableInfo(b.getDataNodeName(), b.getReplicaName(), b.getHostName(), b.getSchemaName(), b.getTableName()));
                     }
                     addTable(schemaName, tableName, list);
-                    List<String> columns = logicTableConfig.getColumns();
-                    String function = logicTableConfig.getFunction();
-                    Map<String, String> properties = logicTableConfig.getProperties();
-                    Map<String, String> ranges = logicTableConfig.getRanges();
-                    addTableDataMapping(schemaName,tableName,columns,function,properties,ranges);
+                    List<String> columns = tableConfigEntry.getColumns();
+                    String function = tableConfigEntry.getFunction();
+                    Map<String, String> properties = tableConfigEntry.getProperties();
+                    Map<String, String> ranges = tableConfigEntry.getRanges();
+                    addTableDataMapping(schemaName, tableName, columns, function, properties, ranges);
                 }
             }
 
         }
+        for (Map.Entry<String, Map<String, List<BackEndTableInfo>>> entry : this.schemaBackendMetaMap.entrySet()) {
+            String schemaName = entry.getKey();
+            Map<String, List<BackEndTableInfo>> tableList = entry.getValue();
+            for (Map.Entry<String, List<BackEndTableInfo>> listEntry : tableList.entrySet()) {
+                String tableName = listEntry.getKey();
+                for (BackEndTableInfo next : listEntry.getValue()) {
+                    JdbcDataSource physical = getPhysical(next);
+                    addTable(physicalTableMap, physical,schemaName,tableName, next.getSchemaName(), next.getTableName());
+                }
+            }
 
-
+        }
         if (schemaColumnMetaMap.isEmpty()) {
             schemaColumnMetaMap.putAll(CalciteConvertors.columnInfoList(schemaBackendMetaMap));
         }
+
+        BackEndTableInfo backEndTableInfo = getBackEndTableInfo("TESTDB", "TRAVELRECORD", "2000");
+        String format = MessageFormat.format("select * from {0} where id= 2000", backEndTableInfo.getTargetSchemaTable());
+
+
+
+    }
+
+
+    public  BackEndTableInfo getBackEndTableInfo(String schemaName, String tableName, String partitionValue) {
+        try {
+            Map<String, DataMappingConfig> dataMappingConfigMap = schemaDataMappingMetaMap.get(schemaName);
+            DataMappingConfig dataMappingConfig = dataMappingConfigMap.get(tableName);
+            int calculate = dataMappingConfig.ruleAlgorithm.calculate(partitionValue);
+            Map<String, List<BackEndTableInfo>> backMap = schemaBackendMetaMap.get(schemaName);
+            List<BackEndTableInfo> backEndTableInfos = backMap.get(tableName);
+            return backEndTableInfos.get(calculate);
+        } catch (Exception e) {
+            LOGGER.error("", e);
+            throw new MycatException("{0} {1} {2} can not calculate", schemaName, tableName, partitionValue);
+        }
+    }
+
+
+
+    @AllArgsConstructor
+    @EqualsAndHashCode
+    @Getter
+    static class SchemaInfo {
+        String logicSchema;
+        String logicTable;
+        String targetSchema;
+        String targetTable;
+
+
     }
 
     private <T, K, V> void addTableDataMapping(String schemaName, String tableName, List<String> columnList, String rule, Map<String, String> properties, Map<String, String> ranges) {
@@ -142,20 +203,18 @@ public enum MetadataManager {
         });
     }
 
-    private void addTableDataMapping(String schemaName, String tableName, List<String> columnList, String rule) {
-        schemaDataMappingMetaMap.compute(schemaName, (s, stringDataMappingEvaluatorMap) -> {
-            if (stringDataMappingEvaluatorMap == null) {
-                stringDataMappingEvaluatorMap = new HashMap<>();
-            }
-            stringDataMappingEvaluatorMap.put(tableName, new DataMappingConfig(columnList, null));
-            return stringDataMappingEvaluatorMap;
-        });
+    public static void addTable(Map<JdbcDataSource, Set<SchemaInfo>> map, JdbcDataSource physical,String logicSchema,String logicTable, String schema, String table) {
+        Set<SchemaInfo> schemaInfos = map.computeIfAbsent(physical, s -> new HashSet<>());
+        schemaInfos.add(new SchemaInfo(logicSchema.toLowerCase(),logicTable.toLowerCase(),schema.trim().toLowerCase(), table.trim().toLowerCase()));
     }
 
+    public static JdbcDataSource getPhysical(BackEndTableInfo next) {
+        return next.getDatasource(true,null);
+    }
 
     public CalciteConnection getConnection() {
         try {
-            Connection connection = DriverManager.getConnection("jdbc:calcite:caseSensitive=false;lex=MYSQL");
+            Connection connection = DriverManager.getConnection("jdbc:calcite:caseSensitive=false;lex=MYSQL;fun=mysql;conformance=MYSQL_5");
             CalciteConnection calciteConnection = connection.unwrap(CalciteConnection.class);
             SchemaPlus rootSchema = calciteConnection.getRootSchema();
             schemaBackendMetaMap.forEach((schemaName, tables) -> {

@@ -28,6 +28,7 @@ public class GPatternUTF8Lexer {
     ByteBuffer buffer;
     int limit = 0;
     int position = 0;
+    int startOffset;
     private final GPatternIdRecorder idRecorder;
     public static final int DEMO = 128;
 
@@ -43,7 +44,7 @@ public class GPatternUTF8Lexer {
 
     public void init(ByteBuffer buffer, int startOffset, int limit) {
         this.buffer = buffer;
-        this.position = startOffset;
+        this.startOffset = this.position = startOffset;
         this.limit = limit;
     }
 
@@ -247,18 +248,19 @@ public class GPatternUTF8Lexer {
     }
 
     public boolean fastEquals(int startOffset, int endOffset, byte[] symbol) {
-        if (buffer.hasArray()) {
+        if (buffer.hasArray() && symbol.length > ignorelength) {
             byte[] array = buffer.array();
             return arrayEquals(startOffset, endOffset, symbol, array);
         } else {
             return directEquals(startOffset, endOffset, symbol);
         }
-
     }
+
+    public static int ignorelength = 4;
 
     private boolean directEquals(int startOffset, int endOffset, byte[] symbol) {
         int length = symbol.length;
-        for (int j = 4; j < length; j++) {
+        for (int j = ignorelength; j < length; j++) {
             if (buffer.get(startOffset + j) != symbol[j]) {
                 return false;
             }
@@ -268,7 +270,7 @@ public class GPatternUTF8Lexer {
 
     private boolean arrayEquals(int startOffset, int endOffset, byte[] symbol, byte[] array) {
         int length = symbol.length;
-        for (int j = 4; j < length; j++) {
+        for (int j = ignorelength; j < length; j++) {
             if (array[startOffset + j] != symbol[j]) {
                 return false;
             }

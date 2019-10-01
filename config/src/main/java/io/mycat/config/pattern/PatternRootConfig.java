@@ -8,6 +8,8 @@ public class PatternRootConfig extends ConfigurableRoot {
     private List<TextItemConfig> sql;
     private List<SchemaConfig> schema;
     private List<String> lib;
+    private String schemaName;
+    private List<String> initCode;
 
     public static class TextItemConfig {
         String sql;
@@ -82,5 +84,21 @@ public class PatternRootConfig extends ConfigurableRoot {
 
     public void setLib(List<String> lib) {
         this.lib = lib;
+    }
+
+    public String getSchemaName() {
+        return schemaName;
+    }
+
+    public void setSchemaName(String schemaName) {
+        this.schemaName = schemaName;
+    }
+
+    public List<String> getInitCode() {
+        return initCode;
+    }
+
+    public void setInitCode(List<String> code) {
+        this.initCode = code;
     }
 }
