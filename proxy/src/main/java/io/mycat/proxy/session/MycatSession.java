@@ -400,7 +400,13 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
 
   @Override
   public void writeToChannel() throws IOException {
-    writeHandler.writeToChannel(this);
+    try {
+      writeHandler.writeToChannel(this);
+    }catch (Exception e){
+      writeHandler.onException(this,e);
+      resetPacket();
+      throw e;
+    }
   }
 
   @Override
@@ -447,6 +453,11 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
     MycatSession that = (MycatSession) o;
 
     return this.sessionId == that.sessionId;
+  }
+
+  @Override
+  public boolean checkOkInBind() {
+    return isOpen();
   }
 
   @Override
@@ -541,7 +552,7 @@ public final class MycatSession extends AbstractSession<MycatSession> implements
    * 在业务线程使用,在业务线程运行的时候设置业务线程当前的session,方便监听类获取session记录
    */
   public void deliverWorkerThread(SessionThread thread) {
-    LOGGER.info("@@@@@@@@@@@@@@@@@@@@@@{}", thread);
+    LOGGER.info("{}", thread);
     crossSwapThreadBufferPool.bindSource(thread);
     assert thread == Thread.currentThread();
   }

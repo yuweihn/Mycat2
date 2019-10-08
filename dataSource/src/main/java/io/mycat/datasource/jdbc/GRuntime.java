@@ -105,6 +105,10 @@ public enum GRuntime {
                 datasources = Collections.emptyList();
             }
             final BindThreadKey key = new BindThreadKey() {
+                @Override
+                public boolean checkOkInBind() {
+                    return false;
+                }
             };
             for (DatasourceConfig datasource : Objects.requireNonNull(datasources)) {
                 existUpdate = existUpdate || ReplicaHeartbeatRuntime.INSTANCE
@@ -248,8 +252,8 @@ public enum GRuntime {
         return (T) config;
     }
 
-    public <K extends BindThreadKey, T extends BindThreadCallback> void run(K key, T processTask) {
-        gThreadPool.run(key, processTask);
+    public <K extends BindThreadKey, T extends BindThreadCallback> boolean run(K key, T processTask) {
+      return   gThreadPool.run(key, processTask);
     }
 
     public Map<String, Object> getDefContext() {

@@ -15,13 +15,8 @@
 package io.mycat.calcite;
 
 import com.alibaba.fastsql.DbType;
+import com.alibaba.fastsql.sql.SQLUtils;
 import com.alibaba.fastsql.sql.ast.SQLStatement;
-import com.alibaba.fastsql.sql.parser.Lexer;
-import com.alibaba.fastsql.sql.parser.SQLParserUtils;
-import com.alibaba.fastsql.sql.parser.SQLStatementParser;
-import com.alibaba.fastsql.sql.parser.Token;
-import com.alibaba.fastsql.sql.transform.SQLRefactorVisitor;
-import com.alibaba.fastsql.sql.transform.TableMapping;
 import io.mycat.ConfigRuntime;
 import io.mycat.MycatException;
 import io.mycat.config.ConfigFile;
@@ -44,7 +39,7 @@ import java.sql.DriverManager;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * @author Junwen Chen
@@ -55,8 +50,9 @@ public enum MetadataManager {
     final ConcurrentHashMap<String, Map<String, List<BackEndTableInfo>>> schemaBackendMetaMap = new ConcurrentHashMap<>();
     final ConcurrentHashMap<String, Map<String, List<SimpleColumnInfo>>> schemaColumnMetaMap = new ConcurrentHashMap<>();
     final ConcurrentHashMap<String, Map<String, DataMappingConfig>> schemaDataMappingMetaMap = new ConcurrentHashMap<>();
+    final ConcurrentHashMap<String, Map<String, JdbcTable>> logicTableMap = new ConcurrentHashMap<>();
     final ConcurrentHashMap<JdbcDataSource, Set<SchemaInfo>> physicalTableMap = new ConcurrentHashMap<>();
-
+    final ConcurrentHashMap<BackEndTableInfo,Map<String,SchemaInfo>> backEndTableInfoTableMapping = new ConcurrentHashMap<>();
     MetadataManager() {
         final String charset = "UTF-8";
         System.setProperty("saffron.default.charset", charset);
@@ -147,24 +143,39 @@ public enum MetadataManager {
                 String tableName = listEntry.getKey();
                 for (BackEndTableInfo next : listEntry.getValue()) {
                     JdbcDataSource physical = getPhysical(next);
-                    addTable(physicalTableMap, physical,schemaName,tableName, next.getSchemaName(), next.getTableName());
+                    addTable(physicalTableMap, physical, schemaName, tableName, next.getSchemaName(), next.getTableName());
+
                 }
             }
 
         }
         if (schemaColumnMetaMap.isEmpty()) {
-            schemaColumnMetaMap.putAll(CalciteConvertors.columnInfoList(schemaBackendMetaMap));
+            schemaColumnMetaMap.putAll(CalciteConvertors.columnInfoListByDataSource(schemaBackendMetaMap));
         }
 
-        BackEndTableInfo backEndTableInfo = getBackEndTableInfo("TESTDB", "TRAVELRECORD", "2000");
-        String format = MessageFormat.format("select * from {0} where id= 2000", backEndTableInfo.getTargetSchemaTable());
+        String value = "2000";
 
+        BackEndTableInfo backEndTableInfo = getBackEndTableInfo("TESTDB1", "TRAVELRECORD", value);
+        JdbcDataSource datasource = backEndTableInfo.getDatasource(true, null);
+        Set<SchemaInfo> phySchemaInfos = physicalTableMap.get(datasource);
+        ConcurrentMap<String,SchemaInfo> map = new ConcurrentHashMap<>();
+        for (SchemaInfo phySchemaInfo : phySchemaInfos) {
+            String logicTable = phySchemaInfo.getLogicSchema().toLowerCase() + "." + phySchemaInfo.getLogicTable().toLowerCase();
+            map.put(logicTable,phySchemaInfo);
+        }
+        this.backEndTableInfoTableMapping.put(backEndTableInfo,map);
+        String sql = "select * from TESTDB1.travelrecord where id = 1";
+        List<SQLStatement> stmtList = SQLUtils.parseStatements(sql, DbType.mysql);
+        for (SQLStatement sqlStatement : stmtList) {
+            sqlStatement.accept(new MysqlTableReplacer(map,"TESTDB1"));
+        }
+        String s = SQLUtils.toSQLString(stmtList, DbType.mysql);
 
-
+        String format = MessageFormat.format("select * from {0} where id = {1}", backEndTableInfo.getTargetSchemaTable(), value);
     }
 
 
-    public  BackEndTableInfo getBackEndTableInfo(String schemaName, String tableName, String partitionValue) {
+    public BackEndTableInfo getBackEndTableInfo(String schemaName, String tableName, String partitionValue) {
         try {
             Map<String, DataMappingConfig> dataMappingConfigMap = schemaDataMappingMetaMap.get(schemaName);
             DataMappingConfig dataMappingConfig = dataMappingConfigMap.get(tableName);
@@ -177,7 +188,6 @@ public enum MetadataManager {
             throw new MycatException("{0} {1} {2} can not calculate", schemaName, tableName, partitionValue);
         }
     }
-
 
 
     @AllArgsConstructor
@@ -203,13 +213,13 @@ public enum MetadataManager {
         });
     }
 
-    public static void addTable(Map<JdbcDataSource, Set<SchemaInfo>> map, JdbcDataSource physical,String logicSchema,String logicTable, String schema, String table) {
+    public static void addTable(Map<JdbcDataSource, Set<SchemaInfo>> map, JdbcDataSource physical, String logicSchema, String logicTable, String schema, String table) {
         Set<SchemaInfo> schemaInfos = map.computeIfAbsent(physical, s -> new HashSet<>());
-        schemaInfos.add(new SchemaInfo(logicSchema.toLowerCase(),logicTable.toLowerCase(),schema.trim().toLowerCase(), table.trim().toLowerCase()));
+        schemaInfos.add(new SchemaInfo(logicSchema.toLowerCase(), logicTable.toLowerCase(), schema.trim().toLowerCase(), table.trim().toLowerCase()));
     }
 
     public static JdbcDataSource getPhysical(BackEndTableInfo next) {
-        return next.getDatasource(true,null);
+        return next.getDatasource(true, null);
     }
 
     public CalciteConnection getConnection() {
@@ -217,24 +227,12 @@ public enum MetadataManager {
             Connection connection = DriverManager.getConnection("jdbc:calcite:caseSensitive=false;lex=MYSQL;fun=mysql;conformance=MYSQL_5");
             CalciteConnection calciteConnection = connection.unwrap(CalciteConnection.class);
             SchemaPlus rootSchema = calciteConnection.getRootSchema();
-            schemaBackendMetaMap.forEach((schemaName, tables) -> {
-                SchemaPlus currentSchema = rootSchema.add(schemaName, new AbstractSchema());
-                tables.forEach((tableName, value) -> {
-                    List<SimpleColumnInfo> columnInfos = schemaColumnMetaMap.get(schemaName).get(tableName);
-                    RowSignature rowSignature = CalciteConvertors.rowSignature(columnInfos);
-                    Optional<DataMappingConfig> optional = Optional.ofNullable(schemaDataMappingMetaMap.get(schemaName)).flatMap(s -> Optional.ofNullable(s.get(tableName)));
-                    DataMappingEvaluator dataMappingEvaluator = null;
-                    if (optional.isPresent()) {
-                        DataMappingConfig dataMappingConfig = optional.get();
-                        RuleAlgorithm ruleAlgorithm = dataMappingConfig.ruleAlgorithm;
-                        dataMappingEvaluator = new DataMappingEvaluator(rowSignature, dataMappingConfig.columnName, ruleAlgorithm);
-                    } else {
-                        dataMappingEvaluator = new DataMappingEvaluator(rowSignature);
-                    }
-                    currentSchema.add(tableName, new JdbcTable(schemaName, tableName, value,
-                            CalciteConvertors.relDataType(columnInfos), rowSignature, dataMappingEvaluator
-                    ));
-                    LOGGER.error("build {}.{} success", schemaName, tableName);
+            rootSchema.setCacheEnabled(true);
+            Map<String, Map<String, JdbcTable>> schemaMap = getTableMap();
+            schemaMap.forEach((k, v) -> {
+                SchemaPlus schemaPlus = rootSchema.add(k, new AbstractSchema());
+                v.forEach((t, j) -> {
+                    schemaPlus.add(t, j);
                 });
             });
             return calciteConnection;
@@ -242,6 +240,39 @@ public enum MetadataManager {
             LOGGER.error("", e);
             throw new RuntimeException(e);
         }
+    }
+
+    public synchronized Map<String, Map<String, JdbcTable>> getTableMap() {
+        if (logicTableMap.isEmpty()) {
+            buildLogicTable();
+        }
+        return logicTableMap;
+    }
+
+    public void buildLogicTable() {
+        schemaBackendMetaMap.forEach((schemaName, tables) -> {
+            ConcurrentHashMap<String, JdbcTable> tableMap;
+            logicTableMap.put(schemaName, tableMap = new ConcurrentHashMap<>());
+            for (Map.Entry<String, List<BackEndTableInfo>> entry : tables.entrySet()) {
+                String tableName = entry.getKey();
+                List<BackEndTableInfo> value = entry.getValue();
+                List<SimpleColumnInfo> columnInfos = schemaColumnMetaMap.get(schemaName).get(tableName);
+                RowSignature rowSignature = CalciteConvertors.rowSignature(columnInfos);
+                Optional<DataMappingConfig> optional = Optional.ofNullable(schemaDataMappingMetaMap.get(schemaName)).flatMap(s -> Optional.ofNullable(s.get(tableName)));
+                DataMappingEvaluator dataMappingEvaluator = null;
+                if (optional.isPresent()) {
+                    DataMappingConfig dataMappingConfig = optional.get();
+                    RuleAlgorithm ruleAlgorithm = dataMappingConfig.ruleAlgorithm;
+                    dataMappingEvaluator = new DataMappingEvaluator(rowSignature, dataMappingConfig.columnName, ruleAlgorithm);
+                } else {
+                    dataMappingEvaluator = new DataMappingEvaluator(rowSignature);
+                }
+                tableMap.put(tableName, new JdbcTable(schemaName, tableName, value,
+                        CalciteConvertors.relDataType(columnInfos), rowSignature, dataMappingEvaluator
+                ));
+                LOGGER.error("build {}.{} success", schemaName, tableName);
+            }
+        });
     }
 
 

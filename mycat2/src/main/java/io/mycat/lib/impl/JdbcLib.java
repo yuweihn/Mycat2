@@ -12,6 +12,8 @@ import io.mycat.datasource.jdbc.thread.GThread;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.SQLExecuterWriter;
+import io.mycat.proxy.reactor.NIOJob;
+import io.mycat.proxy.reactor.ReactorEnvThread;
 import io.mycat.proxy.reactor.SessionThread;
 import io.mycat.proxy.session.MycatSession;
 
@@ -119,7 +121,25 @@ public class JdbcLib {
                     consumer.accept(mycat);
                 } finally {
                     mycat.backFromWorkerThread();
+                    session.reset();
                 }
+                mycat.getIOThread().addNIOJob(new NIOJob() {
+                    @Override
+                    public void run(ReactorEnvThread reactor) throws Exception {
+                            mycat.writeToChannel();
+                    }
+
+                    @Override
+                    public void stop(ReactorEnvThread reactor, Exception reason) {
+
+                    }
+
+                    @Override
+                    public String message() {
+                        return "";
+                    }
+                });
+                mycat.getIOThread().getSelector().wakeup();
             }
 
             @Override

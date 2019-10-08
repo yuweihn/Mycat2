@@ -168,6 +168,11 @@ public class GPatternUTF8Lexer {
         HANDLER[DEMO] = ID_HANDLER;
 
         HANDLER[' '] = BLANK_SPACE_HANDLER;
+        HANDLER['\t'] = BLANK_SPACE_HANDLER;
+        HANDLER['\f'] = BLANK_SPACE_HANDLER;
+        HANDLER['\r'] = BLANK_SPACE_HANDLER;
+        HANDLER[11] = BLANK_SPACE_HANDLER;// \v
+
         HANDLER['#'] = SHARP_HANLDER;
         HANDLER['\''] = STRING_HANLDER;
         HANDLER['\"'] = STRING_HANLDER;
@@ -261,7 +266,7 @@ public class GPatternUTF8Lexer {
     private boolean directEquals(int startOffset, int endOffset, byte[] symbol) {
         int length = symbol.length;
         for (int j = ignorelength; j < length; j++) {
-            if (buffer.get(startOffset + j) != symbol[j]) {
+            if (GPatternIdRecorderImpl.a2A[buffer.get(startOffset + j)] != GPatternIdRecorderImpl.a2A[symbol[j]]) {
                 return false;
             }
         }
@@ -271,7 +276,7 @@ public class GPatternUTF8Lexer {
     private boolean arrayEquals(int startOffset, int endOffset, byte[] symbol, byte[] array) {
         int length = symbol.length;
         for (int j = ignorelength; j < length; j++) {
-            if (array[startOffset + j] != symbol[j]) {
+            if (GPatternIdRecorderImpl.a2A[array[startOffset + j]] != GPatternIdRecorderImpl.a2A[symbol[j]]) {
                 return false;
             }
         }

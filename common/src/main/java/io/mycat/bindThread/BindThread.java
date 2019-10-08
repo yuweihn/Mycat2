@@ -1,15 +1,21 @@
 package io.mycat.bindThread;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Date;
 import java.util.Objects;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedTransferQueue;
 
 public abstract class BindThread<KEY extends BindThreadKey, PROCESS extends BindThreadCallback> extends
     Thread {
-
-  final LinkedTransferQueue<PROCESS> blockingDeque = new LinkedTransferQueue<>();//todo optimization
+  final Logger LOGGER = LoggerFactory.getLogger(BindThread.class);
+  final BlockingQueue<PROCESS> blockingDeque = new LinkedTransferQueue<>();//todo optimization
   final BindThreadPool manager;
   long startTime;
   volatile KEY key;
+  private long endTime;
 
   public BindThread(BindThreadPool manager) {
     this.manager = manager;
@@ -19,7 +25,7 @@ public abstract class BindThread<KEY extends BindThreadKey, PROCESS extends Bind
 
   void run(KEY key, PROCESS processTask) {
     Objects.requireNonNull(key);
-    if (!blockingDeque.isEmpty() && this.key != key) {
+    if (!blockingDeque.isEmpty() &&this.key!=null) {
       throw new RuntimeException("unknown state");
     } else if (this.key == null) {
       this.key = key;
@@ -28,6 +34,7 @@ public abstract class BindThread<KEY extends BindThreadKey, PROCESS extends Bind
     } else {
       throw new RuntimeException("unknown state");
     }
+    this.key = key;
     if (Thread.currentThread() == this) {
       processJob(null, processTask);
     } else {
@@ -44,19 +51,15 @@ public abstract class BindThread<KEY extends BindThreadKey, PROCESS extends Bind
         exception = null;
         callback = null;
 
-        try {
-          callback = blockingDeque.poll(manager.waitTaskTimeout, manager.timeoutUnit);
-        } catch (InterruptedException ignored) {
-        }
+        callback = blockingDeque.poll(this.manager.waitTaskTimeout,this.manager.timeoutUnit);
         if (callback != null) {
           processJob(exception, callback);
-
         }
 
         {
           boolean bind = false;
           if (this.key != null && !(bind = continueBind())) {
-            recycleTransactionThread(callback);
+            recycleTransactionThread();
           } else if (this.key == null && bind) {
             throw new RuntimeException("unknown state");
           }
@@ -75,19 +78,21 @@ public abstract class BindThread<KEY extends BindThreadKey, PROCESS extends Bind
       manager.exceptionHandler.accept(e);
       exception = e;
     }
+    this.endTime = System.currentTimeMillis();
+    LOGGER.debug("thread execute time:{} {} ", this.endTime-this.startTime,"Millis");
     if (exception != null) {
       poll.onException(key, exception);
     }
   }
 
-  public void recycleTransactionThread(BindThreadCallback callback) {
-    if (!continueBind() && callback == null) {
+  public void recycleTransactionThread() {
+    if (!continueBind()) {
       manager.map.remove(this.key);
       this.key = null;
       if (!manager.idleList.offer(this)) {
         close();
-        manager.decThreadCount();
-        manager.allSession.remove(this);
+      }else {
+        LOGGER.debug("thread recycle at time:{} ",new Date());
       }
     }
   }
