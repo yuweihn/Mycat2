@@ -1,14 +1,14 @@
 /**
  * Copyright (C) <2019>  <chen junwen>
- *
+ * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
  * License, or (at your option) any later version.
- *
+ * <p>
  * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
  * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
- *
+ * <p>
  * You should have received a copy of the GNU General Public License along with this program.  If
  * not, see <http://www.gnu.org/licenses/>.
  */
@@ -18,6 +18,7 @@ import io.mycat.router.RuleAlgorithm;
 import io.mycat.sqlparser.util.complie.RangeVariableType;
 
 import java.util.*;
+
 /**
  * @author Weiqing Xu
  * @author Junwen Chen
@@ -28,31 +29,53 @@ public class DataMappingEvaluator {
     private final List<String> columnNameList;
     private final RuleAlgorithm function;
     private static final int[] EMPTY = new int[]{};
+    private final Map<String, Integer> columnMap;
     boolean fail = true;
 
     ///////////////////optional//////////////////////////////
     private final int[] keys;
 
+
+    private DataMappingEvaluator(RowSignature rowSignature, List<String> columnNameList, RuleAlgorithm function, int[] keys, Map<String, Integer> columnMap) {
+        this.rowSignature = rowSignature;
+        this.columnNameList = columnNameList;
+        this.function = function;
+        this.keys = keys;
+        this.columnMap = columnMap;
+        this.values = new Set[rowSignature.getColumnCount()];
+        for (int i = 0; i < values.length; i++) {
+            values[i] = new HashSet<>(1);
+        }
+    }
+
+    public DataMappingEvaluator copy() {
+        return new DataMappingEvaluator(this.rowSignature, this.columnNameList, function, keys, columnMap);
+    }
+
     public DataMappingEvaluator(RowSignature rowSignature, List<String> columnNameList, RuleAlgorithm function) {
         this.rowSignature = rowSignature;
         this.columnNameList = columnNameList == null ? Collections.emptyList() : columnNameList;
         this.function = function;
-        this.values = new Set[rowSignature.getColumnCount()];
+
 
         List<String> rowOrder = rowSignature.getRowOrder();
 
         /////////////////////////////////////////////////////
         this.keys = new int[columnNameList.size()];
         int index = 0;
+        columnMap = new HashMap<>(this.keys.length);
         for (String s : columnNameList) {
             this.keys[index] = rowOrder.indexOf(s);
+            columnMap.put(s, index);
             ++index;
         }
 
+        this.values = new Set[rowSignature.getColumnCount()];
         for (int i = 0; i < values.length; i++) {
-            values[i] = new HashSet<>();
+            values[i] = new HashSet<>(1);
         }
     }
+
 
     public DataMappingEvaluator(RowSignature rowSignature) {
         this(rowSignature, Collections.emptyList(), new RuleAlgorithm() {
@@ -81,6 +104,20 @@ public class DataMappingEvaluator {
 
             }
         });
+    }
+
+    void assignment(boolean or, String columnName, String value) {
+        Integer integer = columnMap.get(columnName);
+        if (integer!=null) {
+            assignment(or,integer , value);
+        }
+    }
+
+    void assignmentRange(boolean or, String columnName, String begin, String end) {
+        Integer integer = columnMap.get(columnName);
+        if (integer!=null) {
+            assignmentRange(or, integer, begin, end);
+        }
     }
 
     /**

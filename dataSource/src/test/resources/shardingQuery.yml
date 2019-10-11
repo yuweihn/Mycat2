@@ -1,9 +1,11 @@
 filePath: null
 schemas:
-  - schemaName: TESTDB1
+  - schemaName: testdb
     tables:
       - columns:
-          - ID
+          - id
+        createTableSQL: "create table `address` (\n\t`id` int (11),\n\t`addressname` varchar\
+      \ (80)\n); \n"
         function: partitionByLong
         properties: &id001
           partitionCount: 2,1
@@ -25,9 +27,19 @@ schemas:
             schemaName: db3
             tableName: address
         ranges: &id002 {}
-        tableName: ADDRESS
+        tableName: address
       - columns:
-          - ID
+          - id
+        createTableSQL: |-
+          CREATE TABLE `travelrecord` (
+            `id` bigint(20) NOT NULL,
+            `user_id` varchar(100) CHARACTER SET utf8 DEFAULT NULL,
+            `traveldate` date DEFAULT NULL,
+            `fee` decimal(10,0) DEFAULT NULL,
+            `days` int(11) DEFAULT NULL,
+            `blob` longblob DEFAULT NULL,
+            `d` double DEFAULT NULL
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         function: partitionByLong
         properties: *id001
         queryPhysicalTable:
@@ -35,48 +47,48 @@ schemas:
             hostName: mytest3306a
             replicaName: null
             schemaName: db1
-            tableName: TRAVELRECORD
+            tableName: travelrecord
           - dataNodeName: null
             hostName: mytest3306a
             replicaName: null
             schemaName: db1
-            tableName: TRAVELRECORD2
+            tableName: travelrecord2
           - dataNodeName: null
             hostName: mytest3306a
             replicaName: null
             schemaName: db1
-            tableName: TRAVELRECORD3
+            tableName: travelrecord3
           - dataNodeName: null
             hostName: mytest3306a
             replicaName: null
             schemaName: db2
-            tableName: TRAVELRECORD
+            tableName: travelrecord
           - dataNodeName: null
             hostName: mytest3306a
             replicaName: null
             schemaName: db2
-            tableName: TRAVELRECORD2
+            tableName: travelrecord2
           - dataNodeName: null
             hostName: mytest3306a
             replicaName: null
             schemaName: db2
-            tableName: TRAVELRECORD3
+            tableName: travelrecord3
           - dataNodeName: null
             hostName: mytest3306a
             replicaName: null
             schemaName: db3
-            tableName: TRAVELRECORD
+            tableName: travelrecord
           - dataNodeName: null
             hostName: mytest3306a
             replicaName: null
             schemaName: db3
-            tableName: TRAVELRECORD2
+            tableName: travelrecord2
           - dataNodeName: null
             hostName: mytest3306a
             replicaName: null
             schemaName: db3
-            tableName: TRAVELRECORD3
+            tableName: travelrecord3
         ranges: *id002
-        tableName: TRAVELRECORD
+        tableName: travelrecord
 type: null
 version: 0

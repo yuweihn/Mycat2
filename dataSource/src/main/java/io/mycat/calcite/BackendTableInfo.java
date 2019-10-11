@@ -15,6 +15,7 @@
 package io.mycat.calcite;
 
 
+import io.mycat.calcite.shardingQuery.SchemaInfo;
 import io.mycat.datasource.jdbc.GRuntime;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSourceQuery;
@@ -30,29 +31,22 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode
 @Builder
-public class BackEndTableInfo {
+public class BackendTableInfo {
     private String dataNodeName;
     private String replicaName;
     private String hostName;
-    private String schemaName;
-    private String tableName;
-    private String targetSchemaTable;
+    private SchemaInfo schemaInfo;
 
-    public BackEndTableInfo() {
+    public BackendTableInfo() {
     }
 
-    public BackEndTableInfo(String dataNodeName, String replicaName, String hostName, String schemaName, String tableName, String targetSchemaTable) {
+    public BackendTableInfo(String dataNodeName, String replicaName, String hostName, SchemaInfo schemaInfo) {
         this.dataNodeName = dataNodeName;
         this.replicaName = replicaName;
         this.hostName = hostName;
-        this.schemaName = schemaName;
-        this.tableName = tableName;
-        this.targetSchemaTable = targetSchemaTable;
+        this.schemaInfo = schemaInfo;
     }
 
-    public BackEndTableInfo(String dataNodeName, String replicaName, String hostName, String schemaName, String tableName) {
-        this(dataNodeName, replicaName, hostName, schemaName, tableName, schemaName + "." + tableName);
-    }
 
     public <T> T getSession(boolean runOnMaster, LoadBalanceStrategy balanceStrategy) {
         JdbcDataSource datasource = getDatasource(runOnMaster, balanceStrategy);
