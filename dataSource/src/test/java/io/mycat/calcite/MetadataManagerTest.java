@@ -4,10 +4,12 @@ import com.alibaba.fastsql.DbType;
 import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlInsertStatement;
 import com.alibaba.fastsql.sql.parser.SQLParserUtils;
 import com.alibaba.fastsql.sql.parser.SQLStatementParser;
+import io.mycat.ConfigRuntime;
 import io.mycat.calcite.shardingQuery.SchemaInfo;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.text.MessageFormat;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -16,6 +18,10 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 
 public class MetadataManagerTest {
+    public MetadataManagerTest() {
+        ConfigRuntime.INSTCANE.load("/src/test/resources");
+    }
+
     static Map<BackendTableInfo, String> routeDelete(String currentSchema, String sql) {
         return MetadataManager.INSATNCE.rewriteUpdateSQL(currentSchema, sql);
     }
@@ -95,10 +101,10 @@ public class MetadataManagerTest {
 
     @Test
     public void test7() {
-        BackendTableInfo backEndTableInfo = getBackEndTableInfo("TESTDB", "travelrecord", "1");
-        SchemaInfo schemaInfo = backEndTableInfo.getSchemaInfo();
-        String targetSchemaTable = schemaInfo.getTargetSchemaTable();
-        Assert.assertEquals("db1.travelrecord", targetSchemaTable);
+        String sql = "DELETE FROM travelrecord WHERE id = '2' ";
+        String id = "2";
+        BackendTableInfo backEndTableInfo = getBackEndTableInfo("TESTDB", "travelrecord", id);
+        String newSQL = MessageFormat.format("DELETE FROM {0} WHERE user_id = {1} ", backEndTableInfo.getSchemaInfo().getTargetSchemaTable(), id);
     }
 
     @Test
