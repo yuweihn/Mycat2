@@ -1,11 +1,7 @@
 package io.mycat.pattern;
 
-import cn.lightfish.pattern.DynamicSQLMatcher;
-import cn.lightfish.pattern.DynamicSQLMatcherBuilder;
-import cn.lightfish.pattern.Instruction;
 import io.mycat.ConfigRuntime;
-import io.mycat.config.ConfigFile;
-import io.mycat.config.pattern.PatternRootConfig;
+import io.mycat.config.PatternRootConfig;
 
 import java.util.Collections;
 import java.util.List;

@@ -15,6 +15,7 @@
 package io.mycat.datasource.jdbc.datasource;
 
 import io.mycat.MycatException;
+import io.mycat.datasource.jdbc.JdbcRuntime;
 import io.mycat.datasource.jdbc.thread.GThread;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
@@ -33,7 +34,7 @@ public class JTATransactionSessionImpl implements TransactionSession {
       .getLogger(JTATransactionSessionImpl.class);
   private final UserTransaction userTransaction;
   private final GThread gThread;
-  private final Map<JdbcDataSource, DsConnection> connectionMap = new HashMap<>();
+  private final Map<String, DefaultConnection> connectionMap = new HashMap<>();
   private volatile boolean autocommit = true;
   private volatile boolean inTranscation = false;
   private volatile int transactionIsolation = Connection.TRANSACTION_REPEATABLE_READ;
@@ -47,13 +48,17 @@ public class JTATransactionSessionImpl implements TransactionSession {
   @Override
   public void setTransactionIsolation(int transactionIsolation) {
     this.transactionIsolation = transactionIsolation;
-    this.connectionMap.values().forEach(c -> c.setTransactionIsolation(transactionIsolation));
+    for (DefaultConnection c : this.connectionMap.values()) {
+      c.setTransactionIsolation(transactionIsolation);
+    }
   }
 
   @Override
   public void begin() {
     inTranscation = true;
-    connectionMap.values().forEach(c -> c.close());
+    for (DefaultConnection c : connectionMap.values()) {
+      c.close();
+    }
     connectionMap.clear();
     try {
       LOGGER.debug("{} begin", userTransaction);
@@ -63,21 +68,17 @@ public class JTATransactionSessionImpl implements TransactionSession {
     }
   }
 
-  public DsConnection getConnection(JdbcDataSource jdbcDataSource) {
+  public DefaultConnection getConnection(String jdbcDataSource) {
     beforeDoAction();
     return connectionMap.compute(jdbcDataSource,
-        new BiFunction<JdbcDataSource, DsConnection, DsConnection>() {
-          @Override
-          public DsConnection apply(JdbcDataSource dataSource,
-              DsConnection absractConnection) {
-            if (absractConnection != null) {
-              return absractConnection;
-            } else {
-              return gThread
-                  .getConnection(jdbcDataSource, transactionIsolation);
-            }
-          }
-        });
+            (dataSource, absractConnection) -> {
+              if (absractConnection != null) {
+                return absractConnection;
+              } else {
+                return JdbcRuntime.INSTANCE
+                    .getConnection(jdbcDataSource,!autocommit, transactionIsolation);
+              }
+            });
   }
 
   @Override
@@ -113,36 +114,13 @@ public class JTATransactionSessionImpl implements TransactionSession {
 
   @Override
   public boolean isInTransaction() {
-    try {
-//      int status = userTransaction.getStatus();
-//      LOGGER.debug("()()()()()()()(({}", status);
-//      switch (status) {
-//        case Status.STATUS_NO_TRANSACTION:
-//        case Status.STATUS_UNKNOWN:
-//        case Status.STATUS_MARKED_ROLLBACK:
-//        case Status.STATUS_COMMITTED:
-//        case Status.STATUS_ROLLEDBACK:
-//          return inTranscation;
-//        default:
-//        case Status.STATUS_ACTIVE:
-//          return inTranscation = true;
-//      }
       return inTranscation;
-    } catch (Exception e) {
-      throw new MycatException(e);
-    }
   }
 
   @Override
   public void beforeDoAction() {
-    try {
-      if (!this.autocommit && !isInTransaction()) {
-        begin();
-      }
-      System.out.println("--------------------------------------------------------------------");
-      System.out.println(userTransaction.getStatus());
-    } catch (SystemException e) {
-      throw new MycatException(e);
+    if (!this.autocommit && !isInTransaction()) {
+      begin();
     }
   }
 
@@ -160,7 +138,7 @@ public class JTATransactionSessionImpl implements TransactionSession {
 
 
   public void close() {
-    connectionMap.values().forEach(DsConnection::close);
+    connectionMap.values().forEach(DefaultConnection::close);
     connectionMap.clear();
   }
 }

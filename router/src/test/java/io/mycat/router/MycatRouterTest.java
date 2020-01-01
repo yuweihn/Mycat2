@@ -1,7 +1,5 @@
 package io.mycat.router;
 
-import io.mycat.config.ConfigLoader;
-import io.mycat.config.ConfigReceiver;
 import java.nio.file.Paths;
 import org.junit.Rule;
 import org.junit.rules.ExpectedException;

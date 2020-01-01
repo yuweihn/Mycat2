@@ -17,22 +17,16 @@ package io.mycat.proxy;
 
 import io.mycat.ConfigRuntime;
 import io.mycat.ProxyBeanProviders;
-import io.mycat.beans.mycat.MySQLDataNode;
-import io.mycat.beans.mycat.MycatDataNode;
 import io.mycat.beans.mysql.MySQLVariables;
 import io.mycat.buffer.BufferPool;
-import io.mycat.config.ConfigFile;
-import io.mycat.config.ConfigReceiver;
-import io.mycat.config.ConfigurableRoot;
+import io.mycat.buffer.HeapBufferPool;
 import io.mycat.config.datasource.ReplicaConfig;
-import io.mycat.config.datasource.ReplicasRootConfig;
-import io.mycat.config.proxy.MysqlServerVariablesRootConfig;
-import io.mycat.config.proxy.ProxyConfig;
-import io.mycat.config.proxy.ProxyRootConfig;
+import io.mycat.config.ClusterRootConfig;
+import io.mycat.config.ServerConfig;
 import io.mycat.config.schema.DataNodeConfig;
 import io.mycat.config.schema.DataNodeRootConfig;
 import io.mycat.config.schema.DataNodeType;
-import io.mycat.config.user.UserRootConfig;
+import io.mycat.config.SecurityConfig;
 import io.mycat.ext.MySQLAPIRuntimeImpl;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
@@ -43,7 +37,6 @@ import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.monitor.MycatMonitorCallback;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import io.mycat.proxy.reactor.NIOAcceptor;
-import io.mycat.proxy.session.MySQLSessionManager;
 import io.mycat.proxy.session.MycatSessionManager;
 import io.mycat.replica.MySQLDatasource;
 import io.mycat.replica.MySQLReplica;
@@ -57,21 +50,14 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class ProxyRuntime {
 
   private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(ProxyRuntime.class);
-  private final AtomicInteger sessionIdCounter = new AtomicInteger(1);
   private final Map<String, MySQLReplica> replicaMap = new HashMap<>();
   private final Map<String, MySQLDatasource> datasourceMap = new HashMap<>();
-  private final Map<String, MycatDataNode> dataNodeMap = new HashMap<>();
-  private MycatSecurityConfig securityManager;
-  private MySQLVariables variables;
-  private NIOAcceptor acceptor;
-  private MycatReactorThread[] reactorThreads;
-  private final ConfigReceiver config;
-  private ProxyBeanProviders providers;
+  
   private final Map<String, Object> defContext = new HashMap<>();
   private final MySQLAPIRuntimeImpl mySQLAPIRuntime = new MySQLAPIRuntimeImpl();
   private volatile boolean gracefulShutdown = false;
@@ -112,9 +98,6 @@ public class ProxyRuntime {
     this.sessionIdCounter.set(1);
     this.replicaMap.clear();
     this.datasourceMap.clear();
-    this.dataNodeMap.clear();
-    this.securityManager = null;
-    this.variables = null;
     this.reactorThreads = null;
   }
 
@@ -129,16 +112,6 @@ public class ProxyRuntime {
     }
   }
 
-  private void initMySQLVariables() {
-    MysqlServerVariablesRootConfig config = getConfig(ConfigFile.VARIABLES);
-    Objects.requireNonNull(config.getVariables(), "variables config config not found");
-    variables = new MySQLVariables(config.getVariables());
-  }
-
-  public <T extends ConfigurableRoot> T getConfig(ConfigFile configEnum) {
-    ConfigurableRoot config = this.config.getConfig(configEnum);
-    return (T) config;
-  }
 
   public MySQLVariables getVariables() {
     return variables;
@@ -173,7 +146,7 @@ public class ProxyRuntime {
 
   private void initRepliac(ProxyRuntime runtime, ProxyBeanProviders factory) {
     ReplicaSelectorRuntime.INSTCANE.load();
-    ReplicasRootConfig replicasRootConfig = ConfigRuntime.INSTCANE.getConfig(ConfigFile.DATASOURCE);
+    ClusterRootConfig replicasRootConfig = ConfigRuntime.INSTCANE.getConfig(ConfigFile.DATASOURCE);
 
     for (ReplicaConfig config : replicasRootConfig.getReplicas()) {
       MySQLReplica replica = factory.createReplica(runtime, config,
@@ -185,12 +158,12 @@ public class ProxyRuntime {
     }
   }
 
-  private io.mycat.config.proxy.ProxyConfig getProxy() {
+  private ServerConfig getProxy() {
     ProxyRootConfig proxyRootConfig = getConfig(ConfigFile.PROXY);
     ////////////////////////////////////check/////////////////////////////////////////////////
     Objects.requireNonNull(proxyRootConfig, "proxy(mycat) config can not found");
     Objects.requireNonNull(proxyRootConfig.getProxy(), "proxy config can not be empty");
-    ProxyConfig proxy = proxyRootConfig.getProxy();
+    ServerConfig proxy = proxyRootConfig.getProxy();
     Objects.requireNonNull(proxy.getCommandDispatcherClass(),
         "commandDispatcherClass can not be empty");
     Objects.requireNonNull(proxy.getIp(), "ip can not be empty");
@@ -201,28 +174,6 @@ public class ProxyRuntime {
     ////////////////////////////////////check/////////////////////////////////////////////////
     return proxyRootConfig.getProxy();
   }
-
-
-  public String getIP() {
-    return getProxy().getIp();
-  }
-
-  public int getPort() {
-    return getProxy().getPort();
-  }
-
-  public int getBufferPoolPageSize() {
-    return getProxy().getBufferPoolPageSize();
-  }
-
-  public int getBufferPoolChunkSize() {
-    return getProxy().getBufferPoolChunkSize();
-  }
-
-  public int getBufferPoolPageNumber() {
-    return getProxy().getBufferPoolPageNumber();
-  }
-
 
   public void exit(Exception message) {
     Objects.requireNonNull(acceptor);
@@ -237,14 +188,21 @@ public class ProxyRuntime {
 
   private void initReactor(ProxyBeanProviders providers, ProxyRuntime runtime) throws IOException {
     Objects.requireNonNull(providers);
-    ProxyConfig proxy = getProxy();
+    ServerConfig proxy = getProxy();
     int reactorNumber = proxy.getReactorNumber();
     MycatReactorThread[] mycatReactorThreads = new MycatReactorThread[reactorNumber];
     this.setMycatReactorThreads(mycatReactorThreads);
     for (int i = 0; i < mycatReactorThreads.length; i++) {
-      BufferPool bufferPool = new ProxyBufferPoolMonitor(getBufferPoolPageSize(),
-          getBufferPoolChunkSize(),
-          getBufferPoolPageNumber());
+      int bufferPoolPageSize = getBufferPoolPageSize();
+      int bufferPoolChunkSize = getBufferPoolChunkSize();
+      int bufferPoolPageNumber = getBufferPoolPageNumber();
+      HeapBufferPool heapBufferPool = new HeapBufferPool();
+      HashMap<String, String> config = new HashMap<>();
+      config.put(HeapBufferPool.CHUNK_SIZE,String.valueOf(bufferPoolChunkSize));
+      config.put(HeapBufferPool.PAGE_COUNT,String.valueOf(bufferPoolPageNumber));
+      config.put(HeapBufferPool.PAGE_SIZE,String.valueOf(bufferPoolPageSize));
+      heapBufferPool.init(config);
+      BufferPool bufferPool = new ProxyBufferPoolMonitor(heapBufferPool);
       mycatReactorThreads[i] = new MycatReactorThread(bufferPool,
           new MycatSessionManager(runtime, providers), runtime);
       mycatReactorThreads[i].start();
@@ -259,15 +217,6 @@ public class ProxyRuntime {
           EmptyAsyncTaskCallBack.INSTANCE));
     }
 
-  }
-
-  private void initAcceptor() throws IOException {
-    if (acceptor == null || !acceptor.isAlive()) {
-      NIOAcceptor acceptor = new NIOAcceptor(null, this);
-      this.setAcceptor(acceptor);
-      acceptor.start();
-      acceptor.startServerChannel(getIP(), getPort());
-    }
   }
 
   private NIOAcceptor getAcceptor() {
@@ -286,12 +235,8 @@ public class ProxyRuntime {
     return sessionIdCounter.getAndIncrement();
   }
 
-  public MycatReactorThread[] getMycatReactorThreads() {
+  public CopyOnWriteArrayList<MycatReactorThread> getMycatReactorThreads() {
     return reactorThreads;
-  }
-
-  public <T extends MycatDataNode> T getDataNodeByName(String name) {
-    return (T) dataNodeMap.get(name);
   }
 
   public MySQLReplica getMySQLReplicaByReplicaName(String name) {
@@ -322,7 +267,7 @@ public class ProxyRuntime {
 
 
   private void initSecurityManager() {
-    UserRootConfig userRootConfig = getConfig(ConfigFile.USER);
+    SecurityConfig userRootConfig = getConfig(ConfigFile.USER);
     Objects.requireNonNull(userRootConfig, "user config can not found");
     this.securityManager = new MycatSecurityConfig(userRootConfig);
   }
@@ -340,12 +285,6 @@ public class ProxyRuntime {
   public void registerMonitor(MycatMonitorCallback callback) {
     MycatMonitor.setCallback(callback);
   }
-
-
-  public ConfigReceiver getConfig() {
-    return config;
-  }
-
 
   public Map<String, Object> getDefContext() {
     return defContext;

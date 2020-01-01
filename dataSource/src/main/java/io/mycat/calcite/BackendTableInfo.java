@@ -16,10 +16,6 @@ package io.mycat.calcite;
 
 
 import io.mycat.calcite.shardingQuery.SchemaInfo;
-import io.mycat.datasource.jdbc.GRuntime;
-import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
-import io.mycat.datasource.jdbc.datasource.JdbcDataSourceQuery;
-import io.mycat.plug.loadBalance.LoadBalanceStrategy;
 import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -32,42 +28,24 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode
 @Builder
 public class BackendTableInfo {
-    private String dataNodeName;
     private String replicaName;
-    private String hostName;
     private SchemaInfo schemaInfo;
 
-    public BackendTableInfo() {
-    }
-
-    public BackendTableInfo(String dataNodeName, String replicaName, String hostName, SchemaInfo schemaInfo) {
-        this.dataNodeName = dataNodeName;
-        this.replicaName = replicaName;
-        this.hostName = hostName;
+    public BackendTableInfo(String targetName, SchemaInfo schemaInfo) {
+        this.replicaName = targetName;
         this.schemaInfo = schemaInfo;
     }
 
 
-    public <T> T getSession(boolean runOnMaster, LoadBalanceStrategy balanceStrategy) {
-        JdbcDataSource datasource = getDatasource(runOnMaster, balanceStrategy);
-        return (T) datasource.getReplica().getDefaultConnection(datasource);
-    }
+//
+//    public <T> T getSession(boolean runOnMaster, LoadBalanceStrategy balanceStrategy) {
+//        JdbcDataSource datasource = getDatasource(runOnMaster, balanceStrategy);
+//        return (T) datasource.getReplica().getDefaultConnection(datasource);
+//    }
 
-    String getDatasourceName(boolean runOnMaster, LoadBalanceStrategy balanceStrategy) {
-        return getDatasource(runOnMaster, balanceStrategy).getName();
-    }
+    //    String getDatasourceName(boolean runOnMaster, LoadBalanceStrategy balanceStrategy) {
+//        return getDatasource(runOnMaster, balanceStrategy).getTableName();
+//    }
+//
 
-    JdbcDataSource getDatasource(boolean runOnMaster, LoadBalanceStrategy balanceStrategy) {
-        JdbcDataSource jdbcDataSource;
-        if (dataNodeName != null) {
-            jdbcDataSource = GRuntime.INSTACNE.getJdbcDatasourceByDataNodeName(dataNodeName, new JdbcDataSourceQuery().setRunOnMaster(runOnMaster).setStrategy(balanceStrategy));
-        } else if (replicaName != null) {
-            jdbcDataSource = GRuntime.INSTACNE.getJdbcDatasourceSessionByReplicaName(replicaName);
-        } else if (hostName != null) {
-            jdbcDataSource = GRuntime.INSTACNE.getJdbcDatasourceByName(hostName);
-        } else {
-            throw new UnsupportedOperationException();
-        }
-        return jdbcDataSource;
-    }
 }

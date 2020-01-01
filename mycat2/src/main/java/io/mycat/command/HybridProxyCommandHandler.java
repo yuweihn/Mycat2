@@ -15,7 +15,6 @@
 package io.mycat.command;
 
 import io.mycat.MycatException;
-import io.mycat.beans.mycat.MycatSchema;
 import io.mycat.command.loaddata.LoaddataContext;
 import io.mycat.command.prepareStatement.PrepareStmtContext;
 import io.mycat.config.schema.SchemaType;
@@ -25,7 +24,6 @@ import io.mycat.plug.loadBalance.LoadBalanceStrategy;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.router.MycatRouter;
-import io.mycat.router.MycatRouterConfig;
 import io.mycat.router.ProxyRouteResult;
 import io.mycat.sqlparser.util.simpleParser.BufferSQLContext;
 
@@ -141,7 +139,7 @@ public class HybridProxyCommandHandler extends AbstractCommandHandler {
       int numParams,
       byte[] rest,
       MycatSession mycat) {
-    prepareContext.execute(statementId, flags, numParams, rest, mycat.getDataNode(), true, null);
+    prepareContext.execute(statementId, flags, numParams, rest, mycat.getDafaultDatabase(), true, null);
   }
 
 

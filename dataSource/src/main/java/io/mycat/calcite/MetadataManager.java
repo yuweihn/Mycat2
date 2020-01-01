@@ -14,10 +14,10 @@
  */
 package io.mycat.calcite;
 
-import cn.lightfish.sqlEngine.ast.optimizer.queryCondition.ColumnRangeValue;
-import cn.lightfish.sqlEngine.ast.optimizer.queryCondition.ColumnValue;
-import cn.lightfish.sqlEngine.ast.optimizer.queryCondition.ConditionCollector;
-import cn.lightfish.sqlEngine.ast.optimizer.queryCondition.QueryDataRange;
+import io.mycat.sqlEngine.ast.optimizer.queryCondition.ColumnRangeValue;
+import io.mycat.sqlEngine.ast.optimizer.queryCondition.ColumnValue;
+import io.mycat.sqlEngine.ast.optimizer.queryCondition.ConditionCollector;
+import io.mycat.sqlEngine.ast.optimizer.queryCondition.QueryDataRange;
 import com.alibaba.fastsql.DbType;
 import com.alibaba.fastsql.sql.SQLUtils;
 import com.alibaba.fastsql.sql.ast.SQLExpr;
@@ -30,14 +30,17 @@ import com.alibaba.fastsql.sql.ast.statement.SQLTableSource;
 import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlInsertStatement;
 import com.alibaba.fastsql.sql.repository.SchemaObject;
 import com.alibaba.fastsql.sql.repository.SchemaRepository;
-import io.mycat.ConfigRuntime;
+import io.mycat.MycatConfig;
 import io.mycat.MycatException;
-import io.mycat.calcite.shardingQuery.Rrs;
+import io.mycat.RootHelper;
 import io.mycat.calcite.shardingQuery.SchemaInfo;
-import io.mycat.config.ConfigFile;
-import io.mycat.config.shardingQuery.ShardingQueryRootConfig;
-import io.mycat.router.RuleAlgorithm;
-import io.mycat.router.function.PartitionRuleAlgorithmManager;
+import io.mycat.config.ShardingQueryRootConfig;
+import io.mycat.config.SharingFuntionRootConfig;
+import io.mycat.router.RuleFunction;
+import io.mycat.router.function.PartitionRuleFunctionManager;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.SneakyThrows;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,108 +49,159 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import static com.alibaba.fastsql.sql.repository.SchemaResolveVisitor.Option.*;
+import static io.mycat.calcite.CalciteConvertors.getColumnInfo;
+import static io.mycat.calcite.SimpleColumnInfo.ShardingType.*;
 
 /**
  * @author Junwen Chen
  **/
 public enum MetadataManager {
-    INSATNCE;
-    final Logger LOGGER = LoggerFactory.getLogger(MetadataManager.class);
-    final ConcurrentHashMap<String, Map<String, List<BackendTableInfo>>> schemaBackendMetaMap = new ConcurrentHashMap<>();
-    final ConcurrentHashMap<String, Map<String, List<SimpleColumnInfo>>> schemaColumnMetaMap = new ConcurrentHashMap<>();
-    final ConcurrentHashMap<String, Map<String, DataMappingConfig>> schemaDataMappingMetaMap = new ConcurrentHashMap<>();
+    INSTANCE;
+    private final Logger LOGGER = LoggerFactory.getLogger(MetadataManager.class);
+    private final ConcurrentHashMap<String, ConcurrentHashMap<String, LogicTable>> logicTableMap = new ConcurrentHashMap<>();
+    private final SchemaRepository TABLE_REPOSITORY = new SchemaRepository(DbType.mysql);
 
-    final ConcurrentHashMap<String, Map<String, String>> logicTableCreateSQLMap = new ConcurrentHashMap<>();
-    final ConcurrentHashMap<String, Map<String, DataMappingEvaluator>> logicTableDataMappingOiginalEvaluator = new ConcurrentHashMap<>();
-    final ConcurrentHashMap<String, Map<String, JdbcTable>> logicTableMap = new ConcurrentHashMap<>();
-    public final SchemaRepository TABLE_REPOSITORY = new SchemaRepository(DbType.mysql);
-
-    MetadataManager() {
-        PartitionRuleAlgorithmManager.INSTANCE.initFunctions(ConfigRuntime.INSTCANE.load().getConfig(ConfigFile.FUNCTIONS));
-        ShardingQueryRootConfig shardingQueryRootConfig = ConfigRuntime.INSTCANE.getConfig(ConfigFile.SHARDING_QUERY);
-        if (shardingQueryRootConfig == null) {
-            MetadataManagerBuilder.exampleBuild(this);
-        } else {
-            for (ShardingQueryRootConfig.LogicSchemaConfig entry : shardingQueryRootConfig.getSchemas()) {
-                String schemaName = entry.getSchemaName();
-                addSchema(schemaName);
-                for (ShardingQueryRootConfig.LogicTableConfig tableConfigEntry : entry.getTables()) {
-                    String tableName = tableConfigEntry.getTableName();
-                    ArrayList<BackendTableInfo> list = new ArrayList<>();
-                    for (ShardingQueryRootConfig.BackEndTableInfoConfig b : tableConfigEntry.getQueryPhysicalTable()) {
-                        list.add(new BackendTableInfo(b.getDataNodeName(), b.getReplicaName(), b.getHostName(), new SchemaInfo(schemaName.toLowerCase(), tableName.toLowerCase(), b.getSchemaName().toLowerCase(), b.getTableName().toLowerCase())));
-                    }
-                    addTable(schemaName, tableName, list);
-                    List<String> columns = tableConfigEntry.getColumns();
-                    String function = tableConfigEntry.getFunction();
-                    Map<String, String> properties = tableConfigEntry.getProperties();
-                    Map<String, String> ranges = tableConfigEntry.getRanges();
-                    addTableDataMapping(schemaName, tableName, columns, function, properties, ranges);
-                    String createTableSQL = tableConfigEntry.getCreateTableSQL();
-                    addCreateTableSQL(schemaName, tableName, createTableSQL);
-                }
-            }
-        }
-        for (Map.Entry<String, Map<String, List<BackendTableInfo>>> entry : this.schemaBackendMetaMap.entrySet()) {
-            String schemaName = entry.getKey();
-            Map<String, List<BackendTableInfo>> tableList = entry.getValue();
-            HashMap<String, List<BackendTableInfo>> res = new HashMap<>();
-            for (Map.Entry<String, List<BackendTableInfo>> listEntry : tableList.entrySet()) {
-                String tableName = listEntry.getKey();
-                for (BackendTableInfo next : listEntry.getValue()) {
-                    SchemaInfo schemaInfo = next.getSchemaInfo();
-                    schemaInfo.toLowCase();
-                    res.put(tableName, listEntry.getValue());
-                    res.put(tableName.toLowerCase(), listEntry.getValue());
-                }
-            }
-            entry.setValue(res);
-        }
-
-        if (schemaColumnMetaMap.isEmpty()) {
-            schemaColumnMetaMap.putAll(CalciteConvertors.columnInfoListByDataSourceWithCreateTableSQL(schemaBackendMetaMap, this.logicTableCreateSQLMap));
-        }
-        schemaBackendMetaMap.forEach((schemaName, tables) -> {
-            try {
-                ConcurrentHashMap<String, JdbcTable> tableMap;
-                logicTableMap.put(schemaName, tableMap = new ConcurrentHashMap<>());
-                for (Map.Entry<String, List<BackendTableInfo>> entry : tables.entrySet()) {
-                    String tableName = entry.getKey().toLowerCase();
-                    List<BackendTableInfo> value = entry.getValue();
-                    List<SimpleColumnInfo> columnInfos = schemaColumnMetaMap.get(schemaName).get(tableName);
-                    RowSignature rowSignature = CalciteConvertors.rowSignature(columnInfos);
-                    Optional<DataMappingConfig> optional = Optional.ofNullable(schemaDataMappingMetaMap.get(schemaName)).flatMap(s -> Optional.ofNullable(s.get(tableName)));
-                    DataMappingEvaluator dataMappingEvaluator = null;
-                    if (optional.isPresent()) {
-                        DataMappingConfig dataMappingConfig = optional.get();
-                        RuleAlgorithm ruleAlgorithm = dataMappingConfig.ruleAlgorithm;
-                        dataMappingEvaluator = new DataMappingEvaluator(rowSignature, dataMappingConfig.columnName, ruleAlgorithm);
-                    } else {
-                        dataMappingEvaluator = new DataMappingEvaluator(rowSignature);
-                    }
-                    Map<String, DataMappingEvaluator> dataEvalTableMap = logicTableDataMappingOiginalEvaluator.computeIfAbsent(schemaName, s -> new HashMap<>());
-                    dataEvalTableMap.put(tableName, dataMappingEvaluator);
-                    tableMap.put(tableName, new JdbcTable(schemaName, tableName, value,
-                            CalciteConvertors.relDataType(columnInfos), rowSignature, dataMappingEvaluator
-                    ));
-                    LOGGER.error("build {}.{} success", schemaName, tableName);
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
-        logicTableCreateSQLMap.forEach((schemaName, tableMap) -> {
-
-            tableMap.forEach((table, sql) -> {
-                TABLE_REPOSITORY.setDefaultSchema(schemaName);
-                TABLE_REPOSITORY.acceptDDL(sql);
-            });
-        });
+    public void removeSchema(String schemaName) {
+        logicTableMap.remove(schemaName);
     }
+
+    public void addSchema(String schemaName) {
+        logicTableMap.computeIfAbsent(schemaName, s -> new ConcurrentHashMap<>());
+    }
+
+    public void addTable(String schemaName, String tableName, ShardingQueryRootConfig.LogicTableConfig tableConfig, List<ShardingQueryRootConfig.BackEndTableInfoConfig> backends,ShardingQueryRootConfig.PrototypeServer prototypeServer){
+        addSchema(schemaName);
+        addLogicTable(schemaName,tableName,tableConfig,prototypeServer,getBackendTableInfos(backends));
+    }
+
+    public void removeTable(String schemaName,String tableName){
+        ConcurrentHashMap<String, LogicTable> stringLogicTableConcurrentHashMap = logicTableMap.get(schemaName);
+        if (stringLogicTableConcurrentHashMap!=null){
+            stringLogicTableConcurrentHashMap.remove(tableName);
+        }
+    }
+
+
+
+    @Getter
+    static class LogicTable {
+        final String schemaName;
+        final String tableName;
+        final List<BackendTableInfo> backends;
+        final List<SimpleColumnInfo> rawColumns;
+        final String createTableSQL;
+        //////////////optional/////////////////
+        JdbcTable jdbcTable;
+        //////////////optional/////////////////
+        private final SimpleColumnInfo.ShardingInfo natureTableColumnInfo;
+        private final SimpleColumnInfo.ShardingInfo replicaColumnInfo;
+        private final SimpleColumnInfo.ShardingInfo databaseColumnInfo;
+        private final SimpleColumnInfo.ShardingInfo tableColumnInfo;
+
+
+        public LogicTable(String schemaName, String name, List<BackendTableInfo> backends, List<SimpleColumnInfo> rawColumns,
+                          Map<SimpleColumnInfo.@NonNull ShardingType, SimpleColumnInfo.ShardingInfo> shardingInfo, String createTableSQL) {
+            this.schemaName = schemaName;
+            this.tableName = name;
+            this.backends = backends;
+            this.rawColumns = rawColumns;
+            this.createTableSQL = createTableSQL;
+
+
+            this.natureTableColumnInfo = shardingInfo.get(NATURE_DATABASE_TABLE);
+
+            this.replicaColumnInfo = shardingInfo.get(MAP_CLUSTER);
+            this.databaseColumnInfo = shardingInfo.get(MAP_DATABASE);
+            this.tableColumnInfo = shardingInfo.get(MAP_TABLE);
+        }
+
+        public void setJdbcTable(JdbcTable jdbcTable) {
+            this.jdbcTable = jdbcTable;
+        }
+    }
+
+    @SneakyThrows
+    MetadataManager() {
+        MycatConfig mycatConfig = RootHelper.INSTCANE.bootConfig().currentConfig();
+        ShardingQueryRootConfig shardingQueryRootConfig = mycatConfig.getMatadata();
+        Map<String,List<BackendTableInfo>> dataNodeMap = new HashMap<>();
+        for (Map.Entry<String, List<ShardingQueryRootConfig.BackEndTableInfoConfig>> stringListEntry : shardingQueryRootConfig.getDataNodes().entrySet()) {
+            dataNodeMap.put(stringListEntry.getKey(), getBackendTableInfos(stringListEntry.getValue()));
+        }
+
+
+        for (Map.Entry<String, ShardingQueryRootConfig.LogicSchemaConfig> entry : shardingQueryRootConfig.getSchemas().entrySet()) {
+            String orignalSchemaName = entry.getKey();
+            ShardingQueryRootConfig.LogicSchemaConfig value = entry.getValue();
+            final String schemaName = orignalSchemaName.toLowerCase();
+            for (Map.Entry<String, ShardingQueryRootConfig.LogicTableConfig> e : value.getTables().entrySet()) {
+                String tableName = e.getKey().toLowerCase();
+                ShardingQueryRootConfig.LogicTableConfig tableConfigEntry = e.getValue();
+                addLogicTable(schemaName, tableName, tableConfigEntry, shardingQueryRootConfig.getPrototype(),dataNodeMap.get(tableConfigEntry.getDataNodeName()));
+            }
+        }
+    }
+
+    private List<BackendTableInfo> getBackendTableInfos(List<ShardingQueryRootConfig.BackEndTableInfoConfig> stringListEntry) {
+        return stringListEntry.stream().map(t -> {
+                    SchemaInfo schemaInfo = new SchemaInfo(t.getSchemaName(), t.getTableName());
+                    return new BackendTableInfo(t.getReplicaName(), schemaInfo);
+                }).collect(Collectors.toList());
+    }
+
+    private synchronized void accrptDDL(String schemaName, String sql) {
+        TABLE_REPOSITORY.setDefaultSchema(schemaName);
+        TABLE_REPOSITORY.acceptDDL(sql);
+    }
+
+    private void addLogicTable(String schemaName, String orignalTableName, ShardingQueryRootConfig.LogicTableConfig tableConfigEntry, ShardingQueryRootConfig.PrototypeServer prototypeServer,  List<BackendTableInfo> backends) {
+        //////////////////////////////////////////////
+        final String tableName = orignalTableName.toLowerCase();
+        String createTableSQL = tableConfigEntry.getCreateTableSQL();
+        List<SimpleColumnInfo> columns = getSimpleColumnInfos(schemaName, prototypeServer, tableName, createTableSQL);
+        //////////////////////////////////////////////
+
+        List<ShardingQueryRootConfig.Column> columnMap = tableConfigEntry.getColumns();
+        Map<SimpleColumnInfo.@NonNull ShardingType, SimpleColumnInfo.ShardingInfo> shardingInfo = getShardingInfo(columns, columnMap);
+        RowSignature rowSignature = CalciteConvertors.rowSignature(columns);
+
+        LogicTable logicTable = new LogicTable(schemaName, tableName, backends, columns, shardingInfo, createTableSQL);
+        logicTable.setJdbcTable(new JdbcTable(logicTable, CalciteConvertors.relDataType(columns), rowSignature));
+        Map<String, LogicTable> tableMap = logicTableMap.computeIfAbsent(schemaName, s -> new ConcurrentHashMap<>());
+        tableMap.put(tableName, logicTable);
+
+        accrptDDL(schemaName, createTableSQL);
+
+    }
+
+    private Map<SimpleColumnInfo.@NonNull ShardingType, SimpleColumnInfo.ShardingInfo> getShardingInfo(List<SimpleColumnInfo> columns, List<ShardingQueryRootConfig.Column> columnMap) {
+        return columnMap.stream().map(entry1 -> {
+            SharingFuntionRootConfig.ShardingFuntion function = entry1.getFunction();
+            RuleFunction ruleAlgorithm = PartitionRuleFunctionManager.INSTANCE.
+                    getRuleAlgorithm(entry1.getColumnName(), function.getClazz(), function.getProperties(), function.getRanges());
+            SimpleColumnInfo.ShardingType shardingType = SimpleColumnInfo.ShardingType.valueOf(entry1.getShardingType());
+            SimpleColumnInfo simpleColumnInfo = Objects.requireNonNull(columns.stream().filter(i -> entry1.getColumnName().equals(i.getColumnName())).findFirst().get());
+            return new SimpleColumnInfo.ShardingInfo(simpleColumnInfo, shardingType, entry1.getMap(), ruleAlgorithm);
+        }).collect(Collectors.toMap(k -> k.getShardingType(), k -> k));
+    }
+
+    private List<SimpleColumnInfo> getSimpleColumnInfos(String schemaName, ShardingQueryRootConfig.PrototypeServer prototypeServer, String tableName, String createTableSQL) {
+        List<SimpleColumnInfo> columns = null;
+        if (createTableSQL != null) {
+            columns = getColumnInfo(createTableSQL);
+        } else if (prototypeServer != null) {
+            columns = CalciteConvertors.getSimpleColumnInfos(schemaName, tableName, prototypeServer.getUrl(), prototypeServer.getUser(), prototypeServer.getPassword());
+        }
+        if (columns == null) {
+            throw new UnsupportedOperationException();
+        }
+        return columns;
+    }
+
 
     //////////////////////////////////////////////////////function/////////////////////////////////////////////////////
     public Iterator<Map<BackendTableInfo, String>> getInsertInfoIterator(String currentSchemaNameText, Iterator<MySqlInsertStatement> listIterator) {
-      final String  currentSchemaName =  currentSchemaNameText.toLowerCase();
+        final String currentSchemaName = currentSchemaNameText.toLowerCase();
         return new Iterator<Map<BackendTableInfo, String>>() {
             @Override
             public boolean hasNext() {
@@ -167,13 +221,13 @@ public enum MetadataManager {
                     columnList[index] = SQLUtils.normalize(column.toString()).toLowerCase();
                     index++;
                 }
-                Map<String, DataMappingEvaluator> stringDataMappingEvaluatorMap = logicTableDataMappingOiginalEvaluator.get(schema);
-                DataMappingEvaluator dataMappingEvaluator = stringDataMappingEvaluatorMap.get(tableName).copy();
+                LogicTable logicTable = logicTableMap.get(schema).get(tableName);
                 List<SQLInsertStatement.ValuesClause> valuesList = statement.getValuesList();
                 ArrayList<SQLInsertStatement.ValuesClause> valuesClauses = new ArrayList<>(valuesList);
                 valuesList.clear();
                 HashMap<BackendTableInfo, List<SQLInsertStatement.ValuesClause>> res = new HashMap<>();
                 for (SQLInsertStatement.ValuesClause valuesClause : valuesClauses) {
+                    DataMappingEvaluator dataMappingEvaluator = new DataMappingEvaluator();
                     index = 0;
                     for (SQLExpr valueText : valuesClause.getValues()) {
                         String s1 = columnList[index++];
@@ -184,10 +238,11 @@ public enum MetadataManager {
                             throw new UnsupportedOperationException();
                         }
                     }
-                    int[] calculate = dataMappingEvaluator.calculate();
-                    int backendIndex = calculate[0];
-                    List<BackendTableInfo> backEndTableInfos = schemaBackendMetaMap.get(schema).get(tableName);
-                    BackendTableInfo endTableInfo = backEndTableInfos.get(backendIndex);
+                    List<BackendTableInfo> calculate = dataMappingEvaluator.calculate(logicTable);
+                    if (calculate.size() != 1) {
+                        throw new UnsupportedOperationException();
+                    }
+                    BackendTableInfo endTableInfo = calculate.get(0);
                     List<SQLInsertStatement.ValuesClause> valuesGroup = res.computeIfAbsent(endTableInfo, backEndTableInfo -> new ArrayList<>());
                     valuesGroup.add(valuesClause);
                 }
@@ -204,12 +259,9 @@ public enum MetadataManager {
                     statement.getValuesList().addAll(entry.getValue());
                     map.put(key, statement.toString());
                 }
-
                 return map;
             }
-        }
-
-                ;
+        };
     }
 
     public Map<BackendTableInfo, String> rewriteUpdateSQL(String currentSchema, String sql) {
@@ -229,7 +281,9 @@ public enum MetadataManager {
     }
 
     //////////////////////////////////////////calculate///////////////////////////////
-    public Rrs assignment(boolean fail, QueryDataRange queryDataRange) {
+    private Rrs assignment(
+            boolean fail,
+            QueryDataRange queryDataRange) {
         String schemaName = null;
         String tableName = null;
         SQLExprTableSource table = null;
@@ -240,11 +294,35 @@ public enum MetadataManager {
             tableName = SQLUtils.normalize(schemaObject.getName()).toLowerCase();
         }
 
+
         Set<BackendTableInfo> backEndTableInfos1 = new HashSet<>(1);
-        if (queryDataRange != null) {
-            if (queryDataRange.getEqualValues() != null && !queryDataRange.getEqualValues().isEmpty()) {
-                for (ColumnValue equalValue : queryDataRange.getEqualValues()) {
-                    SQLTableSource tableSource = equalValue.getTableSource();
+        if (queryDataRange.getEqualValues() != null && !queryDataRange.getEqualValues().isEmpty()) {
+            for (ColumnValue equalValue : queryDataRange.getEqualValues()) {
+                SQLTableSource tableSource = equalValue.getTableSource();
+                if (tableSource instanceof SQLExprTableSource) {
+                    table = (SQLExprTableSource) tableSource;
+                    SchemaObject schemaObject = table.getSchemaObject();
+                    schemaName = SQLUtils.normalize(schemaObject.getSchema().getName()).toLowerCase();
+                    tableName = SQLUtils.normalize(schemaObject.getName()).toLowerCase();
+
+                    if (fail) {
+                        break;
+                    }
+                    LogicTable logicTable = logicTableMap.get(schemaName).get(tableName);
+                    DataMappingEvaluator dataMappingEvaluator = new DataMappingEvaluator();
+                    dataMappingEvaluator.assignment(false, equalValue.getColumn().computeAlias(), Objects.toString(equalValue.getValue()));
+                    List<BackendTableInfo> calculate = dataMappingEvaluator.calculate(logicTable);
+                    if (calculate.size() == 1) {
+                        backEndTableInfos1.addAll(calculate);
+                        break;
+                    }
+                }
+            }
+        } else {
+            List<ColumnRangeValue> rangeValues = queryDataRange.getRangeValues();
+            if (rangeValues != null && !rangeValues.isEmpty()) {
+                for (ColumnRangeValue rangeValue : rangeValues) {
+                    SQLTableSource tableSource = rangeValue.getTableSource();
                     if (tableSource instanceof SQLExprTableSource) {
                         table = (SQLExprTableSource) tableSource;
                         SchemaObject schemaObject = table.getSchemaObject();
@@ -255,133 +333,86 @@ public enum MetadataManager {
                             break;
                         }
 
-                        DataMappingEvaluator dataMappingEvaluator = logicTableDataMappingOiginalEvaluator
-                                .get(schemaName)
-                                .get(tableName)
-                                .copy();
-                        dataMappingEvaluator.assignment(false, equalValue.getColumn().computeAlias(), Objects.toString(equalValue.getValue()));
-                        int[] calculate = dataMappingEvaluator.calculate();
-                        List<BackendTableInfo> backEndTableInfos = schemaBackendMetaMap.get(schemaName).get(tableName);
-                        if (calculate.length == 1) {
-                            backEndTableInfos1 = Collections.singleton(backEndTableInfos.get(calculate[0]));
-                            break;
-                        } else {
-
-                        }
-                    }
-                }
-            } else if (backEndTableInfos1.isEmpty() || tableName == null) {
-                List<ColumnRangeValue> rangeValues = queryDataRange.getRangeValues();
-                if (rangeValues != null && !rangeValues.isEmpty()) {
-                    for (ColumnRangeValue rangeValue : rangeValues) {
-                        SQLTableSource tableSource = rangeValue.getTableSource();
-                        if (tableSource instanceof SQLExprTableSource) {
-                            table = (SQLExprTableSource) tableSource;
-                            SchemaObject schemaObject = table.getSchemaObject();
-                            schemaName = SQLUtils.normalize(schemaObject.getSchema().getName()).toLowerCase();
-                            tableName = SQLUtils.normalize(schemaObject.getName()).toLowerCase();
-
-                            if (fail) {
-                                break;
-                            }
-
-                            DataMappingEvaluator dataMappingEvaluator = logicTableDataMappingOiginalEvaluator
-                                    .get(schemaName)
-                                    .get(tableName)
-                                    .copy();
-                            dataMappingEvaluator.assignmentRange(false, SQLUtils.normalize(rangeValue.getColumn().getColumnName()), Objects.toString(rangeValue.getBegin()), Objects.toString(rangeValue.getEnd()));
-                            int[] calculate = dataMappingEvaluator.calculate();
-                            List<BackendTableInfo> backEndTableInfos = schemaBackendMetaMap.get(schemaName).get(tableName);
-                            Set<BackendTableInfo> list = new HashSet<>();
-                            for (int i : calculate) {
-                                list.add(backEndTableInfos.get(calculate[i]));
-                            }
-                            backEndTableInfos1 = list;
-                        }
+                        LogicTable logicTable = logicTableMap.get(schemaName).get(tableName);
+                        DataMappingEvaluator dataMappingEvaluator = new DataMappingEvaluator();
+                        dataMappingEvaluator.assignmentRange(false, SQLUtils.normalize(rangeValue.getColumn().getColumnName()), Objects.toString(rangeValue.getBegin()), Objects.toString(rangeValue.getEnd()));
+                        List<BackendTableInfo> backendTableInfos = dataMappingEvaluator.calculate(logicTable);
+                        backEndTableInfos1.addAll(backendTableInfos);
                     }
                 }
             }
         }
-        if (schemaName != null && tableName != null && backEndTableInfos1.isEmpty()) {
-            backEndTableInfos1.addAll(schemaBackendMetaMap.get(schemaName).get(tableName));
+        if (backEndTableInfos1.isEmpty()&&schemaName!=null) {
+            LogicTable logicTable = logicTableMap.get(schemaName).get(tableName);
+            backEndTableInfos1.addAll(logicTable.backends);
         }
         return new Rrs(backEndTableInfos1, table);
     }
 
-    public BackendTableInfo getBackEndTableInfo(String schemaName, String tableName, String partitionValue) {
+    public List<BackendTableInfo> getMapBackEndTableInfo(String schemaName, String tableName, Map<String, String> map) {
         try {
             schemaName = schemaName.toLowerCase();
             tableName = tableName.toLowerCase();
-            Map<String, DataMappingConfig> dataMappingConfigMap = schemaDataMappingMetaMap.get(schemaName);
-            DataMappingConfig dataMappingConfig = dataMappingConfigMap.get(tableName);
+            LogicTable logicTable = this.logicTableMap.get(schemaName).get(tableName);
+            DataMappingEvaluator dataMappingEvaluator = new DataMappingEvaluator();
+            for (Map.Entry<String, String> entry : map.entrySet()) {
+                dataMappingEvaluator.assignment(false,entry.getKey(),entry.getValue());
+            }
+            return dataMappingEvaluator.calculate(logicTable);
+        } catch (Exception e) {
+            LOGGER.error("", e);
+            throw new MycatException("{0} {1} {2} can not calculate", schemaName, tableName, Objects.toString(map));
+        }
+    }
 
-            Map<String, List<BackendTableInfo>> backMap = schemaBackendMetaMap.get(schemaName);
-            List<BackendTableInfo> backEndTableInfos = backMap.get(tableName);
-            return backEndTableInfos.get(dataMappingConfig.ruleAlgorithm.calculate(partitionValue));
+    public BackendTableInfo getNatrueBackEndTableInfo(String schemaName, String tableName, String partitionValue) {
+        try {
+            schemaName = schemaName.toLowerCase();
+            tableName = tableName.toLowerCase();
+            LogicTable logicTable = this.logicTableMap.get(schemaName).get(tableName);
+            return getBackendTableInfo(partitionValue, logicTable);
         } catch (Exception e) {
             LOGGER.error("", e);
             throw new MycatException("{0} {1} {2} can not calculate", schemaName, tableName, partitionValue);
         }
     }
 
-    public List<BackendTableInfo> getBackEndTableInfo(String schemaName, String tableName, String startValue, String endValue) {
-        schemaName = schemaName.toLowerCase();
-        tableName = tableName.toLowerCase();
+    private BackendTableInfo getBackendTableInfo(String partitionValue, LogicTable logicTable) {
+        DataMappingEvaluator dataMappingEvaluator = new DataMappingEvaluator();
+        dataMappingEvaluator.assignment(false, logicTable.natureTableColumnInfo.getColumnInfo().getColumnName(), partitionValue);
+        return dataMappingEvaluator.calculate(logicTable).get(0);
+    }
+
+    public List<BackendTableInfo> getNatrueBackEndTableInfo(String schemaName, String tableName, String startValue, String endValue) {
         try {
-            Map<String, DataMappingConfig> dataMappingConfigMap = schemaDataMappingMetaMap.get(schemaName);
-            DataMappingConfig dataMappingConfig = dataMappingConfigMap.get(tableName);
-
-            Map<String, List<BackendTableInfo>> backMap = schemaBackendMetaMap.get(schemaName);
-            List<BackendTableInfo> backEndTableInfos = backMap.get(tableName);
-
-            int[] ints = dataMappingConfig.ruleAlgorithm.calculateRange(startValue, endValue);
-            List<BackendTableInfo> res = new ArrayList<>();
-            for (int anInt : ints) {
-                res.add(backEndTableInfos.get(anInt));
-            }
-            return res;
+            schemaName = schemaName.toLowerCase();
+            tableName = tableName.toLowerCase();
+            LogicTable logicTable = this.logicTableMap.get(schemaName).get(tableName);
+            DataMappingEvaluator dataMappingEvaluator = new DataMappingEvaluator();
+            dataMappingEvaluator.assignment(false, startValue, endValue);
+            return dataMappingEvaluator.calculate(logicTable);
         } catch (Exception e) {
             LOGGER.error("", e);
             throw new MycatException("{0} {1} {2} {3} can not calculate", schemaName, tableName, startValue, endValue);
         }
     }
 
-    //////////////////////////////////////////////builder///////////////////////////////////////////////////
-    public <T, K, V> void addTableDataMapping(String schemaName, String tableName, List<String> columnList, String rule, Map<String, String> properties, Map<String, String> ranges) {
-        final String lowCaseSchemaName = schemaName.toLowerCase();
-        final String lowCaseTableName = tableName.toLowerCase();
-        final List<String> lowCaseColumnList = columnList.stream().map(i -> i.toLowerCase()).collect(Collectors.toList());
-        schemaDataMappingMetaMap.compute(lowCaseSchemaName, (s, stringDataMappingEvaluatorMap) -> {
-            if (stringDataMappingEvaluatorMap == null) {
-                stringDataMappingEvaluatorMap = new HashMap<>();
-            }
-            RuleAlgorithm ruleAlgorithm = PartitionRuleAlgorithmManager.INSTANCE.getRuleAlgorithm(rule, properties, ranges);
-            stringDataMappingEvaluatorMap.put(lowCaseTableName, new DataMappingConfig(lowCaseColumnList, ruleAlgorithm));
-            return stringDataMappingEvaluatorMap;
-        });
-    }
+    public static class Rrs {
+        Set<BackendTableInfo> backEndTableInfos;
+        SQLExprTableSource table;
 
-    public void addCreateTableSQL(String schema, String table, String sql) {
-        if (sql != null && !sql.isEmpty()) {
-            Map<String, String> tableMap = logicTableCreateSQLMap.computeIfAbsent(schema.toLowerCase(), s -> new HashMap<>());
-            tableMap.put(table.toLowerCase(), sql);
+        public Rrs(Set<BackendTableInfo> backEndTableInfos, SQLExprTableSource table) {
+            this.backEndTableInfos = backEndTableInfos;
+            this.table = table;
+        }
+
+        public Set<BackendTableInfo> getBackEndTableInfos() {
+            return backEndTableInfos;
+        }
+
+        public SQLExprTableSource getTable() {
+            return table;
         }
     }
 
-    public void addSchema(String schemaName) {
-        this.schemaBackendMetaMap.put(schemaName.toLowerCase(), new HashMap<>());
-    }
-
-    public void addTable(String schemaName, String tableName, List<BackendTableInfo> tableInfos) {
-        schemaName = schemaName.toLowerCase();
-        tableName = tableName.toLowerCase();
-        Map<String, List<BackendTableInfo>> map = this.schemaBackendMetaMap.get(schemaName);
-        for (BackendTableInfo tableInfo : tableInfos) {
-            SchemaInfo schemaInfo = tableInfo.getSchemaInfo();
-            schemaInfo.setLogicSchema(schemaName);
-            schemaInfo.setLogicTable(tableName);
-            schemaInfo.toLowCase();
-        }
-        map.put(tableName, tableInfos);
-    }
 }

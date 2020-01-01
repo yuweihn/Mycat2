@@ -1,13 +1,10 @@
 package io.mycat;
 
-import io.mycat.beans.mycat.MySQLDataNode;
 import io.mycat.command.CommandDispatcher;
-import io.mycat.config.ConfigFile;
 import io.mycat.config.datasource.DatasourceConfig;
 import io.mycat.config.datasource.ReplicaConfig;
-import io.mycat.config.proxy.ProxyRootConfig;
 import io.mycat.config.schema.DataNodeConfig;
-import io.mycat.datasource.jdbc.GRuntime;
+import io.mycat.datasource.jdbc.JdbcRuntime;
 import io.mycat.pattern.PatternRuntime;
 import io.mycat.proxy.ProxyRuntime;
 import io.mycat.proxy.handler.backend.MySQLSynContext;
@@ -16,7 +13,7 @@ import io.mycat.proxy.session.MySQLClientSession;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.replica.MySQLDatasource;
 import io.mycat.replica.MySQLReplica;
-import io.mycat.router.MycatRouterConfig;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -36,8 +33,8 @@ public class MycatProxyBeanProviders implements ProxyBeanProviders {
       throws Exception {
     defContext.put("routerConfig",
         new MycatRouterConfig(runtime.getConfig(), runtime.getMySQLAPIRuntime()));
-    GRuntime.INSTACNE.load(ConfigRuntime.INSTCANE.load());
-    GRuntime.INSTACNE.getDefContext().putAll(defContext);
+    JdbcRuntime.INSTACNE.load(ConfigRuntime.INSTCANE.load());
+    JdbcRuntime.INSTACNE.getDefContext().putAll(defContext);
     PatternRuntime.INSTANCE.load();
   }
 
@@ -55,12 +52,6 @@ public class MycatProxyBeanProviders implements ProxyBeanProviders {
     return new MySQLReplica(runtime, replicaConfig, this) {
     };
   }
-
-  @Override
-  public MySQLDataNode createMySQLDataNode(ProxyRuntime runtime, DataNodeConfig config) {
-    return new MySQLDataNode(config);
-  }
-
   @Override
   public CommandDispatcher createCommandDispatcher(ProxyRuntime runtime, MycatSession session) {
     ProxyRootConfig config = runtime.getConfig(ConfigFile.PROXY);

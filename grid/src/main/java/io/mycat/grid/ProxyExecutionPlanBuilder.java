@@ -15,14 +15,13 @@ import static io.mycat.sqlparser.util.simpleParser.BufferSQLContext.USE_SQL;
 
 import io.mycat.MycatException;
 import io.mycat.beans.MySQLServerStatus;
-import io.mycat.beans.mycat.MycatSchema;
 import io.mycat.beans.mysql.MySQLIsolation;
 import io.mycat.beans.mysql.MySQLServerStatusFlags;
 import io.mycat.beans.resultset.MycatResponse;
 import io.mycat.beans.resultset.MycatResultSetResponse;
 import io.mycat.beans.resultset.MycatUpdateResponse;
 import io.mycat.config.schema.SchemaType;
-import io.mycat.datasource.jdbc.GRuntime;
+import io.mycat.datasource.jdbc.JdbcRuntime;
 import io.mycat.datasource.jdbc.datasource.TransactionSession;
 import io.mycat.datasource.jdbc.datasource.TransactionSessionUtil;
 import io.mycat.datasource.jdbc.thread.GThread;
@@ -33,7 +32,6 @@ import io.mycat.plug.loadBalance.LoadBalanceStrategy;
 import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.router.MycatRouter;
-import io.mycat.router.MycatRouterConfig;
 import io.mycat.router.ProxyRouteResult;
 import io.mycat.router.util.RouterUtil;
 import io.mycat.sqlparser.util.simpleParser.BufferSQLContext;
@@ -50,11 +48,11 @@ public class ProxyExecutionPlanBuilder implements ExecuterBuilder {
   private final BufferSQLParser parser;
   private final BufferSQLContext sqlContext;
   private final MycatRouter router;
-  private GRuntime jdbcRuntime;
+  private JdbcRuntime jdbcRuntime;
 
   public ProxyExecutionPlanBuilder(MycatSession mycat) {
     this.mycat = mycat;
-    this.jdbcRuntime = GRuntime.INSTACNE;
+    this.jdbcRuntime = JdbcRuntime.INSTACNE;
     this.parser = new BufferSQLParser();
     this.sqlContext = new BufferSQLContext();
     MycatRouterConfig routerConfig = (MycatRouterConfig) jdbcRuntime.getDefContext()
