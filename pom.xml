@@ -16,8 +16,8 @@
     <module>mycat2</module>
     <module>grid</module>
     <module>replica</module>
-      <module>pattern</module>
-      <module>hbt</module>
+    <module>pattern</module>
+    <module>hbt</module>
   </modules>
   <packaging>pom</packaging>
   <name>parent</name>
