@@ -19,12 +19,13 @@ import io.mycat.datasource.jdbc.JdbcRuntime;
 import io.mycat.datasource.jdbc.thread.GThread;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
+
+import javax.transaction.UserTransaction;
 import java.sql.Connection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.BiFunction;
-import javax.transaction.SystemException;
-import javax.transaction.UserTransaction;
+import java.util.Objects;
+
 /**
  * @author Junwen Chen
  **/
@@ -69,6 +70,7 @@ public class JTATransactionSessionImpl implements TransactionSession {
   }
 
   public DefaultConnection getConnection(String jdbcDataSource) {
+    Objects.requireNonNull(jdbcDataSource);
     beforeDoAction();
     return connectionMap.compute(jdbcDataSource,
             (dataSource, absractConnection) -> {

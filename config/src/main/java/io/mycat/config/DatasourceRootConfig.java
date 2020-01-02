@@ -20,6 +20,7 @@ public class DatasourceRootConfig {
         private int maxCon = 1000;
         private int minCon = 1;
         private int maxRetryCount = 5;
+        private long maxConnectTimeout = 3*1000;
         private String dbType;
         private String url;
         private int weight = 0;
@@ -28,8 +29,13 @@ public class DatasourceRootConfig {
         private String instanceType;
         private String jdbcDriverClass;
 
+
         public boolean isMySQLType() {
             return this.getDbType() == null || this.getDbType().toUpperCase().contains("MYSQL");
+        }
+
+        public boolean isJdbcType(){
+          return   getUrl()!=null;
         }
     }
 

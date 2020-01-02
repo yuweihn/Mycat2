@@ -1,16 +1,14 @@
 package io.mycat.calcite;
 
-import io.mycat.calcite.shardingQuery.SchemaInfo;
-import io.mycat.config.SharingFuntionRootConfig;
-import io.mycat.util.YamlUtil;
 import io.mycat.config.ShardingQueryRootConfig;
+import io.mycat.config.SharingFuntionRootConfig;
 
 import java.util.*;
 
 public class MetadataManagerBuilder {
 
     public static void exampleBuild(MetadataManager m) {
-        m.addSchema("TESTDB");
+        m.addSchema("db1");
         ShardingQueryRootConfig.BackEndTableInfoConfig.BackEndTableInfoConfigBuilder builder = backEndBuilder();
         List<ShardingQueryRootConfig.BackEndTableInfoConfig> tableInfos = Arrays.asList(
                 backEndBuilder().replicaName("mytest3306a").schemaName("db1").tableName("TRAVELRECORD").build(),
@@ -45,7 +43,7 @@ public class MetadataManagerBuilder {
                         "  `d` double DEFAULT NULL\n" +
                         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;")
                 .dataNodeName("tmp").build();
-        m.addTable("TESTDB", "TRAVELRECORD",build ,tableInfos,null);
+        m.addTable("dn1", "TRAVELRECORD",build ,tableInfos,null);
     }
 
     private static ShardingQueryRootConfig.BackEndTableInfoConfig.BackEndTableInfoConfigBuilder backEndBuilder() {

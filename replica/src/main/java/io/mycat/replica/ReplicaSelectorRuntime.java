@@ -15,6 +15,7 @@
 package io.mycat.replica;
 
 import io.mycat.MycatConfig;
+import io.mycat.ScheduleUtil;
 import io.mycat.config.ClusterRootConfig;
 import io.mycat.config.DatasourceRootConfig;
 import io.mycat.plug.PlugRuntime;
@@ -81,18 +82,25 @@ public enum ReplicaSelectorRuntime {
             schedule = null;
         }
         ClusterRootConfig.TimerConfig timerConfig = config.getReplicas().getTimer();
-        this.schedule = this.timer.scheduleAtFixedRate(() -> {
-            Stream<PhysicsInstanceImpl> stream = map.values().stream().flatMap(i -> i.datasourceMap.values().stream());
-            stream.forEach(c -> {
-                HeartbeatFlow heartbeatFlow = heartbeatDetectorMap.get(c.getName());
-                if (heartbeatFlow == null) {
-                    c.notifyChangeSelectRead(false);
-                    c.notifyChangeAlive(false);
-                } else {
-                    heartbeatFlow.heartbeat();
-                }
+        List<PhysicsInstanceImpl> collect = map.values().stream().flatMap(i -> i.datasourceMap.values().stream()).collect(Collectors.toList());
+        if(timerConfig.isClose()){
+            collect.forEach(c -> {
+                c.notifyChangeSelectRead(true);
+                c.notifyChangeAlive(true);
             });
-        }, timerConfig.getInitialDelay(), timerConfig.getPeriod(), TimeUnit.valueOf(timerConfig.getTimeUnit()));
+        }else {
+            this.schedule = ScheduleUtil.getTimer().scheduleAtFixedRate(() -> {
+                collect.forEach(c -> {
+                    HeartbeatFlow heartbeatFlow = heartbeatDetectorMap.get(c.getName());
+                    if (heartbeatFlow == null) {
+                        c.notifyChangeSelectRead(false);
+                        c.notifyChangeAlive(false);
+                    } else {
+                        heartbeatFlow.heartbeat();
+                    }
+                });
+            }, timerConfig.getInitialDelay(), timerConfig.getPeriod(), TimeUnit.valueOf(timerConfig.getTimeUnit()));
+        }
     }
 
 
@@ -314,4 +322,5 @@ public enum ReplicaSelectorRuntime {
         }
         return strategyProvider;
     }
+
 }

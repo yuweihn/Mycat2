@@ -3,7 +3,6 @@ package io.mycat.config;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NonNull;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,7 +33,7 @@ public class ShardingQueryRootConfig {
         private String tableName;
     }
 
-    @AllArgsConstructor
+
     @Data
     public static final class LogicSchemaConfig {
         Map<String,LogicTableConfig> tables = new HashMap<>();

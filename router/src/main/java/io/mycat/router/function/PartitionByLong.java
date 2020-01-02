@@ -2,6 +2,7 @@ package io.mycat.router.function;
 
 import io.mycat.router.RuleFunction;
 import io.mycat.router.util.PartitionUtil;
+
 import java.util.Map;
 
 /**
@@ -26,6 +27,7 @@ public class PartitionByLong extends RuleFunction {
   public int calculate(String columnValue) {
     try {
       long key = Long.parseLong(columnValue);
+      key = (key >>> 32) ^ key;
       return partitionUtil.partition(key);
     } catch (NumberFormatException e) {
       throw new IllegalArgumentException(

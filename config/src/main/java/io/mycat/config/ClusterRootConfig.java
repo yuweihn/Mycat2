@@ -23,7 +23,6 @@ import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
 /**
  * <p>
@@ -56,6 +55,7 @@ public class ClusterRootConfig {
         private long initialDelay = 1 * 1000L;
         private long period = 10 * 1000L;
         private String timeUnit = TimeUnit.MILLISECONDS.name();
+        private boolean close;
     }
 
 

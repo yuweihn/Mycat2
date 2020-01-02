@@ -3,7 +3,6 @@ package io.mycat.datasource.jdbc.datasource;
 import io.mycat.beans.resultset.MycatResultSetResponse;
 import io.mycat.beans.resultset.MycatUpdateResponse;
 import io.mycat.beans.resultset.MycatUpdateResponseImpl;
-import io.mycat.calcite.BackendTableInfo;
 import io.mycat.datasource.jdbc.resultset.MysqlSingleDataNodeResultSetResponse;
 import io.mycat.datasource.jdbc.resultset.TextResultSetResponse;
 import io.mycat.datasource.jdbc.thread.GThread;
@@ -32,6 +31,7 @@ public class TransactionSessionUtil {
     }
 
     public static MycatResultSetResponse executeQuery(String datasource, String sql) {
+        Objects.requireNonNull(datasource);
         DefaultConnection connection = getConnectionByDataSource(datasource);
         if (connection.getDataSource().isMySQLType()) {
             return new MysqlSingleDataNodeResultSetResponse(connection.executeQuery(sql));
@@ -49,6 +49,7 @@ public class TransactionSessionUtil {
     }
 
     public static DefaultConnection getConnectionByDataSource(String datasource) {
+        Objects.requireNonNull(datasource);
         GThread processUnit = (GThread) Thread.currentThread();
         TransactionSession transactionSession = processUnit.getTransactionSession();
         transactionSession.beforeDoAction();
