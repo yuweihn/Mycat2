@@ -1,18 +1,16 @@
 package io.mycat.describer;
 
-import io.mycat.DesRelNodeHandler;
-import io.mycat.rsqlBuilder.Db1;
-import io.mycat.rsqlBuilder.DesBuilder;
-import io.mycat.rsqlBuilder.Rel2Des;
-import io.mycat.wu.BaseQuery;
-import io.mycat.wu.Op;
-import io.mycat.wu.QueryOp;
-import io.mycat.wu.ast.AggregateCall;
-import io.mycat.wu.ast.base.*;
-import io.mycat.wu.ast.query.FieldType;
-import io.mycat.wu.ast.query.SetOpSchema;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableList;
+import io.mycat.DesRelNodeHandler;
+import io.mycat.rsqlBuilder.DesBuilder;
+import io.mycat.hbt.BaseQuery;
+import io.mycat.hbt.Op;
+import io.mycat.hbt.QueryOp;
+import io.mycat.hbt.ast.AggregateCall;
+import io.mycat.hbt.ast.base.*;
+import io.mycat.hbt.ast.query.FieldType;
+import io.mycat.hbt.ast.query.SetOpSchema;
 import org.apache.calcite.adapter.java.ReflectiveSchema;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.plan.RelOptUtil;
@@ -287,7 +285,7 @@ public class RelSpec extends BaseQuery {
 
         String text = "from(db1,travelrecord) unionAll  from(\"db1\", \"travelrecord\")";
         String s = getS(parse2SyntaxAst(text));
-        Assert.assertEquals("unionAll(from(id(\"db1\"),id(\"travelrecord\")),from(id(\"\"db1\"\"),id(\"\"travelrecord\"\")))", s);
+        Assert.assertEquals("unionAll(from(id(\"db1\"),id(\"travelrecord\")),from(id(\"db1\"),id(\"travelrecord\")))", s);
 
         Assert.assertEquals("LogicalUnion(all=[true])\n" +
                 "  LogicalTableScan(table=[[db1, travelrecord]])\n" +
@@ -304,7 +302,7 @@ public class RelSpec extends BaseQuery {
         Assert.assertEquals("SetOpSchema(op=UNION_DISTINCT,list=[FromSchema(names=[Identifier(value=db1), Identifier(value=travelrecord)]), FromSchema(names=[Identifier(value=db1), Identifier(value=travelrecord)])])", select.toString());
 
         String text = "from(db1,travelrecord) unionDistinct  from(\"db1\", \"travelrecord\")";
-        Assert.assertEquals("unionDistinct(from(id(\"db1\"),id(\"travelrecord\")),from(id(\"\"db1\"\"),id(\"\"travelrecord\"\")))", getS(parse2SyntaxAst(text)));
+        Assert.assertEquals("unionDistinct(from(id(\"db1\"),id(\"travelrecord\")),from(id(\"db1\"),id(\"travelrecord\")))", getS(parse2SyntaxAst(text)));
 
         Assert.assertEquals("LogicalUnion(all=[false])\n" +
                 "  LogicalTableScan(table=[[db1, travelrecord]])\n" +
@@ -364,7 +362,7 @@ public class RelSpec extends BaseQuery {
         Assert.assertEquals("SetOpSchema(op=EXCEPT_ALL,list=[FromSchema(names=[Identifier(value=db1), Identifier(value=travelrecord)]), FromSchema(names=[Identifier(value=db1), Identifier(value=travelrecord)])])", select.toString());
 
         String text = "from(db1,travelrecord) exceptAll  from(\"db1\", \"travelrecord\")";
-        Assert.assertEquals("exceptAll(from(id(\"db1\"),id(\"travelrecord\")),from(id(\"\"db1\"\"),id(\"\"travelrecord\"\")))", getS(parse2SyntaxAst(text)));
+        Assert.assertEquals("exceptAll(from(id(\"db1\"),id(\"travelrecord\")),from(id(\"db1\"),id(\"travelrecord\")))", getS(parse2SyntaxAst(text)));
 
         Assert.assertEquals("LogicalMinus(all=[true])\n" +
                 "  LogicalTableScan(table=[[db1, travelrecord]])\n" +
@@ -1149,7 +1147,6 @@ public class RelSpec extends BaseQuery {
 //
 //        Assert.assertEquals("LogicalValues(type=[RecordType(INTEGER 1)], tuples=[[]])\n", toString(relNode));
 
-        Rel2Des rel2Des = new Rel2Des();
 
 
         Schema schema = getSchema(relNode);

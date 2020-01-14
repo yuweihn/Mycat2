@@ -1,18 +1,26 @@
+/**
+ * Copyright (C) <2020>  <chen junwen>
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.proxy;
 
 import io.mycat.MycatException;
 import io.mycat.beans.mycat.MycatRowMetaData;
 import io.mycat.beans.mysql.MySQLErrorCode;
 import io.mycat.beans.mysql.MySQLPayloadWriter;
-import io.mycat.beans.mysql.packet.ErrorPacketImpl;
-import io.mycat.beans.mysql.packet.MySQLPacket;
-import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
-import io.mycat.beans.mysql.packet.MySQLPayloadWriteView;
-import io.mycat.beans.mysql.packet.PacketSplitterImpl;
-import io.mycat.beans.mysql.packet.PreparedOKPacket;
+import io.mycat.beans.mysql.packet.*;
 import io.mycat.config.MySQLServerCapabilityFlags;
-import io.mycat.beans.mysql.packet.ColumnDefPacketImpl;
-import io.mycat.proxy.reactor.MycatReactorThread;
+
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.sql.ResultSetMetaData;
@@ -281,13 +289,7 @@ public class MySQLPacketUtil {
     byte[] bytes = writer.toByteArray();
     try {
       Thread thread = Thread.currentThread();
-      PacketSplitterImpl packetSplitter;
-      if (thread instanceof MycatReactorThread) {
-        MycatReactorThread reactorThread = (MycatReactorThread) thread;
-        packetSplitter = reactorThread.getPacketSplitter();
-      } else {
-        packetSplitter = new PacketSplitterImpl();
-      }
+      PacketSplitterImpl  packetSplitter = new PacketSplitterImpl();
       int wholePacketSize = MySQLPacketSplitter.caculWholePacketSize(bytes.length);
       try (MySQLPayloadWriter byteArray = new MySQLPayloadWriter(
           wholePacketSize)) {
@@ -309,13 +311,7 @@ public class MySQLPacketUtil {
 
   public static byte[] generateMySQLPacket(int packetId, byte[] packet) {
     try {
-      PacketSplitterImpl packetSplitter;
-      if (Thread.currentThread() instanceof MycatReactorThread){
-        MycatReactorThread reactorThread = (MycatReactorThread)Thread.currentThread() ;
-        packetSplitter = reactorThread.getPacketSplitter();
-      }else {
-        packetSplitter = new PacketSplitterImpl();
-      }
+      PacketSplitterImpl  packetSplitter = new PacketSplitterImpl();
       int wholePacketSize = MySQLPacketSplitter.caculWholePacketSize(packet.length);
       try (MySQLPayloadWriter byteArray = new MySQLPayloadWriter(
           wholePacketSize)) {

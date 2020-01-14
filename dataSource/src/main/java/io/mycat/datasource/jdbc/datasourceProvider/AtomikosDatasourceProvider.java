@@ -18,16 +18,14 @@ import com.alibaba.druid.pool.xa.DruidXADataSource;
 import com.alibaba.druid.sql.parser.SQLParserUtils;
 import com.atomikos.icatch.jta.UserTransactionImp;
 import com.atomikos.jdbc.AtomikosDataSourceBean;
-
 import io.mycat.config.DatasourceRootConfig;
 import io.mycat.datasource.jdbc.DatasourceProvider;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
 
+import javax.transaction.UserTransaction;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import javax.sql.DataSource;
-import javax.transaction.UserTransaction;
 /**
  * @author Junwen Chen
  **/
@@ -39,7 +37,6 @@ public class AtomikosDatasourceProvider implements DatasourceProvider {
     String password = config.getPassword();
     String url = config.getUrl();
     String dbType = config.getDbType();
-    String initDb = config.getInitDb();
     int maxRetryCount = config.getMaxRetryCount();
     String initSQL = config.getInitSQL();
 
@@ -55,9 +52,11 @@ public class AtomikosDatasourceProvider implements DatasourceProvider {
     ds.setUniqueResourceName(config.getName());
     ds.setPoolSize(minCon);
     ds.setMaxPoolSize(maxCon);
-    ds.setLocalTransactionMode(true);
-    ds.setBorrowConnectionTimeout(60);
 
+    ds.setBorrowConnectionTimeout(60);
+    ///////////////////////////////////////
+    ds.setLocalTransactionMode(true);
+    //////////////////////////////////////
     DruidXADataSource datasource = new DruidXADataSource();
     datasource.setPassword(password);
     datasource.setUsername(username);
@@ -77,9 +76,6 @@ public class AtomikosDatasourceProvider implements DatasourceProvider {
           SQLParserUtils.createSQLStatementParser(initSQL, dbType).parseStatementList().stream()
               .map(Object::toString).collect(
               Collectors.toList()));
-    }
-    if (initDb != null) {
-
     }
     if (jdbcDriver != null) {
       datasource.setDriverClassName(jdbcDriver);

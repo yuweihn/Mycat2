@@ -1,8 +1,8 @@
 package io.mycat.lib.impl;
 
-import io.mycat.pattern.DynamicSQLMatcher;
 import io.mycat.MycatException;
 import io.mycat.beans.resultset.MycatResultSetResponse;
+import io.mycat.pattern.DynamicSQLMatcher;
 import io.mycat.proxy.MySQLPacketUtil;
 import io.mycat.proxy.handler.MycatHandler;
 import io.mycat.proxy.monitor.MycatMonitor;
@@ -16,11 +16,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Iterator;
 
+/**
+ * @author chen junwen
+ */
 public class TransforFileLib {
     public static Response transferFileTo(String file) {
         return new Response() {
             @Override
-            public void apply(MycatSession session, DynamicSQLMatcher matcher) {
+            public void apply(MycatSession session) {
                 TransforFileLib.WriteHandler writeHandler = new TransforFileLib.WriteHandler(session, file);
                 session.switchWriteHandler(writeHandler);
                 try {

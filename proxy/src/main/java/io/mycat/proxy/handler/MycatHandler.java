@@ -20,11 +20,13 @@ import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.packet.FrontMySQLPacketResolver;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.proxy.session.ProcessState;
+
 import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SelectionKey;
 
 /**
+ * @author jamie12221
  * The enum Mycat handlerName.
  */
 public enum MycatHandler implements NIOHandler<MycatSession> {
@@ -38,11 +40,11 @@ public enum MycatHandler implements NIOHandler<MycatSession> {
   @Override
   public void onSocketRead(MycatSession mycat) {
     try {
-      if (!mycat.isOpen()) {
-        onException(mycat, new ClosedChannelException());
-        mycat.close(false, "mysql session has closed");
-        return;
-      }
+//      if (!mycat.checkOpen()) {
+//        onException(mycat, new ClosedChannelException());
+//        mycat.close(false, "mysql session has closed");
+//        return;
+//      }
       FrontMySQLPacketResolver resolver = mycat.getMySQLPacketResolver();
        ProcessState processState = mycat.getProcessState();
        if (processState == ProcessState.READY){
@@ -52,8 +54,6 @@ public enum MycatHandler implements NIOHandler<MycatSession> {
          } else {
            return;
          }
-       }else {
-         System.out.println();
        }
 
 

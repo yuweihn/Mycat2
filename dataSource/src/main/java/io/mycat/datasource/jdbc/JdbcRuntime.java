@@ -23,6 +23,7 @@ import io.mycat.bindThread.BindThreadKey;
 import io.mycat.config.ClusterRootConfig;
 import io.mycat.config.DatasourceRootConfig;
 import io.mycat.datasource.jdbc.datasource.*;
+import io.mycat.datasource.jdbc.datasourceProvider.AtomikosDatasourceProvider;
 import io.mycat.datasource.jdbc.resultset.JdbcRowBaseIteratorImpl;
 import io.mycat.datasource.jdbc.thread.GThread;
 import io.mycat.datasource.jdbc.thread.GThreadPool;
@@ -34,6 +35,8 @@ import io.mycat.replica.heartbeat.HeartBeatStrategy;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
@@ -72,23 +75,33 @@ public enum JdbcRuntime {
     }
 
     public void load(MycatConfig config) {
-        PlugRuntime.INSTCANE.load(config);
-        ReplicaSelectorRuntime.INSTANCE.load(config);
-        this.config = config;
-        try {
-            this.datasourceProvider = (DatasourceProvider) Class.forName(config.getDatasource().getDatasourceProviderClass())
-                    .getDeclaredConstructor().newInstance();
-        } catch (Exception e) {
-            throw new MycatException("can not load datasourceProvider:{}", config.getDatasource().getDatasourceProviderClass());
-        }
-        connectionManager = new JdbcConnectionManager(this.datasourceProvider);
-        gThreadPool = new GThreadPool(this);
+        if (!config.getServer().getWorker().isClose()) {
+            PlugRuntime.INSTCANE.load(config);
+            ReplicaSelectorRuntime.INSTANCE.load(config);
+            this.config = config;
+            String customerDatasourceProvider = config.getDatasource().getDatasourceProviderClass();
+            String defaultDatasourceProvider = Optional.ofNullable(customerDatasourceProvider).orElse(AtomikosDatasourceProvider.class.getName());
+            try {
+                this.datasourceProvider = (DatasourceProvider) Class.forName(defaultDatasourceProvider)
+                        .getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new MycatException("can not load datasourceProvider:{}", config.getDatasource().getDatasourceProviderClass());
+            }
+            connectionManager = new JdbcConnectionManager(this.datasourceProvider);
+            gThreadPool = new GThreadPool(this);
 
-        for (ClusterRootConfig.ClusterConfig replica : config.getReplicas().getReplicas()) {
-            if ("jdbc".equals(replica.getHeartbeat().getReuqestType())) {
-                String replicaName = replica.getName();
-                for (String datasource : replica.getMasters()) {
-                    putHeartFlow(replicaName, datasource);
+            for (DatasourceRootConfig.DatasourceConfig datasource : config.getDatasource().getDatasources()) {
+                if (datasource.isJdbcType()) {
+                    addDatasource(datasource);
+                }
+            }
+
+            for (ClusterRootConfig.ClusterConfig replica : config.getCluster().getClusters()) {
+                if ("jdbc".equals(replica.getHeartbeat().getReuqestType())) {
+                    String replicaName = replica.getName();
+                    for (String datasource : replica.getMasters()) {
+                        putHeartFlow(replicaName, datasource);
+                    }
                 }
             }
         }
@@ -115,21 +128,22 @@ public enum JdbcRuntime {
             private void heartbeat(HeartBeatStrategy heartBeatStrategy) {
                 DefaultConnection connection = null;
                 try {
-                    connection  = getConnection(datasource);
-                        List<Map<String, Object>> resultList;
-                        try (JdbcRowBaseIteratorImpl iterator = connection
-                                .executeQuery(heartBeatStrategy.getSql())) {
-                            resultList = iterator.getResultSetMap();
-                        }
-                        heartBeatStrategy.process(resultList);
-                    } catch (Exception e) {
-                        heartBeatStrategy.onException(e);
-                        throw e;
-                    } finally {
-                        if (connection != null) {
-                            connection.close();
-                        }
+                    connection = getConnection(datasource);
+                    List<Map<String, Object>> resultList;
+                    try (JdbcRowBaseIteratorImpl iterator = connection
+                            .executeQuery(heartBeatStrategy.getSql())) {
+                        resultList = iterator.getResultSetMap();
                     }
+                    LOGGER.debug("jdbc heartbeat {}", Objects.toString(resultList));
+                    heartBeatStrategy.process(resultList);
+                } catch (Exception e) {
+                    heartBeatStrategy.onException(e);
+                    throw e;
+                } finally {
+                    if (connection != null) {
+                        connection.close();
+                    }
+                }
             }
         });
     }
@@ -165,5 +179,9 @@ public enum JdbcRuntime {
 
     public int getMaxPengdingLimit() {
         return config.getServer().getWorker().getMaxPengdingLimit();
+    }
+
+    public boolean isBindingInTransaction(BindThreadKey key) {
+        return gThreadPool.isBind(key);
     }
 }

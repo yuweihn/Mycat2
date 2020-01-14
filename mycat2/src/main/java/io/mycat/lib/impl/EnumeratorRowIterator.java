@@ -1,17 +1,12 @@
 package io.mycat.lib.impl;
 
 import io.mycat.api.collector.AbstractObjectRowIterator;
-import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.beans.mycat.MycatRowMetaData;
 import org.apache.calcite.linq4j.Enumerator;
 
-import java.io.InputStream;
-import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.Time;
-import java.sql.Timestamp;
-import java.util.Objects;
-
+/**
+ * @author chen junwen
+ */
 public class EnumeratorRowIterator extends AbstractObjectRowIterator {
     protected final MycatRowMetaData mycatRowMetaData;
     protected final Enumerator<Object[]> iterator;

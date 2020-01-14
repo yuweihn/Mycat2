@@ -14,10 +14,6 @@
  */
 package io.mycat.calcite;
 
-import io.mycat.sqlEngine.ast.optimizer.queryCondition.ColumnRangeValue;
-import io.mycat.sqlEngine.ast.optimizer.queryCondition.ColumnValue;
-import io.mycat.sqlEngine.ast.optimizer.queryCondition.ConditionCollector;
-import io.mycat.sqlEngine.ast.optimizer.queryCondition.QueryDataRange;
 import com.alibaba.fastsql.DbType;
 import com.alibaba.fastsql.sql.SQLUtils;
 import com.alibaba.fastsql.sql.ast.SQLExpr;
@@ -28,25 +24,37 @@ import com.alibaba.fastsql.sql.ast.statement.SQLExprTableSource;
 import com.alibaba.fastsql.sql.ast.statement.SQLInsertStatement;
 import com.alibaba.fastsql.sql.ast.statement.SQLTableSource;
 import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlInsertStatement;
+import com.alibaba.fastsql.sql.parser.SQLParserUtils;
+import com.alibaba.fastsql.sql.parser.SQLStatementParser;
 import com.alibaba.fastsql.sql.repository.SchemaObject;
 import com.alibaba.fastsql.sql.repository.SchemaRepository;
-import io.mycat.MycatConfig;
-import io.mycat.MycatException;
-import io.mycat.RootHelper;
-import io.mycat.calcite.shardingQuery.SchemaInfo;
+import io.mycat.*;
 import io.mycat.config.ShardingQueryRootConfig;
 import io.mycat.config.SharingFuntionRootConfig;
+import io.mycat.queryCondition.ColumnRangeValue;
+import io.mycat.queryCondition.ColumnValue;
+import io.mycat.queryCondition.ConditionCollector;
+import io.mycat.queryCondition.QueryDataRange;
 import io.mycat.router.RuleFunction;
 import io.mycat.router.function.PartitionRuleFunctionManager;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.apache.calcite.interpreter.Bindables;
+import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.prepare.RelOptTableImpl;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelVisitor;
+import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import static com.alibaba.fastsql.sql.repository.SchemaResolveVisitor.Option.*;
 import static io.mycat.calcite.CalciteConvertors.getColumnInfo;
@@ -58,40 +66,133 @@ import static io.mycat.calcite.SimpleColumnInfo.ShardingType.*;
 public enum MetadataManager {
     INSTANCE;
     private final Logger LOGGER = LoggerFactory.getLogger(MetadataManager.class);
-    private final ConcurrentHashMap<String, ConcurrentHashMap<String, LogicTable>> logicTableMap = new ConcurrentHashMap<>();
+    final ConcurrentHashMap<String, ConcurrentHashMap<String, LogicTable>> logicTableMap = new ConcurrentHashMap<>();
+
     private final SchemaRepository TABLE_REPOSITORY = new SchemaRepository(DbType.mysql);
 
     public void removeSchema(String schemaName) {
         logicTableMap.remove(schemaName);
     }
 
+    public List<String> explain(RelNode scan) {
+        String message = RelOptUtil.toString(scan);
+        List<String> list = new ArrayList<>(Arrays.asList(message.split("\n")));
+        //根节点与子节点
+        List<TableScan> tableScans = new ArrayList<>();
+        if (scan instanceof Bindables.BindableTableScan) {
+            tableScans.add((TableScan) scan);
+        } else if (scan instanceof LogicalTableScan) {
+            tableScans.add((TableScan) scan);
+        }else {
+            scan.childrenAccept(new RelVisitor() {
+                @Override
+                public void visit(RelNode node, int ordinal, RelNode parent) {
+                    if (node instanceof Bindables.BindableTableScan) {
+                        tableScans.add((TableScan) node);
+                    }
+                    if (node instanceof LogicalTableScan) {
+                        tableScans.add((TableScan) node);
+                    }
+                    super.visit(node, ordinal, parent);
+                }
+            });
+        }
+        for (TableScan tableScan : tableScans) {
+            RelOptTableImpl table = (RelOptTableImpl) tableScan.getTable();
+            list.add("node:" + RelOptUtil.toString(tableScan));
+            JdbcTable unwrap = table.unwrap(JdbcTable.class);
+            List<QueryBackendTask> queryBackendTasks;
+            if (tableScan instanceof Bindables.BindableTableScan) {
+                Bindables.BindableTableScan tableScan1 = (Bindables.BindableTableScan) tableScan;
+                queryBackendTasks = unwrap.getQueryBackendTasks(new ArrayList<>(tableScan1.filters), tableScan1.projects.toIntArray());
+            } else {
+                queryBackendTasks = unwrap.getQueryBackendTasks(Collections.emptyList(), null);
+            }
+            for (QueryBackendTask queryBackendTask : queryBackendTasks) {
+                String targetName = queryBackendTask.getBackendTableInfo().getTargetName();
+                String sql = queryBackendTask.getSql();
+                list.add(" targetName:" + targetName);
+                list.add("  sql:" + sql);
+            }
+        }
+        return list;
+    }
+
     public void addSchema(String schemaName) {
         logicTableMap.computeIfAbsent(schemaName, s -> new ConcurrentHashMap<>());
+        logicTableMap.computeIfAbsent("`" + schemaName + "`", s -> new ConcurrentHashMap<>());
     }
 
-    public void addTable(String schemaName, String tableName, ShardingQueryRootConfig.LogicTableConfig tableConfig, List<ShardingQueryRootConfig.BackEndTableInfoConfig> backends,ShardingQueryRootConfig.PrototypeServer prototypeServer){
+    public void addTable(String schemaName, String tableName, ShardingQueryRootConfig.LogicTableConfig tableConfig, List<ShardingQueryRootConfig.BackEndTableInfoConfig> backends, ShardingQueryRootConfig.PrototypeServer prototypeServer) {
         addSchema(schemaName);
-        addLogicTable(schemaName,tableName,tableConfig,prototypeServer,getBackendTableInfos(backends));
+        addLogicTable(schemaName, tableName, tableConfig, prototypeServer, getBackendTableInfos(backends));
     }
 
-    public void removeTable(String schemaName,String tableName){
+    public void removeTable(String schemaName, String tableName) {
         ConcurrentHashMap<String, LogicTable> stringLogicTableConcurrentHashMap = logicTableMap.get(schemaName);
-        if (stringLogicTableConcurrentHashMap!=null){
+        if (stringLogicTableConcurrentHashMap != null) {
             stringLogicTableConcurrentHashMap.remove(tableName);
         }
     }
 
+    public List<String> getDatabases() {
+        return logicTableMap.keySet().stream().sorted().collect(Collectors.toList());
+    }
+
+    public void load(MycatConfig mycatConfig) {
+        ShardingQueryRootConfig shardingQueryRootConfig = mycatConfig.getMetadata();
+//        Map<String, ShardingQueryRootConfig.LogicSchemaConfig> schemas = shardingQueryRootConfig.getSchemas();
+//        ShardingQueryRootConfig.LogicSchemaConfig logicSchemaConfig = new ShardingQueryRootConfig.LogicSchemaConfig();
+//        schemas.put("testdb", logicSchemaConfig);
+//        String ddl = "CREATE TABLE `travelrecord` (\n" +
+//                "            `id` bigint(20) NOT NULL,\n" +
+//                "            `user_id` varchar(100) CHARACTER SET utf8 DEFAULT NULL,\n" +
+//                "            `traveldate` date DEFAULT NULL,\n" +
+//                "            `fee` decimal(10,0) DEFAULT NULL,\n" +
+//                "            `days` int(11) DEFAULT NULL,\n" +
+//                "            `blob` longblob DEFAULT NULL,\n" +
+//                "            `d` double DEFAULT NULL\n" +
+//                "          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
+//        ShardingQueryRootConfig.LogicTableConfig.LogicTableConfigBuilder builder = ShardingQueryRootConfig.LogicTableConfig.builder()
+//                .createTableSQL(ddl);
+//
+//        HashMap<String,String> map = new HashMap<>();
+//        map.put("partitionCount","8");
+//        map.put("partitionLength","128");
+//        SharingFuntionRootConfig.ShardingFuntion funtion = SharingFuntionRootConfig.ShardingFuntion.builder()
+//                .name(PartitionByLong.class.getSimpleName())
+//                .clazz(PartitionByLong.class.getName())
+//                .properties(map)
+//                .ranges(Collections.emptyMap())
+//                .build();
+//        ShardingQueryRootConfig.Column id = ShardingQueryRootConfig.Column.builder().shardingType(NATURE_DATABASE_TABLE.name()).columnName("id").function(funtion).build();
+//        builder.columns(Arrays.asList(id));
+//
+//        Arrays.asList(ShardingQueryRootConfig.BackEndTableInfoConfig.builder().tableName(""))
+//        logicSchemaConfig.getTables().put("travelrecord", build);
+//
+        for (Map.Entry<String, ShardingQueryRootConfig.LogicSchemaConfig> entry : shardingQueryRootConfig.getSchemas().entrySet()) {
+            String orignalSchemaName = entry.getKey();
+            ShardingQueryRootConfig.LogicSchemaConfig value = entry.getValue();
+            final String schemaName = orignalSchemaName.toLowerCase();
+            for (Map.Entry<String, ShardingQueryRootConfig.LogicTableConfig> e : value.getTables().entrySet()) {
+                String tableName = e.getKey().toLowerCase();
+                ShardingQueryRootConfig.LogicTableConfig tableConfigEntry = e.getValue();
+                addLogicTable(schemaName, tableName, tableConfigEntry, shardingQueryRootConfig.getPrototype(), getBackendTableInfos(tableConfigEntry.getDataNodes()));
+            }
+        }
+    }
 
 
     @Getter
     static class LogicTable {
-        final String schemaName;
-        final String tableName;
-        final List<BackendTableInfo> backends;
-        final List<SimpleColumnInfo> rawColumns;
-        final String createTableSQL;
+        private final String schemaName;
+        private final String tableName;
+        private final List<BackendTableInfo> backends;
+        private final List<SimpleColumnInfo> rawColumns;
+        private final String createTableSQL;
         //////////////optional/////////////////
-        JdbcTable jdbcTable;
+        private JdbcTable jdbcTable;
         //////////////optional/////////////////
         private final SimpleColumnInfo.ShardingInfo natureTableColumnInfo;
         private final SimpleColumnInfo.ShardingInfo replicaColumnInfo;
@@ -103,50 +204,45 @@ public enum MetadataManager {
                           Map<SimpleColumnInfo.@NonNull ShardingType, SimpleColumnInfo.ShardingInfo> shardingInfo, String createTableSQL) {
             this.schemaName = schemaName;
             this.tableName = name;
-            this.backends = backends;
+            this.backends = backends == null ? Collections.emptyList() : backends;
             this.rawColumns = rawColumns;
             this.createTableSQL = createTableSQL;
 
 
             this.natureTableColumnInfo = shardingInfo.get(NATURE_DATABASE_TABLE);
 
-            this.replicaColumnInfo = shardingInfo.get(MAP_CLUSTER);
+            this.replicaColumnInfo = shardingInfo.get(MAP_TARGET);
             this.databaseColumnInfo = shardingInfo.get(MAP_DATABASE);
             this.tableColumnInfo = shardingInfo.get(MAP_TABLE);
+        }
+
+        public boolean isNatureTable() {
+            return natureTableColumnInfo != null;
         }
 
         public void setJdbcTable(JdbcTable jdbcTable) {
             this.jdbcTable = jdbcTable;
         }
+
+        @NonNull
+        public List<BackendTableInfo> getBackends() {
+            return backends;
+        }
     }
 
     @SneakyThrows
     MetadataManager() {
-        MycatConfig mycatConfig = RootHelper.INSTCANE.bootConfig().currentConfig();
-        ShardingQueryRootConfig shardingQueryRootConfig = mycatConfig.getMatadata();
-        Map<String,List<BackendTableInfo>> dataNodeMap = new HashMap<>();
-        for (Map.Entry<String, List<ShardingQueryRootConfig.BackEndTableInfoConfig>> stringListEntry : shardingQueryRootConfig.getDataNodes().entrySet()) {
-            dataNodeMap.put(stringListEntry.getKey(), getBackendTableInfos(stringListEntry.getValue()));
-        }
 
-
-        for (Map.Entry<String, ShardingQueryRootConfig.LogicSchemaConfig> entry : shardingQueryRootConfig.getSchemas().entrySet()) {
-            String orignalSchemaName = entry.getKey();
-            ShardingQueryRootConfig.LogicSchemaConfig value = entry.getValue();
-            final String schemaName = orignalSchemaName.toLowerCase();
-            for (Map.Entry<String, ShardingQueryRootConfig.LogicTableConfig> e : value.getTables().entrySet()) {
-                String tableName = e.getKey().toLowerCase();
-                ShardingQueryRootConfig.LogicTableConfig tableConfigEntry = e.getValue();
-                addLogicTable(schemaName, tableName, tableConfigEntry, shardingQueryRootConfig.getPrototype(),dataNodeMap.get(tableConfigEntry.getDataNodeName()));
-            }
-        }
     }
 
     private List<BackendTableInfo> getBackendTableInfos(List<ShardingQueryRootConfig.BackEndTableInfoConfig> stringListEntry) {
+        if (stringListEntry == null) {
+            return Collections.emptyList();
+        }
         return stringListEntry.stream().map(t -> {
-                    SchemaInfo schemaInfo = new SchemaInfo(t.getSchemaName(), t.getTableName());
-                    return new BackendTableInfo(t.getReplicaName(), schemaInfo);
-                }).collect(Collectors.toList());
+            SchemaInfo schemaInfo = new SchemaInfo(t.getSchemaName(), t.getTableName());
+            return new BackendTableInfo(t.getTargetName(), schemaInfo);
+        }).collect(Collectors.toList());
     }
 
     private synchronized void accrptDDL(String schemaName, String sql) {
@@ -154,7 +250,7 @@ public enum MetadataManager {
         TABLE_REPOSITORY.acceptDDL(sql);
     }
 
-    private void addLogicTable(String schemaName, String orignalTableName, ShardingQueryRootConfig.LogicTableConfig tableConfigEntry, ShardingQueryRootConfig.PrototypeServer prototypeServer,  List<BackendTableInfo> backends) {
+    private void addLogicTable(String schemaName, String orignalTableName, ShardingQueryRootConfig.LogicTableConfig tableConfigEntry, ShardingQueryRootConfig.PrototypeServer prototypeServer, List<BackendTableInfo> backends) {
         //////////////////////////////////////////////
         final String tableName = orignalTableName.toLowerCase();
         String createTableSQL = tableConfigEntry.getCreateTableSQL();
@@ -167,9 +263,15 @@ public enum MetadataManager {
 
         LogicTable logicTable = new LogicTable(schemaName, tableName, backends, columns, shardingInfo, createTableSQL);
         logicTable.setJdbcTable(new JdbcTable(logicTable, CalciteConvertors.relDataType(columns), rowSignature));
-        Map<String, LogicTable> tableMap = logicTableMap.computeIfAbsent(schemaName, s -> new ConcurrentHashMap<>());
-        tableMap.put(tableName, logicTable);
 
+        Map<String, LogicTable> tableMap;
+        tableMap = logicTableMap.computeIfAbsent(schemaName, s -> new ConcurrentHashMap<>());
+        tableMap.put(tableName, logicTable);
+        tableMap.put("`" + tableName + "`", logicTable);
+
+        tableMap = logicTableMap.computeIfAbsent("`" + schemaName + "`", s -> new ConcurrentHashMap<>());
+        tableMap.put(tableName, logicTable);
+        tableMap.put("`" + tableName + "`", logicTable);
         accrptDDL(schemaName, createTableSQL);
 
     }
@@ -180,7 +282,14 @@ public enum MetadataManager {
             RuleFunction ruleAlgorithm = PartitionRuleFunctionManager.INSTANCE.
                     getRuleAlgorithm(entry1.getColumnName(), function.getClazz(), function.getProperties(), function.getRanges());
             SimpleColumnInfo.ShardingType shardingType = SimpleColumnInfo.ShardingType.valueOf(entry1.getShardingType());
-            SimpleColumnInfo simpleColumnInfo = Objects.requireNonNull(columns.stream().filter(i -> entry1.getColumnName().equals(i.getColumnName())).findFirst().get());
+            SimpleColumnInfo found = null;
+            for (SimpleColumnInfo i : columns) {
+                if (entry1.getColumnName().equals(i.getColumnName())) {
+                    found = i;
+                    break;
+                }
+            }
+            SimpleColumnInfo simpleColumnInfo = Objects.requireNonNull(found);
             return new SimpleColumnInfo.ShardingInfo(simpleColumnInfo, shardingType, entry1.getMap(), ruleAlgorithm);
         }).collect(Collectors.toMap(k -> k.getShardingType(), k -> k));
     }
@@ -198,18 +307,34 @@ public enum MetadataManager {
         return columns;
     }
 
+    public static Iterable<Map<String, List<String>>> routeInsert(String currentSchema, String sql) {
+        SQLStatementParser sqlStatementParser = SQLParserUtils.createSQLStatementParser(sql, DbType.mysql);
+        List list = new LinkedList();
+        sqlStatementParser.parseStatementList(list);
+        return MetadataManager.INSTANCE.getInsertInfoIterator(currentSchema, (Iterator<MySqlInsertStatement>) list.iterator());
+    }
+
+    public static Map<String, List<String>> routeInsertFlat(String currentSchema, String sql) {
+        Iterable<Map<String, List<String>>> maps = routeInsert(currentSchema, sql);
+        Stream<Map<String, List<String>>> stream = StreamSupport.stream(maps.spliterator(), false);
+        return stream.flatMap(i -> i.entrySet().stream())
+                .collect(Collectors.groupingBy(k -> k.getKey(), Collectors.mapping(i -> i.getValue(), Collectors.reducing(new ArrayList<String>(), (list, list2) -> {
+                    list.addAll(list2);
+                    return list;
+                }))));
+    }
 
     //////////////////////////////////////////////////////function/////////////////////////////////////////////////////
-    public Iterator<Map<BackendTableInfo, String>> getInsertInfoIterator(String currentSchemaNameText, Iterator<MySqlInsertStatement> listIterator) {
+    public Iterable<Map<String, List<String>>> getInsertInfoIterator(String currentSchemaNameText, Iterator<MySqlInsertStatement> listIterator) {
         final String currentSchemaName = currentSchemaNameText.toLowerCase();
-        return new Iterator<Map<BackendTableInfo, String>>() {
+        return () -> new Iterator<Map<String, List<String>>>() {
             @Override
             public boolean hasNext() {
                 return listIterator.hasNext();
             }
 
             @Override
-            public Map<BackendTableInfo, String> next() {
+            public Map<String, List<String>> next() {
                 MySqlInsertStatement statement = listIterator.next();
                 String s = statement.getTableSource().getSchema();
                 String schema = s == null ? currentSchemaName : s;
@@ -249,7 +374,7 @@ public enum MetadataManager {
                 listIterator.remove();
 
                 //////////////////////////////////////////////////////////////////
-                HashMap<BackendTableInfo, String> map = new HashMap<>();
+                Map<String, List<String>> map = new HashMap<>();
                 for (Map.Entry<BackendTableInfo, List<SQLInsertStatement.ValuesClause>> entry : res.entrySet()) {
                     BackendTableInfo key = entry.getKey();
                     SchemaInfo schemaInfo = key.getSchemaInfo();
@@ -257,25 +382,27 @@ public enum MetadataManager {
                     tableSource.setExpr(new SQLPropertyExpr(schemaInfo.getTargetSchema(), schemaInfo.getTargetTable()));
                     statement.getValuesList().clear();
                     statement.getValuesList().addAll(entry.getValue());
-                    map.put(key, statement.toString());
+                    List<String> list = map.computeIfAbsent(key.getTargetName(), s12 -> new ArrayList<>());
+                    list.add(statement.toString());
                 }
                 return map;
             }
         };
     }
 
-    public Map<BackendTableInfo, String> rewriteUpdateSQL(String currentSchema, String sql) {
+    public Map<String, List<String>> rewriteSQL(String currentSchema, String sql) {
         SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(sql);
         TABLE_REPOSITORY.resolve(sqlStatement, ResolveAllColumn, ResolveIdentifierAlias, CheckColumnAmbiguous);
         ConditionCollector conditionCollector = new ConditionCollector();
         sqlStatement.accept(conditionCollector);
-        Rrs rrs = assignment(conditionCollector.isFailureIndeterminacy(), conditionCollector.getRootQueryDataRange());
-        Map<BackendTableInfo, String> sqls = new HashMap<>();
+        Rrs rrs = assignment(conditionCollector.isFailureIndeterminacy(), conditionCollector.getRootQueryDataRange(), currentSchema);
+        Map<String, List<String>> sqls = new HashMap<>();
         for (BackendTableInfo endTableInfo : rrs.getBackEndTableInfos()) {
             SchemaInfo schemaInfo = endTableInfo.getSchemaInfo();
             SQLExprTableSource table = rrs.getTable();
             table.setExpr(new SQLPropertyExpr(schemaInfo.getTargetSchema(), schemaInfo.getTargetTable()));
-            sqls.put(endTableInfo, SQLUtils.toMySqlString(sqlStatement));
+            List<String> list = sqls.computeIfAbsent(endTableInfo.getTargetName(), s -> new ArrayList<>());
+            list.add(SQLUtils.toMySqlString(sqlStatement));
         }
         return sqls;
     }
@@ -283,13 +410,13 @@ public enum MetadataManager {
     //////////////////////////////////////////calculate///////////////////////////////
     private Rrs assignment(
             boolean fail,
-            QueryDataRange queryDataRange) {
-        String schemaName = null;
+            QueryDataRange queryDataRange, String wapperSchemaName) {
+        String schemaName = wapperSchemaName;
         String tableName = null;
         SQLExprTableSource table = null;
         if (queryDataRange.getTableSource() != null) {
             table = queryDataRange.getTableSource();
-            SchemaObject schemaObject = table.getSchemaObject();
+            SchemaObject schemaObject = Objects.requireNonNull(table.getSchemaObject(),"meet unknown table "+ table);
             schemaName = SQLUtils.normalize(schemaObject.getSchema().getName()).toLowerCase();
             tableName = SQLUtils.normalize(schemaObject.getName()).toLowerCase();
         }
@@ -342,7 +469,7 @@ public enum MetadataManager {
                 }
             }
         }
-        if (backEndTableInfos1.isEmpty()&&schemaName!=null) {
+        if (backEndTableInfos1.isEmpty() && schemaName != null) {
             LogicTable logicTable = logicTableMap.get(schemaName).get(tableName);
             backEndTableInfos1.addAll(logicTable.backends);
         }
@@ -356,7 +483,7 @@ public enum MetadataManager {
             LogicTable logicTable = this.logicTableMap.get(schemaName).get(tableName);
             DataMappingEvaluator dataMappingEvaluator = new DataMappingEvaluator();
             for (Map.Entry<String, String> entry : map.entrySet()) {
-                dataMappingEvaluator.assignment(false,entry.getKey(),entry.getValue());
+                dataMappingEvaluator.assignment(false, entry.getKey(), entry.getValue());
             }
             return dataMappingEvaluator.calculate(logicTable);
         } catch (Exception e) {

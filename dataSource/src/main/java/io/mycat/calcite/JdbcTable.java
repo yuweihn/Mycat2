@@ -15,12 +15,12 @@
 package io.mycat.calcite;
 
 import com.google.common.collect.ImmutableList;
-import io.mycat.calcite.shardingQuery.BackendTask;
-import io.mycat.calcite.shardingQuery.SchemaInfo;
+import io.mycat.BackendTableInfo;
+import io.mycat.QueryBackendTask;
+import io.mycat.SchemaInfo;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.linq4j.Enumerable;
-import org.apache.calcite.linq4j.QueryProvider;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.logical.LogicalTableScan;
@@ -29,7 +29,10 @@ import org.apache.calcite.rel.rel2sql.SqlImplementor;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelProtoDataType;
-import org.apache.calcite.rex.*;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.schema.*;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -43,13 +46,14 @@ import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
- * @author Weiqing Xu
+ *
  * @author Junwen Chen
+ * @author Weiqing Xu
+ *
  **/
 public class JdbcTable implements TranslatableTable, ProjectableFilterableTable {
     private MetadataManager.LogicTable table;
@@ -139,10 +143,10 @@ public class JdbcTable implements TranslatableTable, ProjectableFilterableTable 
     @Override
     public RelNode toRel(RelOptTable.ToRelContext toRelContext, RelOptTable relOptTable) {
         LogicalTableScan logicalTableScan = LogicalTableScan.create(toRelContext.getCluster(), relOptTable);
-        RelToSqlConverter relToSqlConverter = new RelToSqlConverter(MysqlSqlDialect.DEFAULT);
-        SqlImplementor.Result visit = relToSqlConverter.visitChild(0, logicalTableScan);
-        SqlNode sqlNode = visit.asStatement();
-        System.out.println(sqlNode);
+//        RelToSqlConverter relToSqlConverter = new RelToSqlConverter(MysqlSqlDialect.DEFAULT);
+//        SqlImplementor.Result visit = relToSqlConverter.visitChild(0, logicalTableScan);
+//        SqlNode sqlNode = visit.asStatement();
+//        System.out.println(sqlNode);
         return logicalTableScan;
     }
 
@@ -187,23 +191,42 @@ public class JdbcTable implements TranslatableTable, ProjectableFilterableTable 
 
     @Override
     public Enumerable<Object[]> scan(DataContext root, List<RexNode> filters, final int[] projects) {
-        LOGGER.info("origin  filters:{}", filters);
-        DataMappingEvaluator record = new DataMappingEvaluator();
-        filters.removeIf((filter) -> {
-            DataMappingEvaluator dataMappingRule = new DataMappingEvaluator();
-            boolean success = addOrRootFilter(dataMappingRule, filter);
-            if (success) {
-                record.merge(dataMappingRule);
-            }
-            return success;
-        });
-        LOGGER.info("optimize filters:{}", filters);
-        List<BackendTableInfo> calculate = record.calculate(table);
-        return new MyCatResultSetEnumerable(getCancelFlag(root), getBackendTasks(getColumnList(projects),filters, calculate));
+        List<QueryBackendTask> backendTasks = getQueryBackendTasks(filters, projects);
+        return new MyCatResultSetEnumerable(getCancelFlag(root), backendTasks);
     }
 
-    private List<BackendTask> getBackendTasks(  List<String> columnList ,List<RexNode> filters, List<BackendTableInfo> calculate) {
-        List<BackendTask> res = new ArrayList<>();
+    public List<QueryBackendTask> getQueryBackendTasks(List<RexNode> filters, int[] projects) {
+        LOGGER.info("origin  filters:{}", filters);
+        DataMappingEvaluator record = new DataMappingEvaluator();
+        ArrayList<RexNode> where  = new ArrayList<>();
+        if(this.table.isNatureTable()){
+            filters.removeIf((filter) -> {
+                DataMappingEvaluator dataMappingRule = new DataMappingEvaluator();
+                boolean success = addOrRootFilter(dataMappingRule, filter);
+                if (success) {
+                    record.merge(dataMappingRule);
+                }
+                where.add(filter);
+                return success;
+            });
+        }else {
+            filters.forEach((filter) -> {
+                DataMappingEvaluator dataMappingRule = new DataMappingEvaluator();
+                boolean success = addOrRootFilter(dataMappingRule, filter);
+                if (success) {
+                    record.merge(dataMappingRule);
+                }
+                where.add(filter);
+            });
+        }
+
+        LOGGER.info("optimize filters:{}", filters);
+        List<BackendTableInfo> calculate = record.calculate(table);
+        return getBackendTasks(getColumnList(projects), where, calculate);
+    }
+
+    private List<QueryBackendTask> getBackendTasks(List<String> columnList , List<RexNode> filters, List<BackendTableInfo> calculate) {
+        List<QueryBackendTask> res = new ArrayList<>();
         for (BackendTableInfo backendTableInfo : calculate) {
             SchemaInfo schemaInfo = backendTableInfo.getSchemaInfo();
             String targetSchemaTable = schemaInfo.getTargetSchemaTable();
@@ -211,7 +234,7 @@ public class JdbcTable implements TranslatableTable, ProjectableFilterableTable 
             String selectItems = columnList.stream().map(i -> targetSchemaTable + "." + i).collect(Collectors.joining(","));
             sql.append(MessageFormat.format("select {0} from {1}", selectItems, targetSchemaTable));
             sql.append(getFilterSQLText(schemaInfo.getTargetSchema(), schemaInfo.getTargetTable(), filters));
-            res.add(new BackendTask(sql.toString(),false, backendTableInfo));
+            res.add(new QueryBackendTask(sql.toString(), backendTableInfo));
         }
         return res;
     }
@@ -226,6 +249,9 @@ public class JdbcTable implements TranslatableTable, ProjectableFilterableTable 
     }
 
     private String getFilterSQLText(String schemaName, String tableName, List<RexNode> filters) {
+        if (filters==null||filters.isEmpty()){
+            return "";
+        }
         SqlImplementor.Context context = new SqlImplementor.Context(MysqlSqlDialect.DEFAULT, JdbcTable.this.rowSignature.getColumnCount()) {
             @Override
             public SqlNode field(int ordinal) {
@@ -234,6 +260,7 @@ public class JdbcTable implements TranslatableTable, ProjectableFilterableTable 
                         SqlImplementor.POS);
             }
         };
+
         return filters.stream().map(i -> context.toSql(null, i).toSqlString(MysqlSqlDialect.DEFAULT))
                 .map(i -> i.getSql())
                 .collect(Collectors.joining(" and ", " where ", ""));

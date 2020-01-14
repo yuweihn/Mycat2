@@ -15,6 +15,7 @@
 package io.mycat.proxy.session;
 
 import io.mycat.MycatException;
+import io.mycat.beans.MySQLDatasource;
 import io.mycat.beans.MySQLSessionMonopolizeType;
 import io.mycat.beans.mysql.MySQLAutoCommit;
 import io.mycat.beans.mysql.MySQLIsolation;
@@ -26,10 +27,9 @@ import io.mycat.proxy.buffer.ProxyBufferImpl;
 import io.mycat.proxy.handler.NIOHandler;
 import io.mycat.proxy.handler.ResponseType;
 import io.mycat.proxy.monitor.MycatMonitor;
-import io.mycat.proxy.packet.MySQLPacketResolver;
 import io.mycat.proxy.packet.BackendMySQLPacketResolver;
+import io.mycat.proxy.packet.MySQLPacketResolver;
 import io.mycat.proxy.packet.MySQLPayloadType;
-import io.mycat.replica.MySQLDatasource;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -97,7 +97,7 @@ public class MySQLClientSession extends
   }
 
   /**
-   * 把bytes吸入通道
+   * 把bytes写入通道
    */
   static void writeProxyBufferToChannel(MySQLProxySession proxySession, byte[] bytes)
       throws IOException {
@@ -116,27 +116,17 @@ public class MySQLClientSession extends
    */
   @Override
   public void close(boolean normal, String hint) {
-    if (closed) {
+    if (hasClosed) {
       return;
     }
     resetPacket();
-    closed = true;
+    hasClosed = true;
     try {
       getSessionManager().removeSession(this, normal, hint);
     } catch (Exception e) {
       LOGGER.error("channel close occur exception:{}", e);
     }
   }
-
-//  /**
-//   * 执行透传时候设置
-//   */
-//  public void switchProxyNioHandler() {
-//    assert this.mycat != null;
-//    this.mycat.switchWriteHandler(WriteHandler.INSTANCE);
-//    this.nioHandler = MySQLProxyNIOHandler.INSTANCE;
-//  }
-
   /**
    * 准备接收响应时候
    */
@@ -257,7 +247,7 @@ public class MySQLClientSession extends
    */
   @Override
   public String getLastMessage() {
-    return this.lastMessage;
+    return this.lastMessage == null?"empty message":this.lastMessage;
   }
 
   /**
@@ -302,14 +292,6 @@ public class MySQLClientSession extends
    */
   public MySQLPayloadType getPayloadType() {
     return this.packetResolver.getMySQLPayloadType();
-  }
-
-  /**
-   * 判断该session是否活跃
-   */
-  public boolean isActivated() {
-    long timeInterval = currentTimeMillis() - this.lastActiveTime;
-    return (timeInterval < 60 * 1000);//60 second
   }
 
   /**

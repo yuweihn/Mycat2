@@ -15,8 +15,12 @@
 package io.mycat.replica;
 
 import io.mycat.MycatConfig;
+import io.mycat.ScheduleUtil;
 import io.mycat.config.ClusterRootConfig;
 import io.mycat.config.DatasourceRootConfig;
+import io.mycat.config.TimerConfig;
+import io.mycat.logTip.MycatLogger;
+import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.plug.PlugRuntime;
 import io.mycat.plug.loadBalance.LoadBalanceElement;
 import io.mycat.plug.loadBalance.LoadBalanceStrategy;
@@ -28,22 +32,22 @@ import io.mycat.replica.heartbeat.strategy.MySQLGaleraHeartBeatStrategy;
 import io.mycat.replica.heartbeat.strategy.MySQLMasterSlaveBeatStrategy;
 import io.mycat.replica.heartbeat.strategy.MySQLSingleHeartBeatStrategy;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
+/**
+ * @author : chenjunwen date Date : 2019年05月15日 21:34
+ */
 public enum ReplicaSelectorRuntime {
     INSTANCE;
     final ConcurrentMap<String, ReplicaDataSourceSelector> map = new ConcurrentHashMap<>();
-    final ScheduledExecutorService timer = Executors.newScheduledThreadPool(1);
     volatile ScheduledFuture<?> schedule;
     volatile MycatConfig config;
+    final static MycatLogger LOGGER = MycatLoggerFactory.getLogger(ReplicaSelectorRuntime.class);
 
     public synchronized void load(MycatConfig config) {
         if (this.config == config) {
@@ -56,11 +60,10 @@ public enum ReplicaSelectorRuntime {
     private void innerThis(MycatConfig config) {
         PlugRuntime.INSTCANE.load(config);
 
-        ClusterRootConfig replicasRootConfig = config.getReplicas();
+        ClusterRootConfig replicasRootConfig = config.getCluster();
         Objects.requireNonNull(replicasRootConfig, "replica config can not found");
 
-        List<ClusterRootConfig.ClusterConfig> replicaConfigList = replicasRootConfig.getReplicas();
-        ClusterRootConfig.TimerConfig timerConfig = replicasRootConfig.getTimer();
+        List<ClusterRootConfig.ClusterConfig> replicaConfigList = replicasRootConfig.getClusters();
 
         List<DatasourceRootConfig.DatasourceConfig> datasources = config.getDatasource().getDatasources();
         Map<String, DatasourceRootConfig.DatasourceConfig> datasourceConfigMap = datasources.stream().collect(Collectors.toMap(k -> k.getName(), v -> v));
@@ -80,19 +83,35 @@ public enum ReplicaSelectorRuntime {
             schedule.cancel(false);
             schedule = null;
         }
-        ClusterRootConfig.TimerConfig timerConfig = config.getReplicas().getTimer();
-        this.schedule = this.timer.scheduleAtFixedRate(() -> {
-            Stream<PhysicsInstanceImpl> stream = map.values().stream().flatMap(i -> i.datasourceMap.values().stream());
-            stream.forEach(c -> {
-                HeartbeatFlow heartbeatFlow = heartbeatDetectorMap.get(c.getName());
-                if (heartbeatFlow == null) {
-                    c.notifyChangeSelectRead(false);
-                    c.notifyChangeAlive(false);
-                } else {
-                    heartbeatFlow.heartbeat();
-                }
+        ClusterRootConfig replicas = config.getCluster();
+        TimerConfig timerConfig = replicas.getTimer();
+        List<PhysicsInstanceImpl> collect = map.values().stream().flatMap(i -> i.datasourceMap.values().stream()).collect(Collectors.toList());
+        if (replicas.isClose()) {
+            collect.forEach(c -> {
+                c.notifyChangeSelectRead(true);
+                c.notifyChangeAlive(true);
             });
-        }, timerConfig.getInitialDelay(), timerConfig.getPeriod(), TimeUnit.valueOf(timerConfig.getTimeUnit()));
+        } else {
+            collect.forEach(c->{
+                c.notifyChangeSelectRead(true);
+                c.notifyChangeAlive(true);
+            });
+            this.schedule = ScheduleUtil.getTimer().scheduleAtFixedRate(() -> {
+                    for (Map.Entry<String, ReplicaDataSourceSelector> stringReplicaDataSourceSelectorEntry : map.entrySet()) {
+                        for (String datasourceName : stringReplicaDataSourceSelectorEntry.getValue().datasourceMap.keySet()) {
+                            String replicaName = stringReplicaDataSourceSelectorEntry.getKey();
+                            HeartbeatFlow heartbeatFlow = heartbeatDetectorMap.get(replicaName+"."+datasourceName);
+                            if (heartbeatFlow != null) {
+                                if (LOGGER.isDebugEnabled()) {
+                                    LOGGER.debug("heartbeat");
+                                }
+                                heartbeatFlow.heartbeat();
+                            }
+                        }
+                    }
+                }
+            , timerConfig.getInitialDelay(), timerConfig.getPeriod(), TimeUnit.valueOf(timerConfig.getTimeUnit()));
+        }
     }
 
 
@@ -221,17 +240,30 @@ public enum ReplicaSelectorRuntime {
     }
 //////////////////////////////////////////public read///////////////////////////////////////////////////////////////////
 
-    public PhysicsInstanceImpl getWriteDatasourceByReplicaName(String replicaName) {
-        return getWriteDatasourceByReplicaName(replicaName, null);
-    }
 
-    public PhysicsInstanceImpl getDatasourceByReplicaName(String replicaName) {
-        return getDatasourceByReplicaName(replicaName, null);
+    public String getDatasourceNameByReplicaName(String replicaName, boolean master, String loadBalanceStrategy) {
+        BiFunction<LoadBalanceStrategy, ReplicaDataSourceSelector, PhysicsInstanceImpl> function = master ? this::getWriteDatasource : this::getDatasource;
+        ReplicaDataSourceSelector replicaDataSourceSelector = map.get(replicaName);
+        if (replicaDataSourceSelector == null) {
+            return replicaName;
+        }
+        LoadBalanceStrategy loadBalanceByBalance = null;
+        if (loadBalanceStrategy != null) {
+            loadBalanceByBalance = PlugRuntime.INSTCANE.getLoadBalanceByBalanceName(loadBalanceStrategy);
+        }//传null集群配置的负载均衡生效
+        PhysicsInstanceImpl writeDatasource = function.apply(loadBalanceByBalance, replicaDataSourceSelector);
+        if (writeDatasource == null) {
+            return replicaName;
+        }
+        return writeDatasource.getName();
     }
 
     public PhysicsInstanceImpl getWriteDatasourceByReplicaName(String replicaName,
                                                                LoadBalanceStrategy balanceStrategy) {
         ReplicaDataSourceSelector selector = map.get(replicaName);
+        if (selector == null) {
+            return null;
+        }
         return getDatasource(balanceStrategy, selector,
                 selector.defaultWriteLoadBalanceStrategy, selector.getWriteDataSource());
     }
@@ -261,11 +293,17 @@ public enum ReplicaSelectorRuntime {
         return (PhysicsInstanceImpl) select;
     }
 
-    public PhysicsInstanceImpl getDatasourceByReplicaName(String replicaName,
-                                                          LoadBalanceStrategy balanceStrategy) {
+    public PhysicsInstanceImpl getDatasourceByReplicaName(String replicaName, boolean master, LoadBalanceStrategy balanceStrategy) {
         ReplicaDataSourceSelector selector = map.get(replicaName);
-        return getDatasource(balanceStrategy, selector,
-                selector.defaultReadLoadBalanceStrategy, selector.getDataSourceByLoadBalacneType());
+        if (selector == null) {
+            return null;
+        }
+        if (master) {
+            return getWriteDatasourceByReplicaName(replicaName, balanceStrategy);
+        }else {
+            return getDatasource(balanceStrategy, selector,
+                    selector.defaultReadLoadBalanceStrategy, selector.getDataSourceByLoadBalacneType());
+        }
     }
 
     public ReplicaDataSourceSelector getDataSourceSelector(String replicaName) {
@@ -279,7 +317,7 @@ public enum ReplicaSelectorRuntime {
         MycatConfig config = this.config;
         Objects.requireNonNull(config);
 
-        config.getReplicas().getReplicas().stream().filter(i -> replicaName.equals(i.getName())).findFirst().ifPresent(c -> {
+        config.getCluster().getClusters().stream().filter(i -> replicaName.equals(i.getName())).findFirst().ifPresent(c -> {
             ClusterRootConfig.HeartbeatConfig heartbeat = c.getHeartbeat();
             ReplicaDataSourceSelector selector = map.get(replicaName);
             PhysicsInstanceImpl physicsInstance = selector.datasourceMap.get(datasourceName);
@@ -314,4 +352,5 @@ public enum ReplicaSelectorRuntime {
         }
         return strategyProvider;
     }
+
 }

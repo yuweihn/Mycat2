@@ -5,7 +5,7 @@
     <parent>
         <artifactId>parent</artifactId>
         <groupId>io.mycat</groupId>
-        <version>0.4-SNAPSHOP</version>
+        <version>0.5-SNAPSHOP</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -13,15 +13,15 @@
 
     <dependencies>
         <dependency>
+            <groupId>io.mycat</groupId>
+            <artifactId>common</artifactId>
+            <version>0.5-SNAPSHOP</version>
+        </dependency>
+        <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <version>1.18.10</version>
             <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>log4j</groupId>
-            <artifactId>log4j</artifactId>
-            <version>1.2.17</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -44,6 +44,7 @@
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-core</artifactId>
             <version>1.21</version>
+            <scope>test</scope>
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.openjdk.jmh/jmh-generator-annprocess -->
         <dependency>
@@ -91,12 +92,12 @@
         <dependency>
             <groupId>io.mycat</groupId>
             <artifactId>config</artifactId>
-            <version>0.4-SNAPSHOP</version>
+            <version>0.5-SNAPSHOP</version>
         </dependency>
         <dependency>
             <groupId>io.mycat</groupId>
             <artifactId>hbt</artifactId>
-            <version>0.4-SNAPSHOP</version>
+            <version>0.5-SNAPSHOP</version>
         </dependency>
     </dependencies>
 

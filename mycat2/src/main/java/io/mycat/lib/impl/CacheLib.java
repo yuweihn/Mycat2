@@ -5,16 +5,15 @@ import io.mycat.beans.resultset.MycatResultSetResponse;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
+/**
+ * @author chen junwen
+ */
 public class CacheLib {
 
     final static ConcurrentHashMap<String, CacheFile> map = new ConcurrentHashMap<>();

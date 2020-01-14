@@ -4,17 +4,18 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.mycat</groupId>
   <artifactId>parent</artifactId>
-  <version>0.4-SNAPSHOP</version>
+  <version>0.5-SNAPSHOP</version>
+  <!--mvn versions:set -DnewVersion=0.5-SNAPSHOP-->
   <modules>
     <module>config</module>
     <module>proxy</module>
     <module>plug</module>
     <module>router</module>
-    <module>sqlparser</module>
+    <!--<module>sqlparser</module>-->
     <module>common</module>
     <module>datasource</module>
     <module>mycat2</module>
-    <module>grid</module>
+    <!--<module>grid</module>-->
     <module>replica</module>
       <module>pattern</module>
       <module>hbt</module>
@@ -39,6 +40,13 @@
   </scm>
 
   <dependencies>
+    <!-- https://mvnrepository.com/artifact/org.realityforge.org.jetbrains.annotations/org.jetbrains.annotations -->
+    <dependency>
+      <groupId>org.realityforge.org.jetbrains.annotations</groupId>
+      <artifactId>org.jetbrains.annotations</artifactId>
+      <version>1.2.0</version>
+    </dependency>
+
     <!-- https://mvnrepository.com/artifact/org.projectlombok/lombok -->
     <dependency>
       <groupId>org.projectlombok</groupId>
@@ -165,6 +173,7 @@
         <artifactId>maven-install-plugin</artifactId>
         <version>2.5.2</version>
       </plugin>
+
     </plugins>
   </build>
 </project>

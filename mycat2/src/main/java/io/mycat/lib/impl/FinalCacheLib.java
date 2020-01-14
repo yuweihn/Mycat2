@@ -1,15 +1,18 @@
 package io.mycat.lib.impl;
 
-import io.mycat.pattern.DynamicSQLMatcher;
 import io.mycat.MycatException;
 import io.mycat.beans.resultset.MycatResultSetResponse;
 import io.mycat.datasource.jdbc.resultset.TextResultSetResponse;
-import io.mycat.proxy.SQLExecuterWriter;
+import io.mycat.pattern.DynamicSQLMatcher;
+import io.mycat.SQLExecuterWriter;
 import io.mycat.proxy.session.MycatSession;
 
 import java.io.IOException;
 import java.util.HashMap;
 
+/**
+ * @author chen junwen
+ */
 public class FinalCacheLib {
     private static ResultSetCacheImpl resultSetCache;
     private final static HashMap<String, ResultSetCacheRecorder.Token> cache = new HashMap<>();
@@ -52,7 +55,7 @@ public class FinalCacheLib {
     private static Response getResponse(MycatResultSetResponse response) {
         return new Response() {
             @Override
-            public void apply(MycatSession session, DynamicSQLMatcher matcher) {
+            public void apply(MycatSession session) {
                 SQLExecuterWriter.writeToMycatSession(session, response);
             }
         };

@@ -8,7 +8,6 @@ import lombok.NonNull;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * @author Weiqing Xu
@@ -17,7 +16,7 @@ import java.util.Map;
 
 @Getter
 @AllArgsConstructor
-class SimpleColumnInfo {
+public class SimpleColumnInfo {
     @NonNull
     final String columnName;
     final int dataType;
@@ -29,15 +28,20 @@ class SimpleColumnInfo {
     @NonNull
     final List<ShardingInfo> shardingInfo = new ArrayList<>();
 
+    /**
+     * jamie 2019-12-11
+     */
     public enum ShardingType {
-        MAP_CLUSTER,
-        MAP_TABLE,
+        MAP_TARGET,
         MAP_DATABASE,
+        MAP_TABLE,
         NATURE_DATABASE_TABLE,
 
     }
 
-
+    /**
+     * jamie 2019-12-11
+     */
     @Data
     @AllArgsConstructor
     public static class ShardingInfo {

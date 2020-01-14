@@ -1,9 +1,6 @@
 package io.mycat.config;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
-import lombok.Getter;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -14,41 +11,49 @@ import java.util.Map;
 public class PatternRootConfig {
     private List<SchemaConfig> schemas = new ArrayList<>();
     private List<TextItemConfig> sqls = new ArrayList<>();
-    private List<HandlerToSQLs> handlers = new ArrayList<>();
+//    private List<HandlerToSQLs> handlers = new ArrayList<>();
     private Handler defaultHanlder;
+    private String transactionType;
+    private String defaultSchema;
 
-    @Getter
+
+    @Data
     public static class HandlerToSQLs {
         String name;
         List<String> tables = new ArrayList<>();
         List<String> sqls = new ArrayList<>();
-        final Map<String, String> tags = new HashMap<>();
+        List<String> hints = new ArrayList<>();
+        Map<String, String> tags;
         String type;
         String explain;
     }
 
-    @Getter
-    @AllArgsConstructor
+
+    @Data
+
     public static class TextItemConfig {
         String name;
         String sql;
         //handler
+        List<String> hints = new ArrayList<>();
         Map<String, String> tags = new HashMap<>();
-        String type;
+        String command;
         String explain;
+//        String transactionType;
     }
 
-    @Builder
+
     @Data
     public static class Handler {
-        final Map<String, String> tags = new HashMap<>();
-        final String type;
-        final String explain;
+         List<String> hints = new ArrayList<>();
+         Map<String, String> tags;
+         String command;
+         String explain;
+//         String transactionType;
     }
 
-    @Builder
+
     @Data
-    @AllArgsConstructor
     public static class SchemaConfig {
         String name;
         List<String> tables = new ArrayList<>();
@@ -57,6 +62,5 @@ public class PatternRootConfig {
     }
 
     public static void main(String[] args) {
-
     }
 }

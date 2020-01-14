@@ -22,12 +22,14 @@ import io.mycat.datasource.jdbc.resultset.JdbcRowBaseIteratorImpl;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 
+import javax.annotation.Nullable;
 import java.sql.*;
+import java.util.concurrent.ThreadFactory;
 
 /**
  * @author Junwen Chen
  **/
-public class DefaultConnection  {
+public class DefaultConnection  implements AutoCloseable{
 
   private static final MycatLogger LOGGER = MycatLoggerFactory
       .getLogger(DefaultConnection.class);
@@ -63,7 +65,7 @@ public class DefaultConnection  {
 
   public MycatUpdateResponse executeUpdate(String sql, boolean needGeneratedKeys) {
     try (Statement statement = connection.createStatement()) {
-      statement.execute(sql,
+      statement.executeUpdate(sql,
           needGeneratedKeys ? Statement.RETURN_GENERATED_KEYS : Statement.NO_GENERATED_KEYS);
       long lastInsertId = 0;
       if (needGeneratedKeys) {
@@ -84,7 +86,7 @@ public class DefaultConnection  {
   public JdbcRowBaseIteratorImpl executeQuery(String sql) {
     try {
       Statement statement = connection.createStatement();
-      return new JdbcRowBaseIteratorImpl(statement, statement.executeQuery(sql));
+      return new JdbcRowBaseIteratorImpl(statement, statement.executeQuery(sql),this);
     } catch (Exception e) {
       throw new MycatException(e);
     }
@@ -136,4 +138,5 @@ public class DefaultConnection  {
   public Connection getRawConnection() {
     return connection;
   }
+
 }

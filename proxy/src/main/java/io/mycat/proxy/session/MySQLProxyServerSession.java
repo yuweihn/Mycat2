@@ -1,6 +1,5 @@
 package io.mycat.proxy.session;
 
-import io.mycat.MycatException;
 import io.mycat.beans.mysql.MySQLErrorCode;
 import io.mycat.beans.mysql.packet.MySQLPacket;
 import io.mycat.beans.mysql.packet.MySQLPacketSplitter;
@@ -106,16 +105,16 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
      * 同步写入错误包,用于异常处理,一般错误包比较小,一次非阻塞写入就结束了,写入不完整尝试四次, 之后就会把mycat session关闭,简化错误处理
      */
     default void writeErrorEndPacketBySyncInProcessError(int packetId, int errorCode) {
-        setLastErrorCode(errorCode);
-        switchMySQLServerWriteHandler();
-        this.setResponseFinished(ProcessState.DONE);
-        byte[] bytes = MySQLPacketUtil
-                .generateError(errorCode, getLastMessage(),
-                        this.getCapabilities());
-        byte[] bytes1 = MySQLPacketUtil.generateMySQLPacket(packetId, bytes);
-        ByteBuffer message = ByteBuffer.wrap(bytes1);
-        int counter = 0;
         try {
+            setLastErrorCode(errorCode);
+            switchMySQLServerWriteHandler();
+            this.setResponseFinished(ProcessState.DONE);
+            byte[] bytes = MySQLPacketUtil
+                    .generateError(errorCode, getLastMessage(),
+                            this.getCapabilities());
+            byte[] bytes1 = MySQLPacketUtil.generateMySQLPacket(packetId, bytes);
+            ByteBuffer message = ByteBuffer.wrap(bytes1);
+            int counter = 0;
             SocketChannel channel = channel();
             if (channel.isOpen()) {
                 while (message.hasRemaining() && counter < 4) {
@@ -128,6 +127,8 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
             }
         } catch (IOException e) {
             LOGGER.error("", e);
+        }finally {
+            close(false,"writeErrorEndPacketBySyncInProcessError");
         }
     }
 
@@ -174,7 +175,7 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
      */
     static void writeToChannel(MySQLProxyServerSession session) throws IOException {
         if (session.getIOThread() != Thread.currentThread()) {
-            throw new MycatException("");
+            throw new AssertionError();
         }
         Queue<ByteBuffer> byteBuffers = session.writeQueue();
         if (writeMySQLPacket(session, byteBuffers)) {
@@ -185,11 +186,11 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
         if (!lastPacket) {
             session.change2WriteOpts();
         } else {
-            MY_SQL_PROXY_SERVER_SESSION_LOGGER.info("------------end--------------:" + session.sessionId());
             byteBuffers.remove();
             while (writeMySQLPacket(session, byteBuffers)) {
 
             }
+            MY_SQL_PROXY_SERVER_SESSION_LOGGER.info("------------has response--------------:" + session.sessionId());
             byteBuffers.clear();
             session.writeFinished(session);
             return;
@@ -208,8 +209,6 @@ public interface MySQLProxyServerSession<T extends Session<T>> extends MySQLServ
             ByteBuffer first = byteBuffers.peek();
 
             if (END_PACKET == first) {
-
-                MY_SQL_PROXY_SERVER_SESSION_LOGGER.info("------------end--------------:" + session.sessionId());
                 break;
             }
 

@@ -19,9 +19,9 @@ import com.alibaba.druid.sql.parser.SQLParserUtils;
 import io.mycat.config.DatasourceRootConfig;
 import io.mycat.datasource.jdbc.DatasourceProvider;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
+
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import javax.sql.DataSource;
 /**
  * @author Junwen Chen
  **/
@@ -33,7 +33,6 @@ public class DruidDatasourceProvider implements DatasourceProvider {
     String password = config.getPassword();
     String url = config.getUrl();
     String dbType = config.getDbType();
-    String initDb = config.getInitDb();
     int maxRetryCount = config.getMaxRetryCount();
     String initSQL = config.getInitSQL();
 
@@ -60,9 +59,6 @@ public class DruidDatasourceProvider implements DatasourceProvider {
           SQLParserUtils.createSQLStatementParser(initSQL, dbType).parseStatementList().stream()
               .map(Object::toString).collect(
               Collectors.toList()));
-    }
-    if (initDb != null) {
-
     }
     if (jdbcDriver != null) {
       datasource.setDriverClassName(jdbcDriver);
