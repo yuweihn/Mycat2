@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <chen junwen>
+ * Copyright (C) <2019>  <chen junwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -12,26 +12,29 @@
  * You should have received a copy of the GNU General Public License along with this program.  If
  * not, see <http://www.gnu.org/licenses/>.
  */
-package io.mycat.replica;
 
-public enum InstanceType {
-  READ(false, true),
-  WRITE(true, false),
-  READ_WRITE(true, true);
+package io.mycat.plug.loadBalance;
 
-  private boolean writeType;
-  private boolean readType;
 
-  InstanceType(boolean writeType, boolean readType) {
-    this.writeType = writeType;
-    this.readType = readType;
-  }
+import java.util.List;
 
-  public boolean isWriteType() {
-    return writeType;
-  }
-
-  public boolean isReadType() {
-    return readType;
+/**
+ * BalanceRunOnReplica
+ */
+public enum BalanceRunOnReplica implements LoadBalanceStrategy {
+  INSTANCE {
+    @Override
+    public LoadBalanceElement select(LoadBalanceInfo info, List<LoadBalanceElement> entityList) {
+      if (null == entityList || entityList.isEmpty()) {
+        return null;
+      }
+      for (LoadBalanceElement loadBalanceElement : entityList) {
+        if (loadBalanceElement.asSelectRead()&&!loadBalanceElement.isMaster()) {
+          return loadBalanceElement;
+        }
+      }
+      return null;
+    }
   }
 }
+
