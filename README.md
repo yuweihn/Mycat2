@@ -13,6 +13,14 @@ This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 Inter
 
 项目地址:<https://github.com/MyCATApache/Mycat2>
 
+
+
+## 正在进行的任务
+
+正在实现loaddata与预处理
+
+
+
 ## 特点
 
 1.proxy透传报文,使用buffer大小与结果集无关
@@ -20,6 +28,12 @@ This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 Inter
 2.proxy透传事务,支持XA事务,jdbc本地事务
 
 3.支持分布式查询
+
+
+
+## 相比于1.6
+
+支持各种join查询,子查询,使用优化器,努力把运算变成每个节点的SQL,
 
 ## 限制
 
@@ -638,3 +652,35 @@ plug:
 具体参考以下链接
 
 https://github.com/MyCATApache/Mycat2/blob/master/doc/16-load-balancing-algorithm.md
+
+
+
+常见优化常见
+
+```sql
+USE db1;
+
+EXPLAIN SELECT id  FROM travelrecord WHERE id =1;
+
+MycatTransientSQLTableScan(sql=[SELECT `id`  FROM `db1`.`travelrecord`  WHERE `id` = 1])
+
+
+EXPLAIN SELECT COUNT(*)  FROM travelrecord WHERE id >=0;
+
+LogicalAggregate(group=[{}], EXPR$0=[COUNT()])
+  LogicalUnion(all=[true])
+    MycatTransientSQLTableScan(sql=[SELECT COUNT(*)  FROM `db2`.`travelrecord`  WHERE `id` >= 0])
+    MycatTransientSQLTableScan(sql=[SELECT COUNT(*)  FROM (SELECT *  FROM `db1`.`travelrecord`  WHERE `id` >= 0  UNION ALL  SELECT *  FROM `db1`.`travelrecord2`  WHERE `id` >= 0  UNION ALL  SELECT *  FROM `db1`.`travelrecord3`  WHERE `id` >= 0) AS `t2`])
+    
+
+EXPLAIN SELECT COUNT(*)  FROM travelrecord WHERE id >=0;
+
+LogicalProject(sm=[$0], EXPR$1=[CASE(=($2, 0), null:BIGINT, $1)], EXPR$2=[/(CAST(CASE(=($2, 0), null:BIGINT, $1)):DOUBLE, $2)])
+  LogicalAggregate(group=[{}], sm=[COUNT()], EXPR$1=[$SUM0($0)], agg#2=[COUNT($0)])
+    LogicalUnion(all=[true])
+      MycatTransientSQLTableScan(sql=[SELECT `id`  FROM `db2`.`travelrecord`  WHERE `id` >= 0])
+      MycatTransientSQLTableScan(sql=[SELECT `id`  FROM `db1`.`travelrecord`  WHERE `id` >= 0  UNION ALL  SELECT `id`  FROM `db1`.`travelrecord2`  WHERE `id` >= 0  UNION ALL  SELECT `id`  FROM `db1`.`travelrecord3`  WHERE `id` >= 0])
+
+
+```
+

@@ -14,7 +14,7 @@ metadata: #元数据 升级计划:通过创建表的sql语句提供该信息免�
                       {targetName: defaultDs ,schemaName: db1, tableName: travelrecord2},
                       {targetName: defaultDs ,schemaName: db1, tableName: travelrecord3},
                       {targetName: defaultDs2 ,schemaName: db2, tableName: travelrecord}] #9999999999
-        address1:
+        address:
           columns:
             - columnName: id
               shardingType: MAP_TARGET #动态分片类型,通过任意值映射分片目标,目标库,目标表,要求查询条件要求包列信息,否则可能路由失败,如果配置了dataNode,则会使用dataNode校验
@@ -28,7 +28,8 @@ metadata: #元数据 升级计划:通过创建表的sql语句提供该信息免�
               shardingType: MAP_TABLE
               function: { clazz: io.mycat.router.function.PartitionConstant , properties: {defaultNode: '0'}}
               map: [address]
-          createTableSQL: CREATE TABLE `address` (`id` int(11) NOT NULL,`addressname` varchar(20) DEFAULT NULL,PRIMARY KEY (`id`))
+          createTableSQL: CREATE TABLE `address1` (`id` int(11) NOT NULL,`addressname` varchar(20) DEFAULT NULL,PRIMARY KEY (`id`))
+          dataNodes: [{targetName: defaultDs ,schemaName: db1, tableName: address}]
 #        comany: #普通表
 #          columns:
 #            - columnName: id

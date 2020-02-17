@@ -14,6 +14,9 @@
  */
 package io.mycat.calcite;
 
+
+import io.mycat.beans.mycat.MycatRowMetaData;
+import io.mycat.calcite.metadata.SimpleColumnInfo;
 import io.mycat.util.MycatRowMetaDataImpl;
 import io.mycat.util.SQL2ResultSetUtil;
 import org.apache.calcite.adapter.java.JavaTypeFactory;
@@ -21,6 +24,7 @@ import org.apache.calcite.avatica.ColumnMetaData;
 import org.apache.calcite.avatica.SqlType;
 import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.rel.type.*;
+import org.apache.calcite.sql.SqlCollation;
 import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.Pair;
@@ -28,6 +32,7 @@ import org.apache.calcite.util.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.Charset;
 import java.sql.Date;
 import java.sql.*;
 import java.util.*;
@@ -61,7 +66,7 @@ public class CalciteConvertors {
                         break;
                 }
                 boolean nullable = resultSet.getInt(11) != DatabaseMetaData.columnNoNulls;
-                res.add(new SimpleColumnInfo(columnName.toLowerCase(), dataType, precision, scale, typeString, nullable));
+                res.add(new SimpleColumnInfo(columnName.toLowerCase(), dataType, precision, scale, JDBCType.valueOf(typeString), nullable));
             }
             return res;
         } catch (SQLException e) {
@@ -74,21 +79,11 @@ public class CalciteConvertors {
         final RelDataTypeFactory typeFactory = new SqlTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
         final RelDataTypeFactory.Builder fieldInfo = typeFactory.builder();
         for (SimpleColumnInfo info : infos) {
-            RelDataType relDataType = sqlType(typeFactory, info.dataType, info.precision, info.scale, info.typeString);
-            fieldInfo.add(info.columnName, relDataType).nullable(info.nullable);
+            RelDataType relDataType = sqlType(typeFactory, info.getDataType(), info.getPrecision(), info.getScale(), info.getJdbcType().getName());
+            fieldInfo.add(info.getColumnName(), relDataType).nullable(info.isNullable());
         }
         return RelDataTypeImpl.proto(fieldInfo.build());
     }
-
-    public static RowSignature rowSignature(List<SimpleColumnInfo> infos) {
-        Objects.requireNonNull(infos);
-        RowSignature.Builder builder = RowSignature.builder();
-        for (SimpleColumnInfo info : infos) {
-            builder.add(info.columnName, JDBCType.valueOf(info.dataType));
-        }
-        return builder.build();
-    }
-
 
     private static RelDataType sqlType(RelDataTypeFactory typeFactory, int dataType, int precision, int scale, String typeString) {
         // Fall back to ANY if type is unknown
@@ -163,7 +158,7 @@ public class CalciteConvertors {
         return null;
     }
 
-    static List<SimpleColumnInfo> getColumnInfo(String sql) {
+   public static List<SimpleColumnInfo> getColumnInfo(String sql) {
         MycatRowMetaDataImpl mycatRowMetaData = SQL2ResultSetUtil.getMycatRowMetaData(sql);
         int columnCount = mycatRowMetaData.getColumnCount();
         List<SimpleColumnInfo> list = new ArrayList<>();
@@ -172,7 +167,7 @@ public class CalciteConvertors {
             int columnType = mycatRowMetaData.getColumnType(i);
             int precision = mycatRowMetaData.getPrecision(i);
             int scale = mycatRowMetaData.getScale(i);
-            String jdbcType = JDBCType.valueOf(columnType).getName();
+            JDBCType jdbcType = JDBCType.valueOf(columnType);
             list.add(new SimpleColumnInfo(columnName, columnType, precision, scale, jdbcType, mycatRowMetaData.isNull(i)));
         }
         return list;
@@ -239,6 +234,11 @@ public class CalciteConvertors {
         }).collect(Collectors.toList());
     }
 
+    public static MycatRowMetaData getMycatRowMetaData(RelDataType rowType) {
+        return new CalciteRowMetaData(rowType.getFieldList());
+
+    }
+
     static class DateConvertor {
         private static Timestamp shift(Timestamp v) {
             if (v == null) {
@@ -266,5 +266,29 @@ public class CalciteConvertors {
             int offset = TimeZone.getDefault().getOffset(time);
             return new Date(time + offset);
         }
+    }
+
+    public static RelDataType getRelDataType(final List<SimpleColumnInfo> columnInfos, final RelDataTypeFactory factory) {
+        final RelDataTypeFactory.Builder builder = new RelDataTypeFactory.Builder(factory);
+        for (SimpleColumnInfo columnInfo : columnInfos) {
+            final JDBCType columnType = columnInfo.getJdbcType();
+            final RelDataType type;
+            if (columnType == JDBCType.VARCHAR) {
+                type = factory.createTypeWithCharsetAndCollation(
+                        factory.createSqlType(SqlTypeName.VARCHAR),
+                        Charset.defaultCharset(),
+                        SqlCollation.IMPLICIT);
+            } else if (columnType == JDBCType.LONGVARBINARY) {
+                type = factory.createSqlType(SqlTypeName.VARBINARY);
+            } else {
+                SqlTypeName sqlTypeName = SqlTypeName.getNameForJdbcType(columnType.getVendorTypeNumber());
+                if (sqlTypeName == null) {
+                    throw new UnsupportedOperationException();
+                }
+                type = factory.createSqlType(sqlTypeName);
+            }
+            builder.add(columnInfo.getColumnName(),  factory.createTypeWithNullability(type, columnInfo.isNullable()));
+        }
+        return builder.build();
     }
 }

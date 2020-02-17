@@ -22,10 +22,12 @@ import io.mycat.bindThread.BindThreadCallback;
 import io.mycat.bindThread.BindThreadKey;
 import io.mycat.config.ClusterRootConfig;
 import io.mycat.config.DatasourceRootConfig;
-import io.mycat.datasource.jdbc.datasource.*;
+import io.mycat.datasource.jdbc.datasource.DefaultConnection;
+import io.mycat.datasource.jdbc.datasource.JTATransactionSessionImpl;
+import io.mycat.datasource.jdbc.datasource.JdbcConnectionManager;
+import io.mycat.datasource.jdbc.datasource.TransactionSession;
 import io.mycat.datasource.jdbc.datasourceProvider.AtomikosDatasourceProvider;
 import io.mycat.datasource.jdbc.resultset.JdbcRowBaseIteratorImpl;
-import io.mycat.datasource.jdbc.thread.GThread;
 import io.mycat.datasource.jdbc.thread.GThreadPool;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
@@ -68,10 +70,6 @@ public enum JdbcRuntime {
 
     public void closeConnection(DefaultConnection connection) {
         connectionManager.closeConnection(connection);
-    }
-
-    public boolean isJTA() {
-        return connectionManager.isJTA();
     }
 
     public void load(MycatConfig config) {
@@ -149,12 +147,8 @@ public enum JdbcRuntime {
     }
 
 
-    public TransactionSession createTransactionSession(GThread gThread) {
-        if (isJTA()) {
-            return new JTATransactionSessionImpl(datasourceProvider.createUserTransaction(), gThread);
-        } else {
-            return new LocalTransactionSessionImpl(gThread);
-        }
+    public TransactionSession createTransactionSession() {
+        return new JTATransactionSessionImpl(datasourceProvider.createUserTransaction());
     }
 
     public DatasourceProvider getDatasourceProvider() {

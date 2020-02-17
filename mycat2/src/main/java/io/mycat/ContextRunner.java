@@ -19,12 +19,12 @@ import io.mycat.beans.mysql.MySQLFieldsType;
 import io.mycat.beans.mysql.MySQLIsolation;
 import io.mycat.beans.resultset.MycatResponse;
 import io.mycat.beans.resultset.MycatResultSet;
-import io.mycat.calcite.CalciteEnvironment;
-import io.mycat.calcite.MetadataManager;
+import io.mycat.calcite.MycatCalciteContext;
+import io.mycat.calcite.metadata.MetadataManager;
+import io.mycat.calcite.prepare.MycatPlan;
 import io.mycat.client.Context;
 import io.mycat.client.MycatClient;
 import io.mycat.datasource.jdbc.datasource.TransactionSessionUtil;
-import io.mycat.datasource.jdbc.resultset.JdbcRowBaseIteratorImpl;
 import io.mycat.datasource.jdbc.resultset.TextResultSetResponse;
 import io.mycat.lib.impl.JdbcLib;
 import io.mycat.logTip.MycatLogger;
@@ -32,29 +32,13 @@ import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.ResultSetProvider;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.replica.ReplicaSelectorRuntime;
+import io.mycat.sqldb.SqldbRepl;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import lombok.ToString;
-import org.apache.calcite.config.Lex;
-import org.apache.calcite.jdbc.CalciteConnection;
-import org.apache.calcite.plan.RelOptUtil;
-import org.apache.calcite.plan.hep.HepPlanner;
-import org.apache.calcite.plan.hep.HepProgram;
-import org.apache.calcite.plan.hep.HepProgramBuilder;
-import org.apache.calcite.prepare.PlannerImpl;
-import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.rel.rules.CalcSplitRule;
-import org.apache.calcite.rel.rules.FilterTableScanRule;
-import org.apache.calcite.rel.rules.ProjectTableScanRule;
-import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.parser.SqlParser;
-import org.apache.calcite.tools.FrameworkConfig;
-import org.apache.calcite.tools.Frameworks;
-import org.apache.calcite.tools.RelRunner;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.charset.Charset;
-import java.sql.PreparedStatement;
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -134,7 +118,7 @@ public class ContextRunner {
         @Override
         public Runnable apply(MycatClient client, Context context, MycatSession session) {
             String errorMessage = context.getVariable("errorMessage", "may be unknown command");
-            int errorCode = Integer.parseInt(context.getVariable("errorCode","-1"));
+            int errorCode = Integer.parseInt(context.getVariable("errorCode", "-1"));
             return new Runnable() {
                 @Override
                 public void run() {
@@ -148,9 +132,9 @@ public class ContextRunner {
         @Override
         public Runnable explain(MycatClient client, Context context, MycatSession session) {
             String errorMessage = context.getVariable("errorMessage", "may be unknown command");
-            int errorCode = Integer.parseInt(context.getVariable("errorCode","-1"));
+            int errorCode = Integer.parseInt(context.getVariable("errorCode", "-1"));
             return () -> {
-                writePlan(session, MessageFormat.format("errorMessage:{0} errorCode:{1}",errorMessage,errorCode));
+                writePlan(session, MessageFormat.format("errorMessage:{0} errorCode:{1}", errorMessage, errorCode));
             };
         }
     };
@@ -158,7 +142,7 @@ public class ContextRunner {
 
     static {
         COMMANDS = new ConcurrentHashMap<>();
-        COMMANDS.put(ERROR,ERROR_COMMAND);
+        COMMANDS.put(ERROR, ERROR_COMMAND);
         /**
          * 参数:statement
          */
@@ -187,13 +171,13 @@ public class ContextRunner {
                 return () -> block(session, mycat -> {
                     String defaultSchema = client.getDefaultSchema();
                     String explain = context.getExplain().trim();
-                    if (explain.endsWith(";")){
-                        explain = explain.substring(0,explain.length()-1);
+                    if (explain.endsWith(";")) {
+                        explain = explain.substring(0, explain.length() - 1);
                     }
-                    CalciteConnection connection = CalciteEnvironment.INSTANCE.getConnection(MetadataManager.INSTANCE);
-                    connection.setSchema(defaultSchema);
                     LOGGER.debug("session id:{} action: plan {}", session.sessionId(), explain);
-                    SQLExecuterWriter.executeQuery(mycat, connection, explain);
+                    MycatPlan query = SqldbRepl.INSTANCE.query(defaultSchema, explain);
+                    TextResultSetResponse connection = new TextResultSetResponse(query.run(MycatCalciteContext.INSTANCE.create()).get());
+                    SQLExecuterWriter.writeToMycatSession(mycat, new MycatResponse[]{connection});
                     TransactionSessionUtil.afterDoAction();//移除已经关闭的连接,
                 });
             }
@@ -205,74 +189,93 @@ public class ContextRunner {
                 String command = context.getExplain();
 
                 return () -> block(session, mycat -> {
-                    CalciteConnection connection = CalciteEnvironment.INSTANCE.getConnection(MetadataManager.INSTANCE);
-
-                    connection.setSchema(defaultSchema);
-
-                    final FrameworkConfig config = Frameworks.newConfigBuilder().defaultSchema(connection.getRootSchema())
-                            .parserConfig(SqlParser.configBuilder().setLex(Lex.MYSQL).setCaseSensitive(false).build())
-                            .build();
-                    PlannerImpl planner = new PlannerImpl(config);//执行计划需要进行解析，验证，转换三步
-                    SqlNode parse = planner.parse(command);
-                    SqlNode validate = planner.validate(parse);
-                    RelNode convert = planner.convert(validate);
-
-                    final HepProgram hepProgram = new HepProgramBuilder()
-                            .addRuleInstance(CalcSplitRule.INSTANCE)
-                            .addRuleInstance(FilterTableScanRule.INSTANCE)
-                            .addRuleInstance(FilterTableScanRule.INTERPRETER)
-                            .addRuleInstance(ProjectTableScanRule.INSTANCE)
-                            .addRuleInstance(ProjectTableScanRule.INTERPRETER).build();
-                    final HepPlanner planner2 = new HepPlanner(hepProgram);
-                    RelOptUtil.registerDefaultRules(planner2,true,true);
-                    planner2.setRoot(convert);
-                    RelNode table = planner2.findBestExp();
-                    connection.close();
-                    TransactionSessionUtil.afterDoAction();//移除已经关闭的连接,
-                    writePlan(session,MetadataManager.INSTANCE.explain(((table))));
-
+                    MycatPlan query = SqldbRepl.INSTANCE.query(defaultSchema, command);
+                    List<String> explain = query.explain();
+                    writePlan(session, explain);
                 });
             }
         });
+//
+//        /**
+//         * 参数:接收的sql
+//         */
+//        COMMANDS.put(EXECUTE_PLAN, new Command() {
+//            @Override
+//            public Runnable apply(MycatClient client, Context context, MycatSession session) {
+//                return () -> {
+//                    block(session, mycat -> {
+//                        try (CalciteConnection connection = CalciteEnvironment.INSTANCE.getConnection(MetadataManager.INSTANCE);) {
+//                            connection.setSchema(client.getDefaultSchema());
+//                            final FrameworkConfig config = Frameworks.newConfigBuilder()
+//                                    .defaultSchema(connection.getRootSchema()).build();
+//                            DesRelNodeHandler desRelNodeHandler = new DesRelNodeHandler(config);
+//                            RelRunner runner = connection.unwrap(RelRunner.class);
+//                            String explain = context.getExplain();
+//                            PreparedStatement prepare = runner.prepare(desRelNodeHandler.handle(explain));
+//                            LOGGER.debug("session id:{} action: plan {}", session.sessionId(), explain);
+//                            writeToMycatSession(session, new MycatResponse[]{new TextResultSetResponse(new JdbcRowBaseIteratorImpl(prepare, prepare.executeQuery()))});
+//                            TransactionSessionUtil.afterDoAction();
+//                        }
+//                    });
+//                };
+//            }
+//
+//            @Override
+//            public Runnable explain(MycatClient client, Context context, MycatSession session) {
+//                return () -> {
+//                    block(session, mycat -> {
+//                        try (CalciteConnection connection = CalciteEnvironment.INSTANCE.getConnection(MetadataManager.INSTANCE);) {
+//                            connection.setSchema(client.getDefaultSchema());
+//                            final FrameworkConfig config = Frameworks.newConfigBuilder().defaultSchema(connection.getRootSchema()).build();
+//                            writePlan(session, RelOptUtil.toString(new DesRelNodeHandler(config).handle(context.getExplain())));
+//                            TransactionSessionUtil.afterDoAction();
+//                        }
+//                    });
+//                    return;
+//                };
+//            }
+//        });
+
         /**
          * 参数:接收的sql
          */
-        COMMANDS.put(EXECUTE_PLAN, new Command() {
-            @Override
-            public Runnable apply(MycatClient client, Context context, MycatSession session) {
-                return () -> {
-                    block(session, mycat -> {
-                        try (CalciteConnection connection = CalciteEnvironment.INSTANCE.getConnection(MetadataManager.INSTANCE);) {
-                            connection.setSchema(client.getDefaultSchema());
-                            final FrameworkConfig config = Frameworks.newConfigBuilder()
-                                    .defaultSchema(connection.getRootSchema()).build();
-                            DesRelNodeHandler desRelNodeHandler = new DesRelNodeHandler(config);
-                            RelRunner runner = connection.unwrap(RelRunner.class);
-                            String explain = context.getExplain();
-                            PreparedStatement prepare = runner.prepare(desRelNodeHandler.handle(explain));
-                            LOGGER.debug("session id:{} action: plan {}", session.sessionId(), explain);
-                            writeToMycatSession(session, new MycatResponse[]{new TextResultSetResponse(new JdbcRowBaseIteratorImpl(prepare, prepare.executeQuery(), connection))});
-                            TransactionSessionUtil.afterDoAction();
-                        }
-                    });
-                };
-            }
+//        COMMANDS.put(EXECUTE_PLAN, new Command() {
+//            @Override
+//            public Runnable apply(MycatClient client, Context context, MycatSession session) {
+//                return () -> {
+//                    block(session, mycat -> {
+//                        try (CalciteConnection connection = CalciteEnvironment.INSTANCE.getConnection(MetadataManager.INSTANCE);) {
+//                            connection.setSchema(client.getDefaultSchema());
+//                            final FrameworkConfig config = Frameworks.newConfigBuilder()
+//                                    .defaultSchema(connection.getRootSchema()).build();
+//                            DesRelNodeHandler desRelNodeHandler = new DesRelNodeHandler(config);
+//                            RelRunner runner = connection.unwrap(RelRunner.class);
+//                            String explain = context.getExplain();
+//                            PreparedStatement prepare = runner.prepare(desRelNodeHandler.handle(explain));
+//                            LOGGER.debug("session id:{} action: plan {}", session.sessionId(), explain);
+//                            writeToMycatSession(session, new MycatResponse[]{new TextResultSetResponse(new JdbcRowBaseIteratorImpl(prepare, prepare.executeQuery()))});
+//                            TransactionSessionUtil.afterDoAction();
+//                        }
+//                    });
+//                };
+//            }
+//
+//            @Override
+//            public Runnable explain(MycatClient client, Context context, MycatSession session) {
+//                return () -> {
+//                    block(session, mycat -> {
+//                        try (CalciteConnection connection = CalciteEnvironment.INSTANCE.getConnection(MetadataManager.INSTANCE);) {
+//                            connection.setSchema(client.getDefaultSchema());
+//                            final FrameworkConfig config = Frameworks.newConfigBuilder().defaultSchema(connection.getRootSchema()).build();
+//                            writePlan(session, RelOptUtil.toString(new DesRelNodeHandler(config).handle(context.getExplain())));
+//                            TransactionSessionUtil.afterDoAction();
+//                        }
+//                    });
+//                    return;
+//                };
+//            }
+//        });
 
-            @Override
-            public Runnable explain(MycatClient client, Context context, MycatSession session) {
-                return () -> {
-                    block(session, mycat -> {
-                        try (CalciteConnection connection = CalciteEnvironment.INSTANCE.getConnection(MetadataManager.INSTANCE);) {
-                            connection.setSchema(client.getDefaultSchema());
-                            final FrameworkConfig config = Frameworks.newConfigBuilder().defaultSchema(connection.getRootSchema()).build();
-                            writePlan(session, RelOptUtil.toString(new DesRelNodeHandler(config).handle(context.getExplain())));
-                            TransactionSessionUtil.afterDoAction();
-                        }
-                    });
-                    return;
-                };
-            }
-        });
         /**
          * 参数:SCHEMA_NAME
          */
@@ -532,7 +535,7 @@ public class ContextRunner {
                     String[] strings = checkThenGetOne(tasks);
                     return () -> {
                         MySQLTaskUtil.proxyBackendByTargetName(session, strings[0], strings[1],
-                                MySQLTaskUtil.TransactionSyncType.create(session.getAutoCommit(),session.isInTransaction()),
+                                MySQLTaskUtil.TransactionSyncType.create(session.getAutoCommit(), session.isInTransaction()),
                                 session.getIsolation(), details.executeType.isMaster(), balance);
                     };
                 } else {
@@ -540,7 +543,7 @@ public class ContextRunner {
                         block(session, mycat -> {
                                     if (needStartTransaction) {
                                         LOGGER.debug("session id:{} startTransaction", session.sessionId());
-                                       // TransactionSessionUtil.reset();
+                                        // TransactionSessionUtil.reset();
                                         TransactionSessionUtil.setIsolation(isolation.getJdbcValue());
                                         TransactionSessionUtil.begin();
                                         session.setInTranscation(true);
@@ -589,7 +592,7 @@ public class ContextRunner {
             String balance = context.getVariable(BALANCE);
             ExecuteType executeType = ExecuteType.valueOf(context.getVariable(EXECUTE_TYPE, ExecuteType.DEFAULT.name()));
             String replicaName = ReplicaSelectorRuntime.INSTANCE.getDatasourceNameByReplicaName(
-                   Objects.requireNonNull(context.getVariable(TARGETS),"can not get "+TARGETS+" of "+context.getName()),
+                    Objects.requireNonNull(context.getVariable(TARGETS), "can not get " + TARGETS + " of " + context.getName()),
                     needStartTransaction, balance);
             details = new Details(executeType, Collections.singletonMap(replicaName, Collections.singletonList(explain)), balance);
         }
@@ -688,9 +691,9 @@ public class ContextRunner {
 //                        .collect(Collectors.groupingBy(k -> k.getKey(), Collectors.flatMapping(i -> i.getValue().stream(),Collectors.toList())));JDK9
                 Map<String, List<String>> collect = stream.flatMap(i -> i.entrySet().stream())
                         .collect(Collectors.groupingBy(k -> k.getKey(), Collectors.mapping(i -> i.getValue(), Collectors.reducing(new ArrayList<>(), (list, list2) -> {
-                    list.addAll(list2);
-                    return list;
-                }))));
+                            list.addAll(list2);
+                            return list;
+                        }))));
                 mid = collect;
                 break;
             case QUERY:
