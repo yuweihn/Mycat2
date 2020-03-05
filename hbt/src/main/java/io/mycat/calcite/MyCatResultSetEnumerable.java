@@ -16,7 +16,6 @@ package io.mycat.calcite;
 
 import io.mycat.QueryBackendTask;
 import io.mycat.api.collector.RowBaseIterator;
-import io.mycat.datasource.jdbc.datasource.DefaultConnection;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.AbstractEnumerable;
 import org.apache.calcite.linq4j.Enumerator;
@@ -44,7 +43,7 @@ public class MyCatResultSetEnumerable<T> extends AbstractEnumerable<T> {
         this.backStoreList = res;
         this.CANCEL_FLAG = DataContext.Variable.CANCEL_FLAG.get(dataContext);
         for (QueryBackendTask sql : res) {
-            LOGGER.info("prepare query:{}", sql);
+            LOGGER.info("prepare querySQL:{}", sql);
         }
     }
 
@@ -58,9 +57,8 @@ public class MyCatResultSetEnumerable<T> extends AbstractEnumerable<T> {
 
         ArrayList<RowBaseIterator> iterators = new ArrayList<>(length);
         for (QueryBackendTask endTableInfo : backStoreList) {
-            DefaultConnection session = dataContext.getTarget(endTableInfo);
-            iterators.add(session.executeQuery(endTableInfo.getSql()));
-            LOGGER.info("runing query:{}", endTableInfo.getSql());
+            iterators.add(dataContext.getUponDBContext().query(endTableInfo.getTargetName(), endTableInfo.getSql()));
+            LOGGER.info("runing querySQL:{}", endTableInfo.getSql());
         }
 
         return new Enumerator<T>() {

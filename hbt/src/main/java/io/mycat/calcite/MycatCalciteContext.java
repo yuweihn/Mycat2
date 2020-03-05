@@ -15,25 +15,27 @@
 package io.mycat.calcite;
 
 import com.google.common.collect.ImmutableList;
-import io.mycat.calcite.logic.MycatLogicTable;
-import io.mycat.calcite.metadata.MetadataManager;
+import io.mycat.hbt.RelNodeConvertor;
+import io.mycat.hbt.TextConvertor;
+import io.mycat.hbt.ast.base.Schema;
+import io.mycat.upondb.UponDBContext;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
 import org.apache.calcite.config.CalciteConnectionProperty;
 import org.apache.calcite.config.Lex;
-import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.jdbc.Driver;
 import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
 import org.apache.calcite.plan.Context;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptSchema;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.RelWriter;
+import org.apache.calcite.rel.externalize.RelWriterImpl;
 import org.apache.calcite.rel.type.DelegatingTypeSystem;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rex.*;
-import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.schema.impl.AbstractSchema;
 import org.apache.calcite.sql.*;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlAbstractParserImpl;
@@ -52,12 +54,13 @@ import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.RelBuilder;
 import org.apache.calcite.tools.RelBuilderFactory;
 
+import java.io.PrintWriter;
 import java.io.Reader;
+import java.io.StringWriter;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author Junwen Chen
@@ -87,27 +90,13 @@ public enum MycatCalciteContext implements Context {
             .withTrimUnusedFields(true)
             .withRelBuilderFactory(relBuilderFactory).build();
 
-    volatile SchemaPlus ROOT_SCHEMA;
 
-    public void flash() {
-        SchemaPlus plus = CalciteSchema.createRootSchema(true).plus();
-        for (Map.Entry<String, ConcurrentHashMap<String, MetadataManager.LogicTable>> stringConcurrentHashMapEntry : MetadataManager.INSTANCE.getLogicTableMap().entrySet()) {
-            SchemaPlus schemaPlus = plus.add(stringConcurrentHashMapEntry.getKey(), new AbstractSchema());
-            for (Map.Entry<String, MetadataManager.LogicTable> entry : stringConcurrentHashMapEntry.getValue().entrySet()) {
-                MetadataManager.LogicTable logicTable = entry.getValue();
-                MycatLogicTable mycatLogicTable = new MycatLogicTable(logicTable);
-                schemaPlus.add(entry.getKey(), mycatLogicTable);
-            }
-        }
-        ROOT_SCHEMA = plus;
-    }
 
-    public MycatCalciteDataContext create() {
-        return new MycatCalciteDataContext(ROOT_SCHEMA);
+    public MycatCalciteDataContext create(UponDBContext uponDBContext) {
+        return new MycatCalciteDataContext(uponDBContext);
     }
 
     MycatCalciteContext() {
-
         Frameworks.ConfigBuilder configBuilder = Frameworks.newConfigBuilder();
         configBuilder.parserConfig(SQL_PARSER_CONFIG);
         configBuilder.typeSystem(TypeSystem);
@@ -136,7 +125,6 @@ public enum MycatCalciteContext implements Context {
         map.put(MycatTypeSystem.class, TypeSystem);
         map.put(SqlParser.Config.class, SQL_PARSER_CONFIG);
         map.put(RexExecutor.class, RexUtil.EXECUTOR);
-        flash();
     }
 
     private CalciteConnectionConfig connectionConfig() {
@@ -173,6 +161,16 @@ public enum MycatCalciteContext implements Context {
 
     public SqlAbstractParserImpl createSqlParser(Reader reader) {
         return config.getParserConfig().parserFactory().getParser(reader);
+    }
+
+    public String convertToHBTText(RelNode relNode, MycatCalciteDataContext dataContext) {
+        MycatCalcitePlanner planner = createPlanner(dataContext);
+        Schema schema = RelNodeConvertor.convertRelNode(planner.convertToMycatRel(relNode));
+        return convertToHBTText(schema);
+    }
+
+    public String convertToHBTText(Schema schema) {
+        return   TextConvertor.dump(schema);
     }
 
 
@@ -234,22 +232,32 @@ public enum MycatCalciteContext implements Context {
         }
     }
 
-    public MycatCalciteFrameworkConfig createFrameworkConfig(String defaultSchemaName) {
-        SchemaPlus schemaPlus;
-        if (defaultSchemaName == null) {
-            schemaPlus = ROOT_SCHEMA;
-        } else {
-            schemaPlus = ROOT_SCHEMA.getSubSchema(defaultSchemaName);
-        }
-        return new MycatCalciteFrameworkConfig(schemaPlus);
+    public MycatCalcitePlanner createPlanner(MycatCalciteDataContext dataContext) {
+        Objects.requireNonNull(dataContext);
+        return new MycatCalcitePlanner(dataContext);
     }
 
-    public MycatCalcitePlanner createPlanner(String defaultSchemaName) {
-        SchemaPlus currentRootSchema = ROOT_SCHEMA;
-        return new MycatCalcitePlanner(currentRootSchema, defaultSchemaName);
+    public MycatCalcitePlanner createPlanner(UponDBContext dataContext) {
+        Objects.requireNonNull(dataContext);
+        return new MycatCalcitePlanner(create(dataContext));
     }
 
     public CalciteConnectionConfig getCalciteConnectionConfig() {
         return calciteConnectionConfig;
+    }
+
+    public String convertToSql(RelNode input, SqlDialect dialect) {
+        String sql = new MycatImplementor(dialect).implement(input).asStatement().toSqlString(dialect, false).getSql();
+        sql = sql.replaceAll("\r", " ");
+        sql = sql.replaceAll("\n", " ");
+        return sql;
+    }
+
+    public String convertToMycatRelNodeText(RelNode node,MycatCalciteDataContext dataContext) {
+        final StringWriter sw = new StringWriter();
+        final RelWriter planWriter = new RelWriterImpl(new PrintWriter(sw), SqlExplainLevel.EXPPLAN_ATTRIBUTES, false);
+        RelNode relNode = MycatCalciteContext.INSTANCE.createPlanner(dataContext).convertToMycatRel(node);
+        relNode.explain(planWriter);
+        return sw.toString();
     }
 }
