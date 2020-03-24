@@ -15,10 +15,9 @@
 package io.mycat.calcite;
 
 import com.google.common.collect.ImmutableList;
-import io.mycat.calcite.logic.MycatConvention;
-import io.mycat.calcite.logic.MycatSQLTableScan;
-import io.mycat.calcite.logic.MycatTransientSQLTable;
-import io.mycat.calcite.logic.MycatTransientSQLTableScan;
+import io.mycat.calcite.table.MycatSQLTableScan;
+import io.mycat.calcite.table.MycatTransientSQLTable;
+import io.mycat.calcite.table.MycatTransientSQLTableScan;
 import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
 import org.apache.calcite.plan.Context;
@@ -62,10 +61,10 @@ public class MycatRelBuilder extends RelBuilder {
                         new MycatRelBuilder(config.getContext(), cluster, relOptSchema));
     }
 
-    public  RelNode makeTransientSQLScan(String targetName, RelNode input) {
+    public  RelNode makeTransientSQLScan(String targetName, RelNode input,boolean forUpdate) {
         RelDataType rowType = input.getRowType();
         MycatConvention convention = MycatConvention.of(targetName, MysqlSqlDialect.DEFAULT);
-        MycatTransientSQLTable transientTable = new MycatTransientSQLTable(convention, input);
+        MycatTransientSQLTable transientTable = new MycatTransientSQLTable(convention, input,forUpdate);
         RelOptTable relOptTable = RelOptTableImpl.create(
                 this.getRelOptSchema(),
                 rowType,
@@ -79,8 +78,8 @@ public class MycatRelBuilder extends RelBuilder {
      * Creates a literal (constant expression).
      */
     public static RexNode literal(RelDataType type, Object value, boolean allowCast) {
-        final RexBuilder rexBuilder = MycatCalciteContext.INSTANCE.RexBuilder;
-        JavaTypeFactoryImpl typeFactory = MycatCalciteContext.INSTANCE.TypeFactory;
+        final RexBuilder rexBuilder = MycatCalciteSupport.INSTANCE.RexBuilder;
+        JavaTypeFactoryImpl typeFactory = MycatCalciteSupport.INSTANCE.TypeFactory;
         RexNode literal;
         if (value == null) {
             literal = rexBuilder.makeNullLiteral(typeFactory.createSqlType(SqlTypeName.NULL));
@@ -145,6 +144,13 @@ public class MycatRelBuilder extends RelBuilder {
     }
 
 
+    /**
+     * todo for update
+     * @param targetName
+     * @param relDataType
+     * @param sql
+     * @return
+     */
     public RelNode makeBySql(String targetName,RelDataType relDataType, String sql) {
         MycatConvention convention = MycatConvention.of(targetName, MysqlSqlDialect.DEFAULT);
         MycatSQLTableScan transientTable = new MycatSQLTableScan(convention,relDataType,sql);

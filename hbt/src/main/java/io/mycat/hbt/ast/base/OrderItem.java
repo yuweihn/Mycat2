@@ -14,15 +14,16 @@
  */
 package io.mycat.hbt.ast.base;
 
-import io.mycat.hbt.ast.Direction;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * @author jamie12221
  **/
 @Data
 @Builder
+@EqualsAndHashCode
 public class OrderItem {
     String columnName;
     Direction direction;

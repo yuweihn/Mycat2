@@ -14,7 +14,6 @@
  */
 package io.mycat.hbt.ast.base;
 
-import io.mycat.hbt.ast.AggregateCall;
 import io.mycat.hbt.ast.modify.MergeModify;
 import io.mycat.hbt.ast.modify.ModifyFromSql;
 import io.mycat.hbt.ast.query.*;
@@ -25,7 +24,7 @@ import io.mycat.hbt.ast.query.*;
 public interface NodeVisitor {
     void visit(MapSchema mapSchema);
 
-    void visit(GroupSchema groupSchema);
+    void visit(GroupBySchema groupSchema);
 
     void visit(LimitSchema limitSchema);
 
@@ -43,7 +42,7 @@ public interface NodeVisitor {
 
     void visit(Expr expr);
 
-    void visit(ValuesSchema valuesSchema);
+    void visit(AnonyTableSchema valuesSchema);
 
     void visit(JoinSchema corJoinSchema);
 
@@ -68,4 +67,6 @@ public interface NodeVisitor {
     void visit(MergeModify mergeModify);
 
     void visit(Param param);
+
+    void visit(CommandSchema commandSchema);
 }

@@ -11,7 +11,20 @@ qq群:332702697
 [![Creative Commons License](https://i.creativecommons.org/l/by-sa/4.0/88x31.png)](http://creativecommons.org/licenses/by-sa/4.0/)
 This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-sa/4.0/).
 
+开发日志: <https://github.com/MyCATApache/Mycat2/blob/master/doc/101-todo-history-list.md>
+
 项目地址:<https://github.com/MyCATApache/Mycat2>
+
+HBTlang文档: <https://github.com/MyCATApache/Mycat2/blob/master/doc/103-HBTlang.md>
+
+执行hbt的两组命令是
+
+```sql
+EXPLAIN SELECT id FROM db1.travelrecord WHERE id = 1;
+
+EXECUTE plan fromSql(repli,'SELECT `id`  FROM `db1`.`travelrecord`  WHERE `id` = 1')
+```
+
 
 
 
@@ -19,7 +32,8 @@ This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 Inter
 
 可用分支https://github.com/MyCATApache/Mycat2/tree/0.6-2020-2-13
 
-正在实现loaddata与预处理
+
+实现全局表,ER表,全局序列号
 
 
 
@@ -242,102 +256,7 @@ HBT在Mycat2中表现为关系表达式领域驱动语言(Relation DSL).
 
 8.方便验证测试
 
-
-
-### 关系表达式
-
-
-
-#### From
-
-| name | 类型 | 参数数量 | 参数          |
-| ---- | ---- | -------- | ------------- |
-| from | rel  | 2        | 逻辑库,逻辑表 |
-
-获得逻辑表的数据源
-
-
-
-text
-
-```sql
-from(db1,travelrecord)
-```
-
-
-
-java
-
-```java
-from("db1", "travelrecord")
-```
-
-
-
-#### Table
-
-| 名称  | 类型 | 参数数量     | 参数                          |
-| ----- | ---- | ------------ | ----------------------------- |
-| table | rel  | at least one | 字段信息列表,值列表(一维列表) |
-
-匿名表,一种字面量构成的数据源
-
-
-
-text
-
-```sql
-table(fields(fieldType(`1`,`int`),fieldType(`2`,`varchar`)),values())
-table(fields(fieldType(id,int)),values(1,2,3))
-```
-
-
-
-java
-
-```java
-table(Arrays.asList(fieldType("1", "int"), fieldType("2", "varchar")), Arrays.asList())
-table(Arrays.asList(fieldType("id", "int")), Arrays.asList(1,2,3))
-```
-
-
-
-
-
-#### Map
-
-| 名称 | 类型 | 参数数量     | 参数          |
-| ---- | ---- | ------------ | ------------- |
-| map  | rel  | at least one | 逻辑库,逻辑表 |
-
-map,投影和计算的关系表达式
-
-
-
-text
-
-```sql
-table(fields(fieldType(id,int),fieldType(id2,int)),values(1,2)).map(id2 as id4)//sugar
-map(table(fields(fieldType(id,int),fieldType(id2,int)),values(1,2)),id2 as id4)
-
-table(fields(fieldType(id,int),fieldType(id2,int)).map(id + id2)//sugar
-map(table(fields(fieldType(id,int),fieldType(id2,int)),values(1,2)),id + id2)
-```
-
-
-
-java
-
-```java
-map(table(Arrays.asList(fieldType("id", "int"), fieldType("id2", "int")), Arrays.asList()),Arrays.asList(as(new Identifier("id2"), new Identifier("id4"))))
-
-map(table(Arrays.asList(fieldType("id", "int"), fieldType("id2", "int")), Arrays.asList()),Arrays.asList(add(new Identifier("id2"), new Identifier("id4"))))
-```
-
-
-
-
-
+HBTlang文档: <https://github.com/MyCATApache/Mycat2/blob/master/doc/103-HBTlang.md>
 
 
 ## MetaData支持的SQL
@@ -410,7 +329,7 @@ groupItem:
 ##### 插入SQL
 
 ```yaml
-{sql: 'insert {any}',command: execute, tags: {executeType: INSERT,metaData: true,needTransaction: true }},
+{sql: 'insert {any}',command: execute, tags: {executeType: INSERT,getMetaData: true,needTransaction: true }},
 ```
 
 
@@ -418,7 +337,7 @@ groupItem:
 ##### 更新SQL
 
 ```yaml
-{sql: 'update {any}',command: execute,tags: {executeType: UPDATE,metaData: true ,needTransaction: true }},
+{sql: 'update {any}',command: execute,tags: {executeType: UPDATE,getMetaData: true ,needTransaction: true }},
 ```
 
 
@@ -426,7 +345,7 @@ groupItem:
 ##### 删除SQL
 
 ```yaml
-{sql: 'delete {any}',command: execute,tags: {executeType: UPDATE,metaData: true,needTransaction: true  }}
+{sql: 'delete {any}',command: execute,tags: {executeType: UPDATE,getMetaData: true,needTransaction: true  }}
 ```
 
 
@@ -618,7 +537,7 @@ needTransaction:true|false
 
 
 
-metaData:true|false
+getMetaData:true|false
 
 true的时候不需要配置targets,自动根据sql路由
 

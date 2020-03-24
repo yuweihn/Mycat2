@@ -3,6 +3,7 @@ package io.mycat.config;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.*;
 
@@ -38,7 +39,8 @@ public class ShardingQueryRootConfig {
 
     @Data
     public static final class LogicSchemaConfig {
-        Map<String,LogicTableConfig> tables = new HashMap<>();
+        Map<String, LogicTableConfig> shadingTables = new HashMap<>();
+        Map<String, GlobalTableConfig> globalTables = new HashMap<>();
     }
 
     @AllArgsConstructor
@@ -47,23 +49,26 @@ public class ShardingQueryRootConfig {
     public static final class Column {
         String columnName;
         SharingFuntionRootConfig.ShardingFuntion function;
-         String shardingType;
-         List<String> map;
+        String shardingType;
+        List<String> map;
 
         public Column() {
         }
 
         public List<String> getMap() {
-            return map == null? Collections.emptyList():map;
+            return map == null ? Collections.emptyList() : map;
         }
     }
 
     @Data
     @Builder
-    public static class PrototypeServer{
-        String url;
-        String user;
-        String password;
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class PrototypeServer {
+        String url = "jdbc:mysql://127.0.0.1:3306?useUnicode=true&serverTimezone=UTC";
+        String user = "root";
+        String password = "123456";
+        String targetName = "defaultDs";
     }
 
 }

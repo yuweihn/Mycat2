@@ -15,18 +15,25 @@
 
 package io.mycat.client;
 
-import io.mycat.MycatConfig;
+import io.mycat.*;
+import io.mycat.api.collector.RowBaseIterator;
+import io.mycat.api.collector.UpdateRowIteratorResponse;
 import io.mycat.beans.mycat.TransactionType;
+import io.mycat.beans.mysql.MySQLIsolation;
 import io.mycat.config.PatternRootConfig;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.pattern.*;
+import io.mycat.upondb.MycatDBClientMediator;
+import io.mycat.upondb.MycatDBs;
 import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 
+import java.nio.charset.Charset;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -69,21 +76,102 @@ public enum ClientRuntime {
     }
 
 
-    public MycatClient login(String username, String password) {
+    public MycatClient login(MycatDataContext dataContext) {
         return new MycatClient() {
             private RuntimeInfo runtime = Objects.requireNonNull(runtimeInfo);
-            private String defaultSchemaName = ClientRuntime.INSTANCE.getDefaultSchema();
-            private TransactionType transactionType;
+            private final MycatDBClientMediator db = MycatDBs.createClient(dataContext);
+
+            @Override
+            public String transactionType() {
+                return dataContext.transactionType();
+            }
+
+            @Override
+            public TransactionSession getTransactionSession() {
+                return dataContext.getTransactionSession();
+            }
+
+            @Override
+            public void setTransactionSession(TransactionSession transactionSession) {
+                dataContext.setTransactionSession(transactionSession);
+            }
+
+            @Override
+            public void switchTransaction(String transactionSessionType) {
+                dataContext.switchTransaction(transactionSessionType);
+            }
+
+
+            @Override
+            public <T> T getVariable(MycatDataContextEnum name) {
+                return dataContext.getVariable(name);
+            }
+
+            @Override
+            public void setVariable(MycatDataContextEnum name, Object value) {
+                dataContext.setVariable(name, value);
+            }
+
+            @Override
+            public int serverStatus() {
+                return dataContext.serverStatus();
+            }
+
+            @Override
+            public boolean isAutoCommit() {
+                return dataContext.isAutoCommit();
+            }
+
+            @Override
+            public void setAutoCommit(boolean autoCommit) {
+                dataContext.setAutoCommit(autoCommit);
+            }
+
+            @Override
+            public MySQLIsolation getIsolation() {
+                return dataContext.getIsolation();
+            }
+
+            @Override
+            public void setIsolation(MySQLIsolation isolation) {
+                dataContext.setIsolation(isolation);
+            }
+
+            @Override
+            public boolean isInTransaction() {
+                return dataContext.isInTransaction();
+            }
+
+            @Override
+            public void setInTransaction(boolean inTransaction) {
+                dataContext.setInTransaction(inTransaction);
+            }
+
+            @Override
+            public MycatUser getUser() {
+                return dataContext.getUser();
+            }
+
+            @Override
+            public void useShcema(String schema) {
+                dataContext.useShcema(schema);
+            }
+
+            @Override
+            public void setUser(MycatUser user) {
+                dataContext.setUser(user);
+            }
             ///////////////////////////////////////////////
 
             @Override
             public Context analysis(String sql) {
+
                 RuntimeInfo runtime = this.runtime;
                 GPattern tableCollectorPattern = this.runtime.tableCollector.get();
 
                 TableCollector tableMatcher = tableCollectorPattern.getCollector();
-                if (defaultSchemaName != null) {
-                    tableMatcher.useSchema(defaultSchemaName);
+                if (dataContext.getDefaultSchema() != null) {
+                    tableMatcher.useSchema(dataContext.getDefaultSchema());
                 }
                 tableCollectorPattern.collect(sql);
                 boolean tableMatch = tableMatcher.isMatch();
@@ -93,7 +181,7 @@ public enum ClientRuntime {
                         for (Map.Entry<Map<String, Set<String>>, List<TableInfo>> mapListEntry : this.runtime.tableToItem.entrySet()) {
                             Set<String> tableConfigs = mapListEntry.getKey().get(stringCollectionEntry.getKey());
                             Collection<String> currentTables = stringCollectionEntry.getValue();
-                            if (tableConfigs.containsAll(currentTables)) {
+                            if (tableConfigs != null && tableConfigs.containsAll(currentTables)) {
                                 List<TableInfo> tableInfo = mapListEntry.getValue();
                                 if (tableInfo != null) {
                                     for (TableInfo info : tableInfo) {
@@ -103,11 +191,11 @@ public enum ClientRuntime {
                                         PatternRootConfig.TextItemConfig textItemConfig = info.map.get(matcher.id());
                                         if (textItemConfig != null) {
                                             String name = textItemConfig.getName();
-                                            return getContext(name, sql, collectionMap, map, textItemConfig);
+                                            return getContext(name, sql, collectionMap, map, textItemConfig,matcher.id(),textItemConfig.getCache()!=null);
                                         }
                                         if (info.handler != null) {
                                             String name = Objects.toString(info);
-                                            return getContext(name, sql, collectionMap, map, info.handler);
+                                            return getContext(name, sql, collectionMap, map, info.handler,null,false);
                                         }
                                     }
                                 }
@@ -121,35 +209,38 @@ public enum ClientRuntime {
                     PatternRootConfig.TextItemConfig textItemConfig = runtime.idToItem.get(matcher.id());
                     if (textItemConfig != null) {
                         String name = Objects.toString(textItemConfig);
-                        return getContext(name, sql, collectionMap, matcher.namesContext(), textItemConfig);
+                        return getContext(name, sql, collectionMap, matcher.namesContext(), textItemConfig,matcher.id(),textItemConfig.getCache()!=null);
                     }
                 }
                 if (runtimeInfo.defaultHandler != null) {
                     String name = "defaultHandler";
-                    return getContext(name, sql, collectionMap, matcher.namesContext(), runtimeInfo.defaultHandler);
+                    return getContext(name, sql, collectionMap, matcher.namesContext(), runtimeInfo.defaultHandler,null,false);
                 }
                 throw new UnsupportedOperationException();
             }
 
-            private Context getContext(String name, String sql, Map<String, Collection<String>> geTableMap, Map<String, String> namesContext, PatternRootConfig.Handler handler) {
-                return new Context(name, sql, geTableMap, namesContext, handler.getTags(), handler.getHints(), handler.getCommand(), handler.getExplain());
+            private Context getContext(String name, String sql, Map<String, Collection<String>> geTableMap, Map<String, String> namesContext, PatternRootConfig.Handler handler,Integer sqlId,
+                                       boolean cache) {
+                return new Context(name, sql, geTableMap, namesContext, handler.getTags(), handler.getHints(), handler.getCommand(), handler.getExplain(), sqlId,cache);
             }
 
 
             @NotNull
-            private Context getContext(String name, String sql, Map<String, Collection<String>> geTableMap, Map<String, String> namesContext, PatternRootConfig.TextItemConfig handler) {
-                return new Context(name, sql, geTableMap, namesContext, handler.getTags(), handler.getHints(), handler.getCommand(), handler.getExplain());
-            }
-
-            @Override
-            public List<String> explain(String sql) {
-                return null;
+            private Context getContext(String name,
+                                       String sql,
+                                       Map<String, Collection<String>> geTableMap,
+                                       Map<String, String> namesContext,
+                                       PatternRootConfig.TextItemConfig handler,
+                                       Integer sqlId,
+                                       boolean cache) {
+                return new Context(name, sql, geTableMap, namesContext, handler.getTags(), handler.getHints(), handler.getCommand(), handler.getExplain(), sqlId,cache);
             }
 
             @Override
             public void useSchema(String schemaName) {
                 if (schemaName != null) {
-                    this.defaultSchemaName = schemaName;
+                    db.useSchema(schemaName);
+                    dataContext.useShcema(schemaName);
                 } else {
                     LOGGER.warn("use null schema");
                 }
@@ -157,20 +248,158 @@ public enum ClientRuntime {
 
             @Override
             public TransactionType getTransactionType() {
-                return transactionType == null ? ClientRuntime.INSTANCE.transactionType : transactionType;
+                TransactionType parse = TransactionType.parse(dataContext.getTransactionSession().name());
+                return parse;
             }
 
             @Override
             public void useTransactionType(TransactionType transactionType) {
-                this.transactionType = transactionType;
+                dataContext.switchTransaction(transactionType.getName());
             }
 
             @Override
             public String getDefaultSchema() {
-                if (defaultSchemaName == null) {
-                    throw new IllegalArgumentException();
-                }
-                return defaultSchemaName;
+                return dataContext.getDefaultSchema();
+            }
+
+            @Override
+            public int getServerCapabilities() {
+                return dataContext.getServerCapabilities();
+            }
+
+            @Override
+            public int getWarningCount() {
+                return dataContext.getWarningCount();
+            }
+
+            @Override
+            public long getLastInsertId() {
+                return dataContext.getLastInsertId();
+            }
+
+            @Override
+            public Charset getCharset() {
+                return dataContext.getCharset();
+            }
+
+            @Override
+            public int getCharsetIndex() {
+                return dataContext.getCharsetIndex();
+            }
+
+            @Override
+            public void setLastInsertId(long s) {
+                dataContext.setLastInsertId(s);
+            }
+
+            @Override
+            public int getLastErrorCode() {
+                return dataContext.getLastErrorCode();
+            }
+
+            @Override
+            public long getAffectedRows() {
+                return dataContext.getAffectedRows();
+            }
+
+            @Override
+            public void setLastMessage(String lastMessage) {
+                dataContext.setLastMessage(lastMessage);
+            }
+
+            @Override
+            public String getLastMessage() {
+                return dataContext.getLastMessage();
+            }
+
+            @Override
+            public void setServerCapabilities(int serverCapabilities) {
+                dataContext.setServerCapabilities(serverCapabilities);
+            }
+
+            @Override
+            public void setAffectedRows(long affectedRows) {
+                dataContext.setAffectedRows(affectedRows);
+            }
+
+            @Override
+            public void setCharset(int index, String charsetName, Charset defaultCharset) {
+                dataContext.setCharset(index, charsetName, defaultCharset);
+            }
+
+            @Override
+            public AtomicBoolean getCancelFlag() {
+                return dataContext.getCancelFlag();
+            }
+
+            @Override
+            public boolean isRunning() {
+                return dataContext.isRunning();
+            }
+
+            @Override
+            public int getNumParamsByStatementId(long statementId) {
+                return dataContext.getNumParamsByStatementId(statementId);
+            }
+
+            @Override
+            public void run(Runnable runnable) {
+                dataContext.run(runnable);
+            }
+
+            @Override
+            public boolean isReadOnly() {
+                return dataContext.isReadOnly();
+            }
+
+            @Override
+            public UpdateRowIteratorResponse update(String targetName, String sql) {
+                return dataContext.update(targetName, sql);
+            }
+
+            @Override
+            public RowBaseIterator query(String targetName, String sql) {
+                return dataContext.query(targetName, sql);
+            }
+
+            @Override
+            public RowBaseIterator queryDefaultTarget(String sql) {
+                return dataContext.queryDefaultTarget(sql);
+            }
+
+            @Override
+            public boolean continueBindThreadIfTransactionNeed() {
+                return dataContext.continueBindThreadIfTransactionNeed();
+            }
+
+            @Override
+            public void close() {
+                dataContext.close();
+            }
+
+            @Override
+            public void block(Runnable runnable) {
+                dataContext.run(runnable);
+            }
+
+            @Override
+            public String resolveDatasourceTargetName(String targetName) {
+                return dataContext.resolveDatasourceTargetName(targetName);
+            }
+
+            @Override
+            public <T> T unwrap(Class<T> iface) throws Exception {
+                return dataContext.unwrap(iface);
+            }
+
+            @Override
+            public boolean isWrapperFor(Class<?> iface) throws Exception {
+                return dataContext.isWrapperFor(iface);
+            }
+
+            @Override
+            public MycatDBClientMediator getMycatDb() {
+                return db;
             }
         };
     }
@@ -187,7 +416,7 @@ public enum ClientRuntime {
         //pre
 //        for (PatternRootConfig.HandlerToSQLs handler : patternRootConfig.getHandlers()) {
 //            String name = handler.getName();
-//            String explain = handler.getExplain();
+//            String explainSql = handler.getExplain();
 //            Map<String, String> tags = handler.getTags();
 //            String type = handler.getType();
 //
@@ -198,7 +427,7 @@ public enum ClientRuntime {
 //                    textItemConfig.setName(name);
 //                    textItemConfig.setSql(sql);
 //                    textItemConfig.setTags(tags);
-//                    textItemConfig.setExplain(explain);
+//                    textItemConfig.setExplain(explainSql);
 //                    textItemConfig.setCommand(type);
 //                    sqls.add(textItemConfig);
 //                }
@@ -209,7 +438,7 @@ public enum ClientRuntime {
 //                    textItemConfig.setName(name);
 //                    textItemConfig.setSql(sql);
 //                    textItemConfig.setTags(tags);
-//                    textItemConfig.setExplain(explain);
+//                    textItemConfig.setExplain(explainSql);
 //                    textItemConfigs.add(textItemConfig);
 //                    textItemConfig.setCommand(type);
 //                }
@@ -227,7 +456,7 @@ public enum ClientRuntime {
         for (PatternRootConfig.TextItemConfig textItemConfig : sqls) {
             itemMap.put(noTablesPatternBuilder.addRule(textItemConfig.getSql()), textItemConfig);
         }
-        Supplier<GPattern> noTablesPattern = ()->noTablesPatternBuilder.createGroupPattern();
+        Supplier<GPattern> noTablesPattern = () -> noTablesPatternBuilder.createGroupPattern();
 
 
         Map<Map<String, Set<String>>, List<TableInfo>> tableMap = new ConcurrentHashMap<>();
@@ -238,12 +467,12 @@ public enum ClientRuntime {
                 map.put(tablesPatternBuilder.addRule(sql.getSql()), sql);
             }
             List<TableInfo> tableInfos1 = tableMap.computeIfAbsent(getTableMap(schema), stringSetMap -> new CopyOnWriteArrayList<>());
-            tableInfos1.add(new TableInfo(map, schema.getDefaultHanlder(),()->tablesPatternBuilder.createGroupPattern()));
+            tableInfos1.add(new TableInfo(map, schema.getDefaultHanlder(), () -> tablesPatternBuilder.createGroupPattern()));
         }
         GPatternIdRecorderImpl gPatternIdRecorder = new GPatternIdRecorderImpl(false);
         TableCollectorBuilder tableCollectorBuilder = new TableCollectorBuilder(gPatternIdRecorder, (Map) getTableMap(schemas));
         final GPatternBuilder tableCollectorPatternBuilder = new GPatternBuilder(0);
-        runtimeInfo = new RuntimeInfo(()-> tableCollectorPatternBuilder.createGroupPattern(tableCollectorBuilder.create()),itemMap, tableMap, defaultHanlder,noTablesPattern);
+        runtimeInfo = new RuntimeInfo(() -> tableCollectorPatternBuilder.createGroupPattern(tableCollectorBuilder.create()), itemMap, tableMap, defaultHanlder, noTablesPattern);
         this.transactionType = TransactionType.parse(patternRootConfig.getTransactionType());
         this.defaultSchema = patternRootConfig.getDefaultSchema();
     }

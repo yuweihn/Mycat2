@@ -15,19 +15,19 @@
 
 package io.mycat.client;
 
+import io.mycat.MycatDataContext;
 import io.mycat.beans.mycat.TransactionType;
-
-import java.util.List;
+import io.mycat.upondb.MycatDBClientMediator;
 
 /**
  * @author Junwen Chen
  **/
-public interface MycatClient {
+public interface MycatClient extends MycatDataContext {
     public Context analysis(String sql) ;
-    public List<String> explain(String sql);
     public void useSchema(String schemaName);
     public TransactionType getTransactionType();
     public void useTransactionType(TransactionType transactionType);
     public String getDefaultSchema();
 
+    public MycatDBClientMediator getMycatDb();
 }
