@@ -33,16 +33,14 @@ public class DefaultCommandHandler extends AbstractCommandHandler {
     public void handleInitDb(String db, MycatSession mycat) {
         client.useSchema(db);
         mycat.setSchema(db);
-        LOGGER.info("handleInitDb:"+db);
+        LOGGER.info("handleInitDb:" + db);
         super.handleInitDb(db, mycat);
     }
 
     @Override
     public void initRuntime(MycatSession session) {
-        this.client = ClientRuntime.INSTANCE.login((MycatDataContext)session.unwrap(MycatDataContext.class));
+        this.client = ClientRuntime.INSTANCE.login((MycatDataContext) session.unwrap(MycatDataContext.class), true);
         this.client.useSchema(session.getSchema());
-
-        this.client.useTransactionType(ClientRuntime.INSTANCE.getTransactionType());
     }
 
     @Override
@@ -51,11 +49,14 @@ public class DefaultCommandHandler extends AbstractCommandHandler {
             LOGGER.debug("-----------------reveice--------------------");
             String sql = new String(bytes);
             LOGGER.debug(sql);
-            MycatDataContext unwrap = session.unwrap(MycatDataContext.class);
-            TransactionSession transactionSession = unwrap.getTransactionSession();
+            sql = sql.trim();
+            if (sql.endsWith(";")) {
+                sql = sql.substring(0, sql.length() - 1);
+                LOGGER.debug("-----------------tirm-right-semi(;)--------------------");
+            }
             Context analysis = client.analysis(sql);
             ContextRunner.run(client, analysis, session);
-        }catch (Exception e){
+        } catch (Exception e) {
             session.setLastMessage(e);
             session.writeErrorEndPacketBySyncInProcessError();
         }

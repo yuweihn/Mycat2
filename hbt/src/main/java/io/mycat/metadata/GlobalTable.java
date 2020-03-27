@@ -14,18 +14,18 @@ import io.mycat.plug.loadBalance.LoadBalanceStrategy;
 import io.mycat.queryCondition.SimpleColumnInfo;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class GlobalTable implements GlobalTableHandler {
     private final LogicTable logicTable;
     private final List<BackendTableInfo> backendTableInfos;
     private final List<BackendTableInfo> readOnlyBackendTableInfos;
     private final LoadBalanceStrategy balance;
+    private final Map<String, BackendTableInfo> dataNodeMap;
 
 
     public GlobalTable(LogicTable logicTable,
@@ -36,6 +36,8 @@ public class GlobalTable implements GlobalTableHandler {
         this.backendTableInfos = backendTableInfos;
         this.readOnlyBackendTableInfos = readOnlyBackendTableInfos;
         this.balance = balance;
+
+        this.dataNodeMap = backendTableInfos.stream().collect(Collectors.toMap(k -> k.getUniqueName(), v -> v));
     }
 
     @Override
@@ -118,8 +120,28 @@ public class GlobalTable implements GlobalTableHandler {
     }
 
     @Override
-    public List<SimpleColumnInfo> getRawColumns() {
+    public List<SimpleColumnInfo> getColumns() {
         return logicTable.getRawColumns();
+    }
+
+    @Override
+    public SimpleColumnInfo getColumnByName(String name) {
+        return logicTable.getColumnByName(name);
+    }
+
+    @Override
+    public SimpleColumnInfo getAutoIncrementColumn() {
+        return logicTable.getAutoIncrementColumn();
+    }
+
+    @Override
+    public String getUniqueName() {
+        return logicTable.getUniqueName();
+    }
+
+    @Override
+    public Supplier<String> nextSequence() {
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -130,6 +152,11 @@ public class GlobalTable implements GlobalTableHandler {
     @Override
     public BackendTableInfo getMycatGlobalPhysicalBackendTableInfo(Set<String> context) {
         return backendTableInfos.get(ThreadLocalRandom.current().nextInt(0, backendTableInfos.size()));
+    }
+
+    @Override
+    public Map<String, BackendTableInfo> getDataNodeMap() {
+        return dataNodeMap;
     }
 
     static  final LoadBalanceInfo loadBalanceInfo = new LoadBalanceInfo() {
