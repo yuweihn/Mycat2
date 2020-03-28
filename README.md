@@ -413,7 +413,7 @@ interceptors:
                 {sql: 'select {any}',command: distributedQuery }, #带表sql匹配Hanlder
                 {sql: 'insert {any}',command: distributedInsert},
                 {sql: 'update {any}',command: distributedUpdate},
-                {sql: 'delete {any}',command: distributedUpdate},
+                {sql: 'delete {any}',command: distributedDelete},
                 ],
               },
     ],
@@ -1143,3 +1143,38 @@ HBTlang文档: <https://github.com/MyCATApache/Mycat2/blob/master/doc/103-HBTlan
            },
 ```
 
+
+
+## 已知限制
+
+###### proxy事务模式
+
+开启事务后的操作只能是同一个分片
+
+事务里使用全局表会出现非同一分片的全局表无法回滚的现象
+
+对于这种更新操作,,要求强一致性,可以开启xa
+
+
+
+###### 分布式查询引擎
+
+1. 结果集字段名不写别名的情况下,生成的列名是不确定的
+
+2. sql不写order的情况下,结果集可能是未经排序的
+
+3. 不建议写类似sql,sql中没有引用表的列名,这种sql在mycat里未正式支持(0.8版本后可以运行)
+
+   `select 1 from db1.travelrecord where id = 1 limit 1`
+
+4. sql一般带有分片条件,而且位于表名后的where,而且是简单的形式,复杂的条件和不写条件都会导致全表扫描
+
+5. sql函数名不能出现Crudate的情况,否则无法识别
+
+   
+
+
+
+###### 更新日志
+
+具体看git记录
