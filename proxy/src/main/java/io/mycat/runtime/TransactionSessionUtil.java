@@ -71,12 +71,14 @@ public class TransactionSessionUtil {
         return connection.executeUpdate(sql, needGeneratedKeys,transactionSession.getServerStatus());
     }
 
-    public static UpdateRowIteratorResponse executeUpdateByDatasouce(TransactionSession transactionSession,Map<String, List<String>> map, boolean needGeneratedKeys) {
+    public static UpdateRowIteratorResponse executeUpdateByDatasouce(TransactionSession transactionSession,Map<String, List<String>> map, boolean needGeneratedKeys,boolean global) {
         int lastId = 0;
         int count = 0;
         int serverStatus = 0;
+        int sqlCount = 0;
         for (Map.Entry<String, List<String>> backendTableInfoStringEntry : map.entrySet()) {
             for (String s : backendTableInfoStringEntry.getValue()) {
+                sqlCount++;
                 MycatUpdateResponse mycatUpdateResponse = executeUpdate(transactionSession,backendTableInfoStringEntry.getKey(), s, needGeneratedKeys);
                 long lastInsertId = mycatUpdateResponse.getLastInsertId();
                 long updateCount = mycatUpdateResponse.getUpdateCount();
@@ -85,6 +87,6 @@ public class TransactionSessionUtil {
                 serverStatus = mycatUpdateResponse.serverStatus();
             }
         }
-        return new UpdateRowIteratorResponse(count, lastId, serverStatus);
+        return new UpdateRowIteratorResponse(global?count/sqlCount:count, lastId, serverStatus);
     }
 }

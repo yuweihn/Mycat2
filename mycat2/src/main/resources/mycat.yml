@@ -23,7 +23,7 @@ interceptors: #拦截器,如果拦截不了,尝试use schema,试用explain可以
   [{user:{username: 'root' ,password: '123456' , ip: '.'},
     defaultHanlder: {command: execute , tags: {targets: defaultDs,forceProxy: true}},
     schemas: [{
-                tables:[ 'db1.travelrecord','db1.address','db1.company'],#sql中包含一个表名,注意sql中;分号,匹配规则,前缀确定唯一项,{前必须是固定的token,}后必须是固定的token,这两个token在上下文也能确定该项
+                tables:[ 'db1.travelrecord','db1.company'],#sql中包含一个表名,注意sql中;分号,匹配规则,前缀确定唯一项,{前必须是固定的token,}后必须是固定的token,这两个token在上下文也能确定该项
                 sqls: [
                 {sql: 'select {any}',command: distributedQuery },
                 {sql: 'insert {any}',command: distributedInsert},
@@ -49,7 +49,7 @@ datasource:
                  jdbcDriverClass:, #jdbc驱动
                  instanceType:,#READ,WRITE,READ_WRITE ,集群信息中是主节点,则默认为读写,副本则为读,此属性可以强制指定可写
                 },
-                {name: defaultDs2, ip: 0.0.0.0,port: 3306,user: root,password: 123456,maxCon: 10000,minCon: 0,maxRetryCount: 3,maxConnectTimeout: 10000,dbType: mysql,
+                {name: defaultDs2, ip: 0.0.0.0,port: 3307,user: root,password: 123456,maxCon: 10000,minCon: 0,maxRetryCount: 3,maxConnectTimeout: 10000,dbType: mysql,
                  url: 'jdbc:mysql://127.0.0.1:3307?useUnicode=true&serverTimezone=UTC',weight: 1,initSQL: 'use db2' ,jdbcDriverClass:,instanceType:,#READ,WRITE,READ_WRITE
                 }
   ]
@@ -111,8 +111,9 @@ properties:
 sqlGroups:
   jdbcAdapter:
     sqls: &jdbcAdapter [
-    {name: explain,sql: 'EXPLAIN {statement}' ,command: explainSQL}, #explain一定要写库名
+    {name: explain,sql: 'EXPLAIN {statement}' ,command: explainSQL},
     {name: hbt,sql: 'execute plan {hbt}' , explain: '{hbt}' ,command: executePlan},#执行hbt
+    {name: explainHbt,sql: 'EXPLAIN plan {hbt}' , explain: '{hbt}' ,command: explainPlan},#解释hbt
     {name: commit,sql: 'commit',command: commit},{name: commit;,sql: 'commit;',command: commit},
     {name: begin; ,sql: 'begin',command: begin},{name: begin ,sql: 'begin;',command: begin},
     {name: rollback ,sql: 'rollback',command: rollback},{name: rollback;,sql: 'rollback;',command: rollback},
