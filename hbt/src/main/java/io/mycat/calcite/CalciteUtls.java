@@ -57,7 +57,7 @@ public class CalciteUtls {
         List<QueryBackendTask> list = new ArrayList<>();
         for (BackendTableInfo backendTableInfo : calculate) {
             String backendTaskSQL = getBackendTaskSQL(filters, rawColumnList, projectColumnList, backendTableInfo);
-            QueryBackendTask queryBackendTask = new QueryBackendTask(backendTaskSQL, backendTableInfo.getTargetName());
+            QueryBackendTask queryBackendTask = new QueryBackendTask( backendTableInfo.getTargetName(),backendTaskSQL);
             list.add(queryBackendTask);
         }
         return list;
@@ -103,7 +103,7 @@ public class CalciteUtls {
                                            String targetSchemaTable) {
         StringBuilder sqlBuilder = new StringBuilder();
         String selectItems = projectColumnList.isEmpty() ? "*" : projectColumnList.stream().map(i -> i.getColumnName()).map(i -> targetSchemaTable + "." + i).collect(Collectors.joining(","));
-        sqlBuilder.append(MessageFormat.format("select {0} from {1}", selectItems, targetSchemaTable));
+        sqlBuilder.append(MessageFormat.format("select {0} from {1} ", selectItems, targetSchemaTable));
         sqlBuilder.append(getFilterSQLText(rawColumnList, targetSchema, targetTable, filters));
         return sqlBuilder.toString();
     }
@@ -130,7 +130,7 @@ public class CalciteUtls {
                         SqlImplementor.POS);
             }
         };
-        return context.toSql(null, rexNode).toSqlString(MysqlSqlDialect.DEFAULT).getSql();
+        return " where "+context.toSql(null, rexNode).toSqlString(MysqlSqlDialect.DEFAULT).getSql();
     }
 
     public static boolean addOrRootFilter(ShardingTableHandler table, DataMappingEvaluator evaluator, RexNode filter) {

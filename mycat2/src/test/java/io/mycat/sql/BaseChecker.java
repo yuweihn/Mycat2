@@ -2,6 +2,8 @@ package io.mycat.sql;
 
 import io.mycat.dao.TestUtil;
 import io.mycat.hbt.TextConvertor;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.SneakyThrows;
 import org.junit.Assert;
 
@@ -11,6 +13,7 @@ import java.sql.Statement;
 import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 public abstract class BaseChecker implements Runnable {
     final Statement statement;
@@ -24,6 +27,22 @@ public abstract class BaseChecker implements Runnable {
         check(format, expected);//
     }
 
+    @SneakyThrows
+    public Ok executeUpdate(String sql) {
+        int i = statement.executeUpdate(sql, Statement.RETURN_GENERATED_KEYS);
+        ResultSet generatedKeys = statement.getGeneratedKeys();
+        while (generatedKeys.next()) {
+            return new Ok(i, generatedKeys.getLong(1));
+        }
+        throw new UnsupportedOperationException();
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public static class Ok {
+        int updateCount;
+        long lastId;
+    }
 
     @SneakyThrows
     public static void main(String[] args) {
@@ -37,26 +56,60 @@ public abstract class BaseChecker implements Runnable {
             checker.run();
         }
     }
-
+    @SneakyThrows
+    public void check(String sql, Object expectedRes) {
+        check(sql, Objects.toString(expectedRes));
+    }
     @SneakyThrows
     public void check(String sql, String expectedRes) {
         ResultSet resultSet = statement.executeQuery(sql);
         String s = TextConvertor.dumpResultSet(resultSet).replaceAll("\n", "").replaceAll("\r", "");
         System.out.println(s);
+        System.out.println(s.replaceAll("\\)\\(",""));
         if (!expectedRes.startsWith("(")) {
             expectedRes = "(" + expectedRes + ")";
+        }
+        if (!s.startsWith("(")) {
+            s = "(" + s + ")";
         }
         Assert.assertEquals(expectedRes, s);
     }
 
     @SneakyThrows
     public void simplyCheck(String sql) {
-        check(  MessageFormat.format("select {0} from db1.travelrecord where id = 1 limit 1", sql));
+        check(MessageFormat.format("select {0} from db1.travelrecord where id = 1 limit 1", sql));
     }
 
     @SneakyThrows
     public void check(String sql) {
+        statement.execute(sql);
+    }
+    @SneakyThrows
+    public void checkHbt(String sql,String expectedRes) {
+        check("execute plan "+sql,expectedRes);
+    }
+    @SneakyThrows
+    public void explainHbt(String sql,String expectedRes) {
+        check("explain plan "+sql,expectedRes);
+    }
+    @SneakyThrows
+    public void explainHbtContains(String sql,String expectedRes) {
+        checkContains("explain plan "+sql,expectedRes);
+    }
+    @SneakyThrows
+    public void explainSql(String sql,String expectedRes) {
+        check("explain "+sql,expectedRes);
+    }
+    @SneakyThrows
+    public void checkContains(String sql, String element) {
         ResultSet resultSet = statement.executeQuery(sql);
         String s = TextConvertor.dumpResultSet(resultSet).replaceAll("\n", "").replaceAll("\r", "");
+        System.out.println(s);
+        boolean contains = s.contains(element);
+        Assert.assertTrue(contains);
+    }
+
+    public Statement getStatement() {
+        return statement;
     }
 }
