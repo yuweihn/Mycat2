@@ -35,6 +35,7 @@ import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
 import org.apache.calcite.plan.Context;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptSchema;
+import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelWriter;
 import org.apache.calcite.rel.externalize.RelWriterImpl;
@@ -67,6 +68,8 @@ import org.apache.calcite.tools.RelBuilderFactory;
 import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.StringWriter;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -101,7 +104,12 @@ public enum MycatCalciteSupport implements Context {
             .setConformance(SqlConformanceEnum.MYSQL_5)
             .setCaseSensitive(false).build();
     public MycatTypeSystem TypeSystem = new MycatTypeSystem();
-    public JavaTypeFactoryImpl TypeFactory = new JavaTypeFactoryImpl(TypeSystem);
+    public JavaTypeFactoryImpl TypeFactory = new JavaTypeFactoryImpl(TypeSystem){
+        @Override
+        public Charset getDefaultCharset() {
+            return StandardCharsets.UTF_8;
+        }
+    };
     public RexBuilder RexBuilder = new RexBuilder(TypeFactory);
     public RelBuilderFactory relBuilderFactory = new RelBuilderFactory() {
         @Override
@@ -291,10 +299,10 @@ public enum MycatCalciteSupport implements Context {
 
     public String convertToSql(RelNode input, SqlDialect dialect, boolean forUpdate) {
         MycatImplementor mycatImplementor = new MycatImplementor(dialect);
+        input= RelOptUtil.createCastRel(input,input.getRowType(),true);
         SqlImplementor.Result implement = mycatImplementor.implement(input);
         SqlNode sqlNode = implement.asStatement();
         String sql = sqlNode.toSqlString(dialect, false).getSql();
-        SqlImplementor.Result implement2 = mycatImplementor.implement(input);
         sql = sql.replaceAll("\r", " ");
         sql = sql.replaceAll("\n", " ");
         return sql + (forUpdate ? " for update" : "");

@@ -30,8 +30,12 @@ public class DateChecker extends BaseChecker{
 
     @Override
     public void run() {
+        check("delete from db1.travelrecord");
+        executeUpdate("INSERT INTO `db1`.`travelrecord` (id,`user_id`) VALUES (1,999)");
+
         simplyCheck("CURDATE()", LocalDate.now().toString());//
         simplyCheck("curdate()", LocalDate.now().toString());//
         simplyCheck("now()");//
+
     }
 }

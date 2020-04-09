@@ -25,6 +25,7 @@ import io.mycat.boost.UserBooster;
 import io.mycat.calcite.prepare.MycatSQLPrepareObject;
 import io.mycat.calcite.prepare.MycatSqlPlanner;
 import io.mycat.calcite.prepare.MycatTextUpdatePrepareObject;
+import io.mycat.calcite.prepare.Proxyable;
 import io.mycat.client.Context;
 import io.mycat.client.MycatClient;
 import io.mycat.datasource.jdbc.JdbcRuntime;
@@ -120,7 +121,6 @@ public class ContextRunner {
             this.forceProxy = forceProxy;
             this.needStartTransaction = needStartTransaction;
             this.balance = null;
-            this.globalTableUpdate = false;
         }
 
         public <K, V> Details(ExecuteType executeType, Map<String, List<String>> backendTableInfos, String balance, boolean forceProxy, boolean needStartTransaction) {
@@ -301,7 +301,7 @@ public class ContextRunner {
                     PlanRunner plan = mycatSQLPrepareObject.plan(Collections.emptyList());
                     switch (client.getTransactionType()) {
                         case PROXY_TRANSACTION_TYPE: {
-                            if (plan instanceof MycatSqlPlanner) {
+                            if (plan instanceof Proxyable ) {
                                 MycatSqlPlanner plan1 = (MycatSqlPlanner) plan;
                                 ProxyInfo proxyInfo = plan1.tryGetProxyInfo();
                                 if (proxyInfo != null) {
@@ -314,8 +314,7 @@ public class ContextRunner {
                             break;
                         }
                     }
-                    RowBaseIterator query = client1.query(explain);
-                    TextResultSetResponse connection = new TextResultSetResponse(query);
+                    TextResultSetResponse connection = new TextResultSetResponse( plan.run());
                     SQLExecuterWriter.writeToMycatSession(mycat, new MycatResponse[]{connection});
                     client1.recycleResource();//移除已经关闭的连接,
                 });
@@ -697,7 +696,7 @@ public class ContextRunner {
                 } else {
                     String replicaName = ReplicaSelectorRuntime.INSTANCE.getDatasourceNameByReplicaName(
                             Objects.requireNonNull(context.getVariable(TARGETS), "can not get " + TARGETS + " of " + context.getName()),
-                            needStartTransaction, balance);
+                            needStartTransaction||executeType.isMaster(), balance);
                     details = new Details(executeType, Collections.singletonMap(replicaName, Collections.singletonList(explain)), balance, forceProxy, needStartTransaction);
                 }
                 return details;
@@ -762,7 +761,7 @@ public class ContextRunner {
                     if (count == 1) {
                         targetName = stringListEntry.getKey();
                         List<String> value = stringListEntry.getValue();
-                        if (value.size() != 1) {
+                        if (value.size() > 1) {
                             List<String> strings = value.subList(1, value.size());
                             try (DefaultConnection connection = JdbcRuntime.INSTANCE.getConnection(stringListEntry.getKey())) {
                                 for (String s : strings) {
@@ -888,7 +887,7 @@ public class ContextRunner {
         ;
         private boolean master;
 
-        public static ExecuteType DEFAULT = ExecuteType.QUERY;
+        public static ExecuteType DEFAULT = ExecuteType.QUERY_MASTER;
 
         ExecuteType(boolean master) {
             this.master = master;
@@ -907,7 +906,7 @@ public class ContextRunner {
         MycatDBClientMediator mycatDb = client.getMycatDb();
         TableHandler tableHandler = mycatDb.config().getTable(schemaName, tableName);
         boolean isGlobal = tableHandler.getType() == LogicTableType.GLOBAL;
-        boolean master = executeType != ExecuteType.QUERY || needStartTransaction;
+        boolean master = executeType != ExecuteType.QUERY || needStartTransaction ||executeType!=null&&executeType.isMaster();
         MycatTextUpdatePrepareObject mycatTextUpdatePrepareObject = mycatDb.getUponDBSharedServer().innerUpdatePrepareObject(explain, mycatDb);
         Map<String, List<String>> routeMap = mycatTextUpdatePrepareObject.getRouteMap();
         return new Details(executeType, resolveDataSourceName(balance, master, routeMap), isGlobal, forceProxy, startTransaction);

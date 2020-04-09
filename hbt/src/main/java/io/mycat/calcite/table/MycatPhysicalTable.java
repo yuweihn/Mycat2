@@ -23,9 +23,13 @@ import io.mycat.metadata.TableHandler;
 import lombok.Getter;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.Enumerable;
+import org.apache.calcite.plan.RelOptTable;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.schema.ProjectableFilterableTable;
 import org.apache.calcite.schema.TransientTable;
+import org.apache.calcite.schema.TranslatableTable;
 
 import java.util.List;
 
@@ -33,7 +37,7 @@ import java.util.List;
  * @author Junwen Chen
  **/
 @Getter
-public class MycatPhysicalTable extends MycatTableBase implements TransientTable, ProjectableFilterableTable {
+public class MycatPhysicalTable extends MycatTableBase implements TransientTable, ProjectableFilterableTable, TranslatableTable {
     final MycatLogicTable logicTable;
     final BackendTableInfo backendTableInfo;//真实表名
 
@@ -52,11 +56,20 @@ public class MycatPhysicalTable extends MycatTableBase implements TransientTable
         String backendTaskSQL = CalciteUtls.getBackendTaskSQL(filters,
                 logicTable().getColumns(),
                 CalciteUtls.getColumnList(logicTable(),projects), backendTableInfo);
-        return new MyCatResultSetEnumerable((MycatCalciteDataContext) root, new QueryBackendTask(backendTableInfo.getTargetName(),backendTaskSQL));
+
+        MycatCalciteDataContext root1 = (MycatCalciteDataContext) root;
+        MyCatResultSetEnumerable.GetRow getRow = (mycatRowMetaData, targetName, sql) -> {
+            return root1.getUponDBContext().query(mycatRowMetaData, targetName, sql);
+        };
+        return new MyCatResultSetEnumerable(getRow,root1.getCancelFlag(),getRowType(), new QueryBackendTask(backendTableInfo.getTargetName(),backendTaskSQL));
     }
 
     public String getTargetName() {
         return backendTableInfo.getTargetName();
     }
 
+    @Override
+    public RelNode toRel(RelOptTable.ToRelContext context, RelOptTable relOptTable) {
+        return LogicalTableScan.create(context.getCluster(),relOptTable);
+    }
 }

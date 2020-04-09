@@ -23,6 +23,7 @@ import io.mycat.logTip.MycatLoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
@@ -55,7 +56,7 @@ public class JdbcConnectionManager implements ConnectionManager {
     }
 
     public DefaultConnection getConnection(String name) {
-        return getConnection(name, true, Connection.TRANSACTION_REPEATABLE_READ,false);
+        return getConnection(name, true, Connection.TRANSACTION_REPEATABLE_READ, false);
     }
 
     public DefaultConnection getConnection(String name, Boolean autocommit,
@@ -69,7 +70,20 @@ public class JdbcConnectionManager implements ConnectionManager {
             return operand;
         }) < key.getMaxCon()) {
             try {
-                return new DefaultConnection(key.dataSource.getConnection(), key, autocommit, transactionIsolation,readOnly, this);
+                DatasourceRootConfig.DatasourceConfig config = key.getConfig();
+                Connection connection = key.getDataSource().getConnection();
+                DefaultConnection defaultConnection = new DefaultConnection(connection, key, autocommit, transactionIsolation, readOnly, this);
+                try{
+                    return defaultConnection;
+                }finally {
+                    if (config.isInitSqlsGetConnection()) {
+                        try(Statement statement = connection.createStatement()){
+                            for (String initSql : config.getInitSqls()) {
+                                statement.execute(initSql);
+                            }
+                        }
+                    }
+                }
             } catch (SQLException e) {
                 key.counter.decrementAndGet();
                 throw new MycatException(e);

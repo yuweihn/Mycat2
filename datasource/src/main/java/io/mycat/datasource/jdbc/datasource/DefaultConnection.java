@@ -18,10 +18,13 @@ import io.mycat.MycatException;
 import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.api.collector.UpdateRowIteratorResponse;
 import io.mycat.beans.mycat.JdbcRowBaseIterator;
+import io.mycat.beans.mycat.MycatRowMetaData;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import lombok.SneakyThrows;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.sql.*;
 
 /**
@@ -73,7 +76,23 @@ public class DefaultConnection implements AutoCloseable {
     public RowBaseIterator executeQuery(String sql) {
         try {
             Statement statement = connection.createStatement();
-            return new JdbcRowBaseIterator(statement, statement.executeQuery(sql));
+            ResultSet resultSet = statement.executeQuery(sql);
+            return new JdbcRowBaseIterator(null, statement,resultSet, new Closeable() {
+                @Override
+                public void close() throws IOException {
+                    try {
+                        resultSet.close();
+                    } catch (SQLException e) {
+                        LOGGER.error("",e);
+                    }
+
+                    try {
+                        statement.close();
+                    } catch (SQLException e) {
+                        LOGGER.error("",e);
+                    }
+                }
+            }, sql);
         } catch (Exception e) {
             throw new MycatException(e);
         }
@@ -136,4 +155,12 @@ public class DefaultConnection implements AutoCloseable {
         return connection;
     }
 
+    public RowBaseIterator executeQuery(MycatRowMetaData mycatRowMetaData, String sql) {
+        try {
+            Statement statement = connection.createStatement();
+            return new JdbcRowBaseIterator(mycatRowMetaData,statement, statement.executeQuery(sql),null,sql);
+        } catch (Exception e) {
+            throw new MycatException(e);
+        }
+    }
 }

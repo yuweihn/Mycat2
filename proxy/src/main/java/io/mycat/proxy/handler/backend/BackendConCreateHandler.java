@@ -74,7 +74,9 @@ public final class BackendConCreateHandler implements BackendNIOHandler<MySQLCli
             channel = SocketChannel.open();
             channel.configureBlocking(false);
             mysql.register(curThread.getSelector(), channel, SelectionKey.OP_CONNECT);
-            channel.connect(new InetSocketAddress(datasource.getIp(), datasource.getPort()));
+            InetSocketAddress inetSocketAddress = new InetSocketAddress(datasource.getIp(), datasource.getPort());
+            channel.connect(inetSocketAddress);
+            LOGGER.info("inetSocketAddress:{} ",inetSocketAddress);
         } catch (Exception e) {
             onException(mysql, e);
             callback.onFinishedException(null, e, null);
@@ -151,6 +153,7 @@ public final class BackendConCreateHandler implements BackendNIOHandler<MySQLCli
         //用公钥进行密码加密
         if (STR_CACHING_AUTH_STAGE.equals(stage) && authPluginName
                 .equals(CachingSha2PasswordPlugin.PROTOCOL_PLUGIN_NAME)) {
+            LOGGER.info("authPluginName:{} ",authPluginName);
             String publicKeyString = mySQLPacket.readEOFString();
             byte[] payload = CachingSha2PasswordPlugin
                     .encrypt(mysqlVersion, publicKeyString, datasource.getPassword(), seed,
@@ -217,7 +220,7 @@ public final class BackendConCreateHandler implements BackendNIOHandler<MySQLCli
         hs.readPayload(mysql.currentProxyPayload());
         mysql.resetCurrentProxyPayload();
         this.mysqlVersion = hs.getServerVersion();
-        this.charsetIndex = hs.getCharacterSet() == -1 ? CharsetUtil.getIndex("utf8mb4") : hs.getCharacterSet();
+        this.charsetIndex = hs.getCharacterSet() == -1 ? CharsetUtil.getIndex("UTF-8") : hs.getCharacterSet();
         AuthPacket packet = new AuthPacket();
         packet.setCapabilities(serverCapabilities);
         packet.setMaxPacketSize(32 * 1024 * 1024);
@@ -226,6 +229,7 @@ public final class BackendConCreateHandler implements BackendNIOHandler<MySQLCli
         this.seed = hs.getAuthPluginDataPartOne() + hs.getAuthPluginDataPartTwo();
         //加密密码
         this.authPluginName = hs.getAuthPluginName();
+        LOGGER.info("authPluginName:{} ",authPluginName);
         packet.setPassword(generatePassword(authPluginName, seed));
 //        print(packet.getPassword());
         packet.setAuthPluginName(hs.getAuthPluginName());
@@ -256,6 +260,7 @@ public final class BackendConCreateHandler implements BackendNIOHandler<MySQLCli
      */
     public byte[] generatePassword(
             String authPluginName, String seed) {
+        LOGGER.info("authPluginName:{} ",authPluginName);
         if (MysqlNativePasswordPluginUtil.PROTOCOL_PLUGIN_NAME.equals(authPluginName)) {
             return MysqlNativePasswordPluginUtil.scramble411(datasource.getPassword(),
                     seed);
