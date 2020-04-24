@@ -25,6 +25,10 @@ EXPLAIN SELECT id FROM db1.travelrecord WHERE id = 1;
 EXECUTE plan fromSql(repli,'SELECT `id`  FROM `db1`.`travelrecord`  WHERE `id` = 1')
 ```
 
+## 安装包下载
+
+https://github.com/MyCATApache/Mycat2/releases
+
 
 
 
@@ -104,6 +108,12 @@ DML具有明确的分片条件,而且同一个事务内的操作,结合分片算
 
 
 
+### 读写分离
+
+见往下的配置
+
+
+
 ### 基于sql后端的大数据查询工具
 
 mycat2支持HBT语言方式向后端数据库发送sql拉取数据,然后使用特定语法聚合结果,并建立缓存
@@ -148,7 +158,7 @@ mvn package -Dmaven.test.skip=true
 ## 设置版本
 
 ```
-versions:set -DnewVersion=1.xxx-SNAPSHOT
+versions:setVariable -DnewVersion=1.xxx-SNAPSHOT
 ```
 
 
@@ -222,6 +232,10 @@ io.mycat.ConfigProvider实现不同的配置加载方式
 
 #### Mycat连接测试
 
+
+
+##### 客户端连接mycat
+
 测试mycat与测试mysql完全一致，mysql怎么连接，mycat就怎么连接。
 
 在mysqld下面设置
@@ -240,17 +254,7 @@ mysql -uroot -proot -P8066 -h127.0.0.1
 
 
 
-Mysql连接问题
-
-0.0.0.0 
-
-localhost 
-
-127.0.0.1没有权限可能出现连接不上的现象
-
-
-
-#### 客户端要求
+##### 客户端要求
 
 关闭SSL
 
@@ -260,7 +264,110 @@ mysql_native_password授权
 
 
 
+##### Mycat连接MySql
+
+Mycat连接不上Mysql的问题
+
+ip配置错误,无法连通,例如本地ip
+
+0.0.0.0 
+
+localhost 
+
+127.0.0.1
+
+没有权限可能出现连接不上的现象
+
+
+
+##### 连接状态问题
+
+数据源的initSqls属性可以设置连接初始化的变量
+
+如果mysql的编码是utf8mb4,那么请写上
+
+```
+set names utf8mb4;
+```
+
+如果要初始化默认库,请写上
+
+```
+use db1;
+```
+
+jdbc的连接属性建议使用连接字符串设置
+
+
+
+##### mysql服务器设置参考
+
+###### MariaDB 10.3
+
+```ini
+[mysqld]
+local-infile=1
+local-infile = ON
+datadir=xxx/MariaDB 10.3/data
+port=3306
+innodb_buffer_pool_size=2031M
+max_allowed_packet=128MB
+max_connections=10000
+character-setVariable-client-handshake = FALSE 
+character-setVariable-server = utf8mb4 
+collation-server = utf8mb4_unicode_ci 
+init_connect='SET NAMES utf8mb4'
+log_bin_trust_function_creators=1
+[client]
+local-infile = ON
+loose-local-infile= 1
+port=3306
+plugin-dir=xxx/MariaDB 10.3/lib/plugin
+default-character-setVariable = utf8mb4
+[mysql] 
+local_infile = 1
+local-infile = ON
+default-character-setVariable = utf8mb4
+
+```
+
+
+
+###### Mysql-8.0.19
+
+```ini
+[mysqld]
+port=3307
+basedir=xx/mysql-8.0.19-winx64/mysql-8.0.19-winx64
+# 设置mysql数据库的数据的存放目录
+datadir=xx/mysql-8.0.19-winx64/mysql-8.0.19-winx64/Database
+max_connections=200
+max_connect_errors=10
+character-setVariable-server=utf8mb4
+default-storage-engine=INNODB
+
+#mycat2.0可能不支持其他授权方式
+default_authentication_plugin=mysql_native_password 
+[mysql]
+# 设置mysql客户端默认字符集
+default-character-setVariable=utf8mb4
+
+....
+```
+
+
+
 #### 日志配置
+
+wrapper.conf
+
+```ini
+wrapper.java.additional.10=-Dlog4j.configuration=file:/root/mycat/conf/log4j.properties
+```
+
+
+
+log4j.properties
 
 ```ini
 log4j.rootLogger=debug,console,rollingFile
@@ -271,6 +378,7 @@ log4j.appender.console.layout.ConversionPattern=%d{HH:mm:ss} T=%t [%c %M at %L]-
 
 log4j.appender.rollingFile=org.apache.log4j.rolling.RollingFileAppender
 log4j.appender.rollingFile.RollingPolicy=org.apache.log4j.rolling.TimeBasedRollingPolicy
+#此处修改日志路径
 log4j.appender.rollingFile.RollingPolicy.ActiveFileName=../logs/mycat.log
 log4j.appender.rollingFile.RollingPolicy.FileNamePattern=../logs/mycat-%d{yyyy-MM-dd}.%i.log.gz
 log4j.appender.rollingFile.triggeringPolicy=org.apache.log4j.rolling.SizeBasedTriggeringPolicy
@@ -404,7 +512,21 @@ INSERT INTO `db1`.`travelrecord` (`user_id`) VALUES ('2');
 
 
 
-##### XA事物
+##### XA事务
+
+https://www.atomikos.com/
+
+
+
+##### 其他支持
+
+Mycat2提供的事务执行环境
+
+一个事务绑定一个线程
+
+一个事务根据标记绑定线程
+
+支持以便方便支持不同的事务框架
 
 
 
@@ -797,7 +919,7 @@ sql中的参数的优先级比tags高
 #### SQL再生成
 
 ```yaml
-  {name: 'mysql set names utf8', sql: 'SET NAMES {utf8}',explian: 'SET NAMES utf8mb4'  command: execute , tags: {targets: defaultDs,forceProxy: true}}
+  {name: 'mysql setVariable names utf8', sql: 'SET NAMES {utf8}',explian: 'SET NAMES utf8mb4'  command: execute , tags: {targets: defaultDs,forceProxy: true}}
 ```
 
 SQL被'SET NAMES utf8mb4'替换
@@ -967,7 +1089,7 @@ name: hbt,sql: 'execute plan {hbt}' , explain: '{hbt}' ,command: executePlan
 ##### 开启XA事务
 
 ```yaml
-{name: setXA ,sql: 'set xa = on',command: onXA},
+{name: setXA ,sql: 'setVariable xa = on',command: onXA},
 ```
 
 
@@ -975,7 +1097,7 @@ name: hbt,sql: 'execute plan {hbt}' , explain: '{hbt}' ,command: executePlan
 ##### 关闭XA事务
 
 ```yaml
-{name: setProxy ,sql: 'set xa = off',command: offXA},
+{name: setProxy ,sql: 'setVariable xa = off',command: offXA},
 ```
 
 
@@ -985,7 +1107,7 @@ name: hbt,sql: 'execute plan {hbt}' , explain: '{hbt}' ,command: executePlan
 关闭自动提交后,在下一次sql将会自动开启事务,并不会释放后端连接
 
 ```yaml
-{name: setAutoCommitOff ,sql: 'set autocommit=off',command: setAutoCommitOff},
+{name: setAutoCommitOff ,sql: 'setVariable autocommit=off',command: setAutoCommitOff},
 ```
 
 
@@ -993,7 +1115,7 @@ name: hbt,sql: 'execute plan {hbt}' , explain: '{hbt}' ,command: executePlan
 ##### 开启自动提交
 
 ```yaml
-{name: setAutoCommitOn ,sql: 'set autocommit=on',command: setAutoCommitOn},
+{name: setAutoCommitOn ,sql: 'setVariable autocommit=on',command: setAutoCommitOn},
 ```
 
 
@@ -1052,7 +1174,7 @@ QUERY_MASTER执行查询语句,当目标是集群的时候路由到主节点
 
 INSERT执行插入语句
 
-UPDATE执行其他的更新语句,例如delete,update,set
+UPDATE执行其他的更新语句,例如delete,update,setVariable
 
 
 
@@ -1163,7 +1285,11 @@ cluster: #集群,数据源选择器,既可以mycat自行检查数据源可用也
   timer: {initialDelay: 1000, period: 5, timeUnit: SECONDS} #心跳定时器
 ```
 
-只有GARELA_CLUSTER能在masters属性配置多个数据源的名字
+只有MASTER_SLAVE,GARELA_CLUSTER能在masters属性配置多个数据源的名字
+
+MASTER_SLAVE中的masters的意思是主从切换顺序
+
+GARELA_CLUSTER的masters意思是这些节点同时成为主节点,负载均衡算法可以选择主节点
 
 reuqestType是进行心跳的实现方式,使用mysql意味着使用proxy方式进行,能异步地进行心跳,而jdbc方式会占用线程池
 
@@ -1471,66 +1597,34 @@ https://github.com/MyCATApache/Mycat2/blob/70311cbed295f0a5f1a805c298993f88a6331
 
 
 
-## mysql服务器设置参考
-
-### MariaDB 10.3
-
-```ini
-[mysqld]
-local-infile=1
-local-infile = ON
-datadir=xxx/MariaDB 10.3/data
-port=3306
-innodb_buffer_pool_size=2031M
-max_allowed_packet=128MB
-max_connections=10000
-character-set-client-handshake = FALSE 
-character-set-server = utf8mb4 
-collation-server = utf8mb4_unicode_ci 
-init_connect='SET NAMES utf8mb4'
-log_bin_trust_function_creators=1
-[client]
-local-infile = ON
-loose-local-infile= 1
-port=3306
-plugin-dir=xxx/MariaDB 10.3/lib/plugin
-default-character-set = utf8mb4
-[mysql] 
-local_infile = 1
-local-infile = ON
-default-character-set = utf8mb4
-
-```
-
-
-
-### Mysql-8.0.19
-
-```ini
-[mysqld]
-port=3307
-basedir=xx/mysql-8.0.19-winx64/mysql-8.0.19-winx64
-# 设置mysql数据库的数据的存放目录
-datadir=xx/mysql-8.0.19-winx64/mysql-8.0.19-winx64/Database
-max_connections=200
-max_connect_errors=10
-character-set-server=utf8mb4
-default-storage-engine=INNODB
-
-#mycat2.0可能不支持其他授权方式
-default_authentication_plugin=mysql_native_password 
-[mysql]
-# 设置mysql客户端默认字符集
-default-character-set=utf8mb4
-
-....
-```
-
 
 
 ## 读写分离配置
 
+例子1
+
 https://github.com/MyCATApache/Mycat2/blob/master/example/src/test/resources/io/mycat/example/readWriteSeparation/mycat.yml
+
+该配置需要把使用的表都配置上,并且配置发往从节点的sql
+
+
+
+例子2
+
+```yml
+interceptors:
+  [{user:{username: 'root' ,password: '123456' , ip: '.'},
+    defaultHanlder: {command: execute , tags: {targets: repli,needTransaction: true,executeType: QUERY}},
+    sqls:[
+    {sql: 'insert {any}',command: execute , tags: {targets: defaultDs,needTransaction: true,executeType: INSERT }} ,
+      {sql: 'delete {any}',command: execute , tags: {targets: defaultDs,needTransaction: true,executeType: UPDATE} } ,
+    ] ,
+    sqlsGroup: [*jdbcAdapter],
+    transactionType: proxy  #xa.proxy
+   }]
+```
+
+该配置需要把发往主节点的sql配置不需要配置表名,同时开启事务的情况下发往主节点
 
 ## 分片配置
 
