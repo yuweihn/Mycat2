@@ -262,6 +262,24 @@ mysql -uroot -proot -P8066 -h127.0.0.1
 
 mysql_native_password授权
 
+开启自动重连
+
+开启闲置连接检查,心跳
+
+```
+com.mysql.jdbc.exceptions.jdbc4.CommunicationsException: Communications link failure
+
+Can not read response from server. Expected to read 4 bytes, read 0 bytes before connection was unexpectedly lost.
+```
+
+关闭允许多语句
+
+jdbc客户端设置useLocalSessionState解决
+
+```
+Could not retrieve transation read-only status server
+```
+
 
 
 ##### Mycat连接MySql
@@ -1293,7 +1311,7 @@ GARELA_CLUSTER的masters意思是这些节点同时成为主节点,负载均衡�
 
 reuqestType是进行心跳的实现方式,使用mysql意味着使用proxy方式进行,能异步地进行心跳,而jdbc方式会占用线程池
 
-当配置是主从的时候,发生主从切换,mycat会备份原来的配置(文件名带有版本号)然后使用更新配置
+当配置是主从的时候,发生主从切换,mycat会备份原来的配置(文件名带有版本号)然后使用更新的配置
 
 
 
@@ -1448,37 +1466,6 @@ groupItem:
 
 
 
-## 常见优化
-
-```sql
-USE db1;
-
-EXPLAIN SELECT id  FROM travelrecord WHERE id =1;
-
-MycatTransientSQLTableScan(sql=[SELECT `id`  FROM `db1`.`travelrecord`  WHERE `id` = 1])
-
-
-EXPLAIN SELECT COUNT(*)  FROM travelrecord WHERE id >=0;
-
-LogicalAggregate(group=[{}], EXPR$0=[COUNT()])
-  LogicalUnion(all=[true])
-    MycatTransientSQLTableScan(sql=[SELECT COUNT(*)  FROM `db2`.`travelrecord`  WHERE `id` >= 0])
-    MycatTransientSQLTableScan(sql=[SELECT COUNT(*)  FROM (SELECT *  FROM `db1`.`travelrecord`  WHERE `id` >= 0  UNION ALL  SELECT *  FROM `db1`.`travelrecord2`  WHERE `id` >= 0  UNION ALL  SELECT *  FROM `db1`.`travelrecord3`  WHERE `id` >= 0) AS `t2`])
-    
-
-EXPLAIN SELECT COUNT(*)  FROM travelrecord WHERE id >=0;
-
-LogicalProject(sm=[$0], EXPR$1=[CASE(=($2, 0), null:BIGINT, $1)], EXPR$2=[/(CAST(CASE(=($2, 0), null:BIGINT, $1)):DOUBLE, $2)])
-  LogicalAggregate(group=[{}], sm=[COUNT()], EXPR$1=[$SUM0($0)], agg#2=[COUNT($0)])
-    LogicalUnion(all=[true])
-      MycatTransientSQLTableScan(sql=[SELECT `id`  FROM `db2`.`travelrecord`  WHERE `id` >= 0])
-      MycatTransientSQLTableScan(sql=[SELECT `id`  FROM `db1`.`travelrecord`  WHERE `id` >= 0  UNION ALL  SELECT `id`  FROM `db1`.`travelrecord2`  WHERE `id` >= 0  UNION ALL  SELECT `id`  FROM `db1`.`travelrecord3`  WHERE `id` >= 0])
-
-
-```
-
-
-
 ## HBT(Human Brain Tech)
 
 HBT在Mycat2中表现为关系表达式领域驱动语言(Relation DSL).
@@ -1527,7 +1514,7 @@ HBTlang文档: <https://github.com/MyCATApache/Mycat2/blob/master/doc/103-HBTlan
 
 
 
-## 已知限制
+## 已知限制问题
 
 ###### 不支持服务器预处理
 
@@ -1566,6 +1553,30 @@ HBTlang文档: <https://github.com/MyCATApache/Mycat2/blob/master/doc/103-HBTlan
 10. 非查询语句,mycat暂时不会自动处理函数表达式调用,会路由到mysql中调用,所以按日期分表的情况,需要sql中写清楚日期
 
 11. 部分关联子查询暂时不支持
+
+
+
+分布式查询引擎(calcite)检查项
+
+in表达式会编译成多个or表达式,默认情况下会把超过20个常量值变成内联表,mycat2要对此不处理,保持or表达式,因为内联表(LogicalValues)会被进一步'优化为'带有groupby的sql.
+
+
+
+生成的sql遇上异常
+
+```
+SELECT list is not in GROUP BY clause and contains nonaggregated column 'xxx' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by
+```
+
+
+
+mysql设置,即不带only_full_group_by属性
+
+```sql
+SET GLOBAL sql_mode='STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+
+ SET SESSION sql_mode='STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+```
 
 
 
