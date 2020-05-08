@@ -13,3 +13,4 @@ target/
 *.iws
 
 dependency-reduced-pom.xml
+/logs/mycat.log
