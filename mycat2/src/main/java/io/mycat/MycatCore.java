@@ -20,11 +20,11 @@ import io.mycat.api.callback.MySQLAPIExceptionCallback;
 import io.mycat.api.collector.CollectorUtil;
 import io.mycat.api.collector.OneResultSetCollector;
 import io.mycat.beans.MySQLDatasource;
+import io.mycat.beans.mycat.TransactionType;
 import io.mycat.beans.mysql.packet.ErrorPacket;
-import io.mycat.boost.UserBooster;
 import io.mycat.buffer.BufferPool;
 import io.mycat.buffer.HeapBufferPool;
-import io.mycat.client.ClientRuntime;
+import io.mycat.client.InterceptorRuntime;
 import io.mycat.command.CommandDispatcher;
 import io.mycat.config.*;
 import io.mycat.datasource.jdbc.JdbcRuntime;
@@ -42,12 +42,15 @@ import io.mycat.proxy.session.MySQLClientSession;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.proxy.session.MycatSessionManager;
 import io.mycat.replica.ReplicaSelectorRuntime;
-import io.mycat.runtime.LocalTransactionSession;
 import io.mycat.runtime.MycatDataContextSupport;
 import io.mycat.runtime.ProxyTransactionSession;
+import io.mycat.util.ApplicationContext;
 import io.mycat.util.CharsetUtil;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.SneakyThrows;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
@@ -63,8 +66,10 @@ import java.util.stream.Collectors;
 public enum MycatCore {
     INSTANCE;
     private ConfigProvider config;
-    private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(MycatCore.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(MycatCore.class);
     private ConcurrentHashMap<String, MySQLDatasource> datasourceMap = new ConcurrentHashMap<>();
+    @Getter
+    private final ApplicationContext context = new ApplicationContext();//容器管理实例数量与生命周期
 
     @SneakyThrows
     public void init(ConfigProvider config) {
@@ -76,13 +81,13 @@ public enum MycatCore {
 
         ReplicaSelectorRuntime.INSTANCE.load(mycatConfig);
         JdbcRuntime.INSTANCE.load(mycatConfig);
-        ClientRuntime.INSTANCE.load(mycatConfig);
+        InterceptorRuntime.INSTANCE.load(mycatConfig);
 
 
         MetadataManager.INSTANCE.load(mycatConfig);
 
-        UserBooster.init();
         CharsetUtil.init(null);
+        //context.scanner("io.mycat.sqlHandler").inject();
         startProxy(mycatConfig);
     }
 
@@ -123,12 +128,11 @@ public enum MycatCore {
         NIOAcceptor acceptor = new NIOAcceptor(reactorManager);
 
 
-        HashMap<String, Function<MycatDataContext, TransactionSession>> transcationFactoryMap = new HashMap<>();
+        HashMap<TransactionType, Function<MycatDataContext, TransactionSession>> transcationFactoryMap = new HashMap<>();
 
 
-        transcationFactoryMap.put("local", mycatDataContext -> new LocalTransactionSession(mycatDataContext));
-        transcationFactoryMap.put("xa", mycatDataContext -> new JTATransactionSession(mycatDataContext, () -> new UserTransactionImp()));
-        transcationFactoryMap.put("proxy", mycatDataContext -> new ProxyTransactionSession(mycatDataContext));
+        transcationFactoryMap.put(TransactionType.JDBC_TRANSACTION_TYPE, mycatDataContext -> new JTATransactionSession(mycatDataContext, () -> new UserTransactionImp()));
+        transcationFactoryMap.put(TransactionType.PROXY_TRANSACTION_TYPE, mycatDataContext -> new ProxyTransactionSession(mycatDataContext));
 
         MycatDataContextSupport.INSTANCE.init(mycatConfig.getServer().getWorker(), transcationFactoryMap);
 

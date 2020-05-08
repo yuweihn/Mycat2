@@ -14,53 +14,67 @@
  */
 package io.mycat;
 
-import io.mycat.client.ClientRuntime;
-import io.mycat.client.Context;
-import io.mycat.client.MycatClient;
+
+import io.mycat.beans.mycat.TransactionType;
+import io.mycat.calcite.MycatCalciteSupport;
+import io.mycat.client.Interceptor;
+import io.mycat.client.InterceptorRuntime;
+import io.mycat.client.UserSpace;
 import io.mycat.command.AbstractCommandHandler;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import io.mycat.proxy.session.MycatSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
 
 /**
  * @author chen junwen
  */
 public class DefaultCommandHandler extends AbstractCommandHandler {
-    private MycatClient client;
-    private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(DefaultCommandHandler.class);
+
+    //  private MycatClient client;
+    //  private final ApplicationContext applicationContext = MycatCore.INSTANCE.getContext();
+    //  private static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(DefaultCommandHandler.class);
+    //  private final Set<SQLHandler> sqlHandlers = new TreeSet<>(new OrderComparator(Arrays.asList(Order.class)));
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultCommandHandler.class);
+    private Interceptor interceptor;
+
 
     @Override
     public void handleInitDb(String db, MycatSession mycat) {
-        client.useSchema(db);
-        mycat.setSchema(db);
+        mycat.useSchema(db);
         LOGGER.info("handleInitDb:" + db);
         super.handleInitDb(db, mycat);
     }
 
     @Override
     public void initRuntime(MycatSession session) {
-        this.client = ClientRuntime.INSTANCE.login((MycatDataContext) session.unwrap(MycatDataContext.class), true);
-        this.client.useSchema(session.getSchema());
+        this.interceptor = InterceptorRuntime.INSTANCE.login(session.getUser().getUserName());
+        TransactionType defaultTransactionType = interceptor.getUserSpace().getDefaultTransactionType();
+        if (defaultTransactionType != null) {
+            session.getDataContext().switchTransaction(defaultTransactionType);
+        }
     }
 
     @Override
     public void handleQuery(byte[] bytes, MycatSession session) {
         try {
-            LOGGER.debug("-----------------reveice--------------------");
-            String sql = new String(bytes);
-            LOGGER.debug(sql);
-            sql = sql.trim();
-            if (sql.endsWith(";")) {
-                sql = sql.substring(0, sql.length() - 1);
-                LOGGER.debug("-----------------tirm-right-semi(;)--------------------");
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("-----------------reveice--------------------");
+                LOGGER.debug(new String(bytes));
             }
-            Context analysis = client.analysis(sql);
-            ContextRunner.run(client, analysis, session);
+            UserSpace userSpace = this.interceptor.getUserSpace();
+            userSpace.execute(ByteBuffer.wrap(bytes), session, new ReceiverImpl(session));
         } catch (Throwable e) {
+            LOGGER.debug("-----------------reveice--------------------");
+            LOGGER.debug(new String(bytes));
             session.setLastMessage(e);
             session.writeErrorEndPacketBySyncInProcessError();
         }
     }
+
 
     @Override
     public void handleContentOfFilename(byte[] sql, MycatSession session) {

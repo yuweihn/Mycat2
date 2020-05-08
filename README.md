@@ -2,7 +2,7 @@
 
 # mycat 2.0-readme
 
-author:junwen  2020-3-28
+author:junwen  2020-5-6
 
 作者qq: 294712221
 
@@ -16,6 +16,8 @@ This work is licensed under a [Creative Commons Attribution-ShareAlike 4.0 Inter
 项目地址:<https://github.com/MyCATApache/Mycat2>
 
 HBTlang文档: <https://github.com/MyCATApache/Mycat2/blob/master/doc/103-HBTlang.md>
+
+Dockerfile:https://github.com/MyCATApache/Mycat2/blob/master/mycat2/Dockerfile
 
 执行hbt的两组命令是
 
@@ -548,6 +550,19 @@ Mycat2提供的事务执行环境
 
 
 
+#### 读写分离
+
+```yaml
+metadata: 
+  schemas: [{
+              schemaName: 'db1' ,   targetName: 'repli',
+            }]
+```
+
+mycatdb命令可以自动完成sql分析,进行读写分离
+
+
+
 #### 分片类型
 
 ##### 自然分片
@@ -605,16 +620,41 @@ tableName:物理表名
 ###### 基本配置模板
 
 ```yaml
-metadata: #元数据 升级计划:通过创建表的sql语句提供该信息免去繁琐配置,
-  prototype: {targetName: defaultDs } #从该数据源名字获取配置,该功能未开放
-  schemas:
-    db1: #逻辑库名
-      shadingTables: #分片表信息
-        travelrecord: #此处写配置的表信息
-        address: #此处写配置的表信息
-      globalTables: #全局表信息
-        company: #此处写配置的表信息
+metadata: 
+  prototype: {targetName: defaultDs }
+  schemas: [{
+              schemaName: 'db1' ,   targetName: 'repli', #读写分离集群
+              shadingTables: {
+                travelrecord: { #表配置
+                }
+              },
+              globalTables: { #表配置
+                company: {
+
+                }
+              }
+            }]
 ```
+
+
+
+prototype: {targetName: defaultDs } 
+
+可不配置
+
+ 配置全局默认的数据源,一般可能是无表sql,或者从此处获取表的配置,该数据源配置的意义是代理架构下,后端可能需要存在一个与mycat相同库,相同表的数据源处理mycat无法处理的sql
+
+
+
+schemaName
+
+库名
+
+
+
+targetName
+
+如果不配置库,表的信息,无法路由的表发往该目标
 
 
 
@@ -748,6 +788,451 @@ ip:用户连接的远程ip接收的格式是
 
 
 
+###### 默认配置
+
+```yaml
+interceptors:
+  [{
+     user: {ip: '.', password: '123456', username: root},
+     transactionType: proxy
+   }]
+```
+
+此配置使用内置默认的mycatdb命令,根据分片配置进行处理,无需配置任何命令,默认事务是proxy
+
+
+
+SQL匹配,命令是高级内容,见后几章
+
+## 事务
+
+XA事务使用基于JDBC数据源实现,具体请参考Java Transaction API
+
+Proxy事务即通过Proxy操作MySQL进行事务操作,本质上与直接操作MySQL没有差异.
+
+为了方便上层逻辑操作事务,所以统一JDBC和Proxy操作,,参考JDBC的接口,定下mycat2的事务接口
+在proxy事务下,开启自动提交,没有事务,遇上需要跨分片的非查询操作,会自动升级为通过jdbc操作
+
+
+
+## 数据源配置
+
+```yaml
+datasource:
+  datasources: [{name: defaultDs, ip: 0.0.0.0,port: 3306,user: root,password: 123456,maxCon: 10000,minCon: 0,
+   maxRetryCount: 1000000000, #连接重试次数
+   maxConnectTimeout: 1000000000, #连接超时时间
+   dbType: mysql, #
+   url: 'jdbc:mysql://127.0.0.1:3306?useUnicode=true&serverTimezone=UTC',
+   weight: 1, #负载均衡权重
+   initSqls: ['use db1'], #建立连接后执行的sql,在此可以写上use xxx初始化默认database,该配置可能无效
+   instanceType: ,#READ,WRITE,READ_WRITE ,集群信息中是主节点,则默认为读写,副本则为读,此属性可以强制指定可写
+   initSqlsGetConnection: false
+  }
+  ]
+  datasourceProviderClass: io.mycat.datasource.jdbc.datasourceProvider.AtomikosDatasourceProvider
+  timer: {initialDelay: 1000, period: 5, timeUnit: SECONDS}
+```
+
+
+
+maxConnectTimeout:单位millis
+
+配置中的定时器主要作用是定时检查闲置连接
+
+
+
+initSqlsGetConnection
+
+true|false
+
+默认:false
+
+对于jdbc每次获取连接是否都执行initSqls
+
+
+
+datasourceProviderClass
+
+数据源提供者
+
+涉及jdbc,xa需要特定配置的DataSource,可以实现这个类,暂时mycat只支持mysql的数据源配置,使用mysql的xa数据源
+
+
+
+## 集群配置
+
+```yaml
+cluster: #集群,数据源选择器,既可以mycat自行检查数据源可用也可以通过mycat提供的外部接口设置设置数据源可用信息影响如何使用数据源
+  close: true #关闭集群心跳,此时集群认为所有数据源都是可用的,可以通过mycat提供的外部接口设置数据源可用信息达到相同效果
+  clusters: [
+  {name: repli ,
+   replicaType: SINGLE_NODE , # SINGLE_NODE:单一节点 ,MASTER_SLAVE:普通主从 GARELA_CLUSTER:garela cluster
+   switchType: NOT_SWITCH , #NOT_SWITCH:不进行主从切换,SWITCH:进行主从切换
+   readBalanceType: BALANCE_ALL  , #对于查询请求的负载均衡类型
+   readBalanceName: BalanceRoundRobin , #对于查询请求的负载均衡类型
+   writeBalanceName: BalanceRoundRobin ,  #对于修改请求的负载均衡类型
+   masters:[defaultDs], #主节点列表
+   replicas:[defaultDs2],#从节点列表
+   heartbeat:{maxRetry: 3, #心跳重试次数
+              minSwitchTimeInterval: 12000 , #最小主从切换间隔
+              heartbeatTimeout: 12000 , #心跳超时值,毫秒
+              slaveThreshold: 0 , # mysql binlog延迟值
+              reuqestType: 'mysql' #进行心跳的方式,mysql或者jdbc两种
+   }}
+  ]
+  timer: {initialDelay: 1000, period: 5, timeUnit: SECONDS} #心跳定时器
+```
+
+只有MASTER_SLAVE,GARELA_CLUSTER能在masters属性配置多个数据源的名字
+
+MASTER_SLAVE中的masters的意思是主从切换顺序
+
+GARELA_CLUSTER的masters意思是这些节点同时成为主节点,负载均衡算法可以选择主节点
+
+reuqestType是进行心跳的实现方式,使用mysql意味着使用proxy方式进行,能异步地进行心跳,而jdbc方式会占用线程池
+
+当配置是主从的时候,发生主从切换,mycat会备份原来的配置(文件名带有版本号)然后使用更新的配置
+
+
+
+## 服务器配置
+
+```yaml
+server:
+  ip: 0.0.0.0
+  port: 8066
+  reactorNumber: 1
+  #用于多线程任务的线程池,
+  worker: {
+           maxPengdingLimit: 65535, #每个线程处理任务队列的最大长度
+           maxThread: 1024,
+           minThread: 2,
+           timeUnit: SECONDS, #超时单位
+           waitTaskTimeout: 30 #超时后将结束闲置的线程
+  }
+```
+
+
+
+## 分片算法配置
+
+```yaml
+function: { clazz: io.mycat.router.function.PartitionByLong , name: partitionByLong, properties: {partitionCount: '4', partitionLength: '256'}, ranges: {}}
+```
+
+具体参考以下链接
+
+https://github.com/MyCATApache/Mycat2/blob/master/doc/17-partitioning-algorithm.md
+
+
+
+## 负载均衡配置
+
+```yaml
+plug:
+  loadBalance:
+    defaultLoadBalance: balanceRandom
+    loadBalances: [
+    {name: BalanceRunOnMaster, clazz: io.mycat.plug.loadBalance.BalanceRunOnMaster},
+    {name: BalanceLeastActive, clazz: io.mycat.plug.loadBalance.BalanceLeastActive},
+    {name: BalanceRoundRobin, clazz: io.mycat.plug.loadBalance.BalanceRoundRobin},
+    {name: BalanceRunOnMaster, clazz: io.mycat.plug.loadBalance.BalanceRunOnMaster},
+    {name: BalanceRunOnRandomMaster, clazz: io.mycat.plug.loadBalance.BalanceRunOnRandomMaster}
+    ]
+```
+
+具体参考以下链接
+
+https://github.com/MyCATApache/Mycat2/blob/master/doc/16-load-balancing-algorithm.md
+
+
+
+## 全局序列号
+
+```yaml
+plug:
+  sequence:
+    sequences: [
+    {name: 'db1_travelrecord', clazz: io.mycat.plug.sequence.SequenceMySQLGenerator ,args: "sql : SELECT db1.mycat_seq_nextval('GLOBAL') , targetName:defaultDs"},
+    {name: 'db1_address', clazz: io.mycat.plug.sequence.SequenceSnowflakeGenerator ,args: 'workerId:1'},
+    ]
+```
+
+名称约定
+
+db1_travelrecord对应metaData配置中的db1.travelrecord,当该名字对应,建表的自增信息存在的时候,自增序列就会自动开启
+
+distributedQuery命令可以查询对应序列号
+
+```sql
+SELECT next_value_for('db1_travelrecord')
+```
+
+
+
+### io.mycat.plug.sequence.SequenceMySQLGenerator
+
+对应1.6 mysql数据库形式的全局序列号
+
+sql是最终查询数据库的sql
+
+targetName是数据源的名字
+
+所需的函数脚本
+
+https://github.com/MyCATApache/Mycat2/blob/052973dfd0a9bd1b1bce85190fd5e828bb9c6a12/mycat2/src/main/resources/dbseq.sql
+
+### io.mycat.plug.sequence.SequenceSnowflakeGenerator
+
+workerId对应雪花算法的参数
+
+
+
+## Mycat2.0分布式查询支持语法
+
+```yaml
+query:
+
+select:
+      SELECT [ STREAM ] [ ALL | DISTINCT ]
+          { * | projectItem [, projectItem ]* }
+      FROM tableExpression
+      [ WHERE booleanExpression ]
+      [ GROUP BY { groupItem [, groupItem ]* } ]
+      [ HAVING booleanExpression ]
+
+selectWithoutFrom:
+      SELECT [ ALL | DISTINCT ]
+          { * | projectItem [, projectItem ]* }
+
+projectItem:
+      expression [ [ AS ] columnAlias ]
+  |   tableAlias . *
+
+tableExpression:
+      tableReference [, tableReference ]*
+  |   tableExpression [ NATURAL ] [ ( LEFT | RIGHT | FULL ) [ OUTER ] ] JOIN tableExpression [ joinCondition ]
+  |   tableExpression CROSS JOIN tableExpression
+  |   tableExpression [ CROSS | OUTER ] APPLY tableExpression
+
+joinCondition:
+      ON booleanExpression
+  |   USING '(' column [, column ]* ')'
+
+tableReference:
+      tablePrimary
+      [ [ AS ] alias [ '(' columnAlias [, columnAlias ]* ')' ] ]
+
+tablePrimary:
+      [ [ catalogName . ] schemaName . ] tableName
+      '(' TABLE [ [ catalogName . ] schemaName . ] tableName ')'
+
+columnDecl:
+      column type [ NOT NULL ]
+
+values:
+      VALUES expression [, expression ]*
+
+groupItem:
+      expression
+  |   '(' ')'
+  |   '(' expression [, expression ]* ')'
+
+```
+
+## Mycat2.0分布式修改支持语法
+
+暂时仅仅改写对应的表名和根据条件拆分sql,具体使用explain语句查看
+
+
+
+## HBT(Human Brain Tech)
+
+HBT在Mycat2中表现为关系表达式领域驱动语言(Relation DSL).
+
+在设计上是Mycat2的运行时的中间语言,关于查询的HBT可以实现与SQL,其他查询优化器,查询编译器的关系表达式相互甚至与SQL DSL框架中的DSL转换.HBT也支持直接从文本和编写代码的方式构建.
+
+
+
+## 使用HBT解决什么问题?
+
+1.允许用户直接编写关系表达式实现功能,不同的SQL方言可以对应同一套关系表达式
+
+2.运行用户运行自定义函数
+
+3.免去优化过程,用户编写的关系表达式可以就是最终的执行计划
+
+4.允许使用函数宏展开关系表达式,比如给逻辑表函数宏指定分片范围自动扩展成对应的物理表
+
+5.允许SQL与关系表达式一并编写,例如叶子是SQL,根是Mycat的运算节点
+
+6.可移植到其他平台运行
+
+7.使用DSL作为中间语言下发到其他Mycat节点上运行
+
+8.方便验证测试
+
+HBTlang文档: <https://github.com/MyCATApache/Mycat2/blob/master/doc/103-HBTlang.md>
+
+
+
+## 已知限制问题
+
+###### 不支持服务器预处理
+
+###### proxy事务模式
+
+开启事务后的操作只能是同一个分片
+
+事务里使用全局表会出现非同一分片的全局表无法回滚的现象
+
+对于这种更新操作,,要求强一致性,可以开启xa
+
+
+
+###### 分布式查询引擎
+
+1. 结果集字段名不写别名的情况下,生成的列名是不确定的
+
+2. sql不写order的情况下,结果集可能是未经排序的
+
+3. 不建议写类似sql,sql中没有引用表的列名,这种sql在mycat里未正式支持(0.8版本后可以运行)
+
+   `select 1 from db1.travelrecord where id = 1 limit 1`
+
+4. sql一般带有分片条件,否则无法发挥分表优势,而且位于表名后的where,而且是简单的形式,复杂的条件和不写条件,not表达式都会导致全表扫描
+
+5. sql函数名不能出现Crudate大小写混合的情况,否则无法识别
+
+6. 不建议使用除法,不同的数据库的除法的结果存在整形和浮点两种,使用除法请在sql中使用cast保证类型和类型或者*1.0
+
+7. avg函数默认结果是取整的,所以参数值用*1.0转成浮点可以保证精度
+
+8. 聚合函数max,min函数不能与group by一起用
+
+9. union等集合操作暂时不支持
+
+10. 非查询语句,mycat暂时不会自动处理函数表达式调用,会路由到mysql中调用,所以按日期分表的情况,需要sql中写清楚日期
+
+11. 部分关联子查询暂时不支持
+
+
+
+分布式查询引擎(calcite)检查项
+
+in表达式会编译成多个or表达式,默认情况下会把超过20个常量值变成内联表,mycat2要对此不处理,保持or表达式,因为内联表(LogicalValues)会被进一步'优化为'带有groupby的sql.
+
+
+
+生成的sql遇上异常
+
+```
+SELECT list is not in GROUP BY clause and contains nonaggregated column 'xxx' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by
+```
+
+
+
+mysql设置,即不带only_full_group_by属性
+
+```sql
+SET GLOBAL sql_mode='STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+
+ SET SESSION sql_mode='STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+```
+
+
+
+
+
+
+
+
+
+## 内置函数列表
+
+原则上mycat不应该对函数运算,想要更多函数支持请提issue
+
+##### 数学函数
+
+https://github.com/MyCATApache/Mycat2/blob/08045e4fda1eb135d2e6a7029ef4bcc5b739563b/mycat2/src/test/java/io/mycat/sql/MathChecker.java
+
+##### 日期函数
+
+https://github.com/MyCATApache/Mycat2/blob/08045e4fda1eb135d2e6a7029ef4bcc5b739563b/mycat2/src/test/java/io/mycat/sql/DateChecker.java
+
+##### 字符函数
+
+https://github.com/MyCATApache/Mycat2/blob/70311cbed295f0a5f1a805c298993f88a6331765/mycat2/src/test/java/io/mycat/sql/CharChecker.java
+
+## SQL支持情况
+
+
+
+
+
+
+
+## 读写分离配置
+
+自动路由
+
+https://github.com/MyCATApache/Mycat2/blob/master/example/src/test/resources/io/mycat/example/readWriteSeparation/mycat.yml
+
+
+
+## 分片配置
+
+https://github.com/MyCATApache/Mycat2/blob/master/example/src/test/resources/io/mycat/example/sharding/mycat.yml
+
+
+
+## 高级内容
+
+### 多配置文件
+
+-DMYCAT_HOME=mycat2\src\main\resources 指向的是配置文件夹
+
+mycat.yml是主配置文件
+
+而该文件夹下其他以yml为结尾的文件,mycat也会尝试加载并合拼到主配置对象里
+
+合拼的单元是
+
+```
+metadata:
+  schemas:[]
+```
+
+
+
+```
+datasource:
+  datasources:[]
+```
+
+
+
+```
+interceptors:
+  []
+```
+
+
+
+```
+cluster: 
+  clusters: []
+```
+
+
+
+能看到它们的配置都是以列表方式配置的,如果这些单元配置在副配置文件里,也会被合拼到主配置文件
+
+
+
+### 拦截器与命令
+
 #### SQL匹配
 
 ##### 匹配模式
@@ -778,7 +1263,7 @@ ip:用户连接的远程ip接收的格式是
 {command: 命令名 , tags: {参数名: 值,...},explain: 生成模板 , cache: 缓存配置 }
 ```
 
-###### 
+
 
 带sql匹配模式的配置
 
@@ -796,6 +1281,8 @@ cache: 缓存配置
 
 ##### SQL匹配配置模板
 
+
+
 拦截器配置模板
 
 ```yaml
@@ -808,36 +1295,21 @@ interceptors:
 ```yml
 interceptors:
   [{user:{username: 'root' ,password: '123456' , ip: '.'},
-    defaultHanlder: {command: execute , tags: {targets: defaultDs,forceProxy: true}},
-    schemas: [{
-                tables:[ 'db1.travelrecord','db1.address','db1.company'],
-                sqls: [
-                {sql: 'select {any}',command: distributedQuery }, #带表sql匹配Hanlder
-                {sql: 'insert {any}',command: distributedInsert},
-                {sql: 'update {any}',command: distributedUpdate},
-                {sql: 'delete {any}',command: distributedDelete},
-                ],
-              },
-    ],
-    sqls: [] , #不带表名匹配域
-    sqlsGroup: [*jdbcAdapter],
-    transactionType: proxy  #xa,proxy 该用户连接时候使用的事务模式 
+    defaultHanlder: {command: mycatdb},
+    sqls: [] , 
+    sqlsGroup: [], #使用yaml语法引用一组匹配域
+    transactionType: proxy  #xa,proxy 该用户连接时候使用的事务模式,
+    matcherClazz: #匹配器的类名字
    }]
 ```
 
-###### 表名匹配
 
-```
-tables:[ '库名.表名',...]
-```
-
-中的表名只要在sql中出现,就会进入对应sqls的匹配流程
 
 ###### 默认Hanlder
 
 当上述两种匹配器无法匹配的时候,走该分支
 
-###### 不带表名匹配域
+###### 匹配域
 
 sqls与sqlsGroup实际上是同一个配置
 
@@ -851,16 +1323,14 @@ sqlsGroup 的存在是为了简化无表SQL的配置,这些SQL一般是客户端
 
 
 
-无表sql样例
+sql样例
 
 ```yaml
 #lib start
 sqlGroups:
   jdbcAdapter:
     sqls: &jdbcAdapter [
-    {name: explain,sql: 'EXPLAIN {statement}' ,command: explainSQL}, #explain一定要写库名
-    {name: hbt,sql: 'execute plan {hbt}' , explain: '{hbt}' ,command: executePlan},#执行hbt
-    {name: commit,sql: 'commit',command: commit},{name: commit;,sql: 'commit;',command: commit},
+    {name: explain,sql: 'select 1' ,command: 'mycatdb' }, #explain一定要写库名
 ```
 
 可以看出&jdbcAdapter对应上述*jdbcAdapter,不清楚的同学请看yaml的语法
@@ -888,22 +1358,8 @@ mycat的yaml配置加载器会在转换配置之前把这部分复制到文本�
 
 
 ```yaml
-interceptor: #拦截器,如果拦截不了,尝试use schema,试用explain可以看到执行计划,查看路由
+interceptor: #拦截器,试用explain可以看到执行计划,查看路由
   defaultHanlder: {command: execute , tags: {targets: defaultDs,forceProxy: true}}
-  schemas: [{
-              tables:[ 'db1.travelrecord','db1.address1'],#sql中包含一个表名,就进入该匹配流程
-              sqls: [
-              {sql: 'select {selectItems} from {any}',command: distributedQuery },
-              {sql: 'delete {any}',command: execute,....}
-              ],
-            },
-            {
-              tables:[ 'db1.company'],
-              sqls: [
-              {sql: 'select {selectItems} from {any}',command: execute ,....}
-              ],
-            },
-  ]
   sqls: [
   {name: useStatement; ,sql: 'use {schema};',command: useStatement}
   ]
@@ -911,46 +1367,6 @@ interceptor: #拦截器,如果拦截不了,尝试use schema,试用explain可以�
 ```
 
 
-
-#### 模式语法参考
-
-https://github.com/MyCATApache/Mycat2/blob/master/doc/29-mycat-gpattern.md
-
-
-
-#### 模板参数提取
-
-sql中{name}是通配符,基于mysql的词法单元上匹配
-
-同时把name保存在上下文中,作为命令的参数,所以命令的参数是可以从SQL中获得
-
-```yaml
-tags: {targets: defaultDs,forceProxy: true}
-```
-
-tags是配置文件中定下的命令参数
-
-sql中的参数的优先级比tags高
-
-
-
-#### SQL再生成
-
-```yaml
-  {name: 'mysql setVariable names utf8', sql: 'SET NAMES {utf8}',explian: 'SET NAMES utf8mb4'  command: execute , tags: {targets: defaultDs,forceProxy: true}}
-```
-
-SQL被'SET NAMES utf8mb4'替换
-
-
-
-```yaml
-  {name: 'select n', sql: 'select {n}',explain: 'select {n}+1' command: execute , tags: {targets: defaultDs,forceProxy: true}},
-```
-
-
-
-拦截器会对use {schema}语句处理,得出不带schema的sql的table是属于哪一个schema.当mycat2发生错误的时候,会关闭连接,此时保存的schema失效,重新连接的时候请重新执行use schema语句
 
 
 
@@ -975,6 +1391,12 @@ refreshInterval:刷新时间
 
 
 ## 命令
+
+##### mycatdb
+
+该命令是根据分片配置自动处理sql
+
+
 
 ##### distributedQuery
 
@@ -1150,41 +1572,96 @@ READ UNCOMMITTED,READ COMMITTED,REPEATABLE READ,SERIALIZABLE
 
 
 
-##### execute执行SQL
+##### 执行SQL
 
-forceProxy:true|false
+##### execute
+
+##### 
+
+###### forceProxy
+
+true|false
+
+默认值:false
 
 强制SQL以proxy上运行,忽略当前事务
 
 
 
-needTransaction:true|false
+背景:
+
+mycat有两种执行sql的形式,jdbc与native实现与mysql通讯
+
+
+
+使用场景:
+
+当处于使用jdbc事务的情况下,使用该属性可以忽略jdbc事务,使用native方式与mysql通讯.
+
+
+
+###### needTransaction
+
+true|false
+
+默认值:true
 
 根据上下文(关闭自动提交)自动开启事务
 
 
 
-metaData:true|false
+背景:
 
-true的时候不需要配置targets,自动根据sql路由
+```
+set autocommit = 0; 
+此处select/delete/insert/update开启自动事务,这里称为首次操作语句
+```
 
-false的时候要配置targets
+在分库分表结合透传的情况下,有技术限制
+
+透传要求一个前端一个时刻对应一个后端,不论有没有通讯,此处限制绑定一个后端是为了简化后端状态管理.
+
+如果用户或者客户端在首次操作语句的位置发了无法确定的数据源目标的sql,比如无表的sql,将会导致该随机获得的后端会话与前端的会话绑定直到事务消失。
+
+而该needTransaction为false的时候，遇上autocommit = 0也不会自动开启事务，而needTransaction为true的时候，则自动开启事务
 
 
 
-targets
+###### metaData
+
+true|false
+
+默认：false
+
+true的时候不需要配置targets,自动根据分库分表配置路由sql
+
+false的时候要配置targets，
+
+
+
+###### targets
+
+根据其他属性选择配置
 
 sql发送的目标:集群或者数据源的名字
 
+暂时targets只能配置一个值
 
 
-balance
+
+###### balance
+
+可空
 
 当targets是集群名字的时候生效,使用该负载均衡策略
 
 
 
-executeType
+###### executeType
+
+默认值:QUERY_MASTER
+
+
 
 QUERY执行查询语句,在proxy透传下支持多语句,否则不支持
 
@@ -1240,407 +1717,80 @@ UPDATE执行其他的更新语句,例如delete,update,setVariable
 {name: 'mysql SELECT  LAST_INSERT_ID()', sql: 'SELECT  LAST_INSERT_ID()',command: selectLastInsertId },
 ```
 
-## 事务
-
-XA事务使用基于JDBC数据源实现,具体请参考Java Transaction API
-
-Proxy事务即通过Proxy操作MySQL进行事务操作,本质上与直接操作MySQL没有差异.
-
-为了方便上层逻辑操作事务,所以统一JDBC和Proxy操作,,参考JDBC的接口,定下mycat2的事务接口
-在proxy事务下,开启自动提交,没有事务,遇上需要跨分片的非查询操作,会自动升级为通过jdbc操作
 
 
+#### 匹配器实现
 
-## 数据源配置
+###### io.mycat.matcher.StringEqualsFactory
 
-```yaml
-datasource:
-  datasources: [{name: defaultDs, ip: 0.0.0.0,port: 3306,user: root,password: 123456,maxCon: 10000,minCon: 0,
-   maxRetryCount: 1000000000, #连接重试次数
-   maxConnectTimeout: 1000000000, #连接超时时间
-   dbType: mysql, #
-   url: 'jdbc:mysql://127.0.0.1:3306?useUnicode=true&serverTimezone=UTC',
-   weight: 1, #负载均衡权重
-   initSqls: ['use db1'], #建立连接后执行的sql,在此可以写上use xxx初始化默认database,该配置可能无效
-    jdbcDriverClass: , #jdbc驱动
-   instanceType: ,#READ,WRITE,READ_WRITE ,集群信息中是主节点,则默认为读写,副本则为读,此属性可以强制指定可写
-   initSqlsGetConnection: true
-  }
-  ]
-  datasourceProviderClass: io.mycat.datasource.jdbc.datasourceProvider.AtomikosDatasourceProvider
-  timer: {initialDelay: 1000, period: 5, timeUnit: SECONDS}
-```
+该实现使用字符串比较,没有文本提取功能
 
 
 
-maxConnectTimeout:单位millis
+###### io.mycat.matcher.RobPikeMatcherFactory
 
-配置中的定时器主要作用是定时检查闲置连接
-
-
-
-## 集群配置
-
-```yaml
-cluster: #集群,数据源选择器,既可以mycat自行检查数据源可用也可以通过mycat提供的外部接口设置设置数据源可用信息影响如何使用数据源
-  close: true #关闭集群心跳,此时集群认为所有数据源都是可用的,可以通过mycat提供的外部接口设置数据源可用信息达到相同效果
-  clusters: [
-  {name: repli ,
-   replicaType: SINGLE_NODE , # SINGLE_NODE:单一节点 ,MASTER_SLAVE:普通主从 GARELA_CLUSTER:garela cluster
-   switchType: NOT_SWITCH , #NOT_SWITCH:不进行主从切换,SWITCH:进行主从切换
-   readBalanceType: BALANCE_ALL  , #对于查询请求的负载均衡类型
-   readBalanceName: BalanceRoundRobin , #对于查询请求的负载均衡类型
-   writeBalanceName: BalanceRoundRobin ,  #对于修改请求的负载均衡类型
-   masters:[defaultDs], #主节点列表
-   replicas:[defaultDs2],#从节点列表
-   heartbeat:{maxRetry: 3, #心跳重试次数
-              minSwitchTimeInterval: 12000 , #最小主从切换间隔
-              heartbeatTimeout: 12000 , #心跳超时值,毫秒
-              slaveThreshold: 0 , # mysql binlog延迟值
-              reuqestType: 'mysql' #进行心跳的方式,mysql或者jdbc两种
-   }}
-  ]
-  timer: {initialDelay: 1000, period: 5, timeUnit: SECONDS} #心跳定时器
-```
-
-只有MASTER_SLAVE,GARELA_CLUSTER能在masters属性配置多个数据源的名字
-
-MASTER_SLAVE中的masters的意思是主从切换顺序
-
-GARELA_CLUSTER的masters意思是这些节点同时成为主节点,负载均衡算法可以选择主节点
-
-reuqestType是进行心跳的实现方式,使用mysql意味着使用proxy方式进行,能异步地进行心跳,而jdbc方式会占用线程池
-
-当配置是主从的时候,发生主从切换,mycat会备份原来的配置(文件名带有版本号)然后使用更新的配置
+RobPike的正则表达式实现,具体查看资料,没有文本提取功能
 
 
 
-## 服务器配置
+###### io.mycat.matcher.GPatternFactory
+
+可以完成匹配提取参数功能,但是使用有较大限制,具体看资料
+
+模式语法参考
+
+https://github.com/MyCATApache/Mycat2/blob/master/doc/29-mycat-gpattern.md
+
+
+
+
+
+
+
+##### 匹配器提取的文本的使用
+
+提取是匹配器实现的,引用是mycat内置实现的,与匹配器没有关系
+
+
+
+以io.mycat.matcher.GPatternFactory为例
+
+###### 模板参数提取
+
+sql中{name}是通配符,基于mysql的词法单元上匹配
+
+同时把name保存在上下文中,作为命令的参数,所以命令的参数是可以从SQL中获得
 
 ```yaml
-server:
-  ip: 0.0.0.0
-  port: 8066
-  reactorNumber: 1
-  #用于多线程任务的线程池,
-  worker: {close: false, #禁用多线程池,jdbc等功能将不能使用
-           maxPengdingLimit: 65535, #每个线程处理任务队列的最大长度
-           maxThread: 2,
-           minThread: 2,
-           timeUnit: SECONDS, #超时单位
-           waitTaskTimeout: 5 #超时后将结束闲置的线程
-  }
+tags: {targets: defaultDs,forceProxy: true}
 ```
 
+tags是配置文件中定下的命令参数
+
+sql中的参数的优先级比tags高
 
 
-## 分片算法配置
+
+###### SQL再生成
 
 ```yaml
-function: { clazz: io.mycat.router.function.PartitionByLong , name: partitionByLong, properties: {partitionCount: '4', partitionLength: '256'}, ranges: {}}
+  {name: 'mysql setVariable names utf8', sql: 'SET NAMES {utf8}',explian: 'SET NAMES utf8mb4'  command: execute , tags: {targets: defaultDs,forceProxy: true}}
 ```
 
-具体参考以下链接
-
-https://github.com/MyCATApache/Mycat2/blob/master/doc/17-partitioning-algorithm.md
+SQL被'SET NAMES utf8mb4'替换
 
 
-
-## 负载均衡配置
 
 ```yaml
-plug:
-  loadBalance:
-    defaultLoadBalance: balanceRandom
-    loadBalances: [
-    {name: BalanceRunOnMaster, clazz: io.mycat.plug.loadBalance.BalanceRunOnMaster},
-    {name: BalanceLeastActive, clazz: io.mycat.plug.loadBalance.BalanceLeastActive},
-    {name: BalanceRoundRobin, clazz: io.mycat.plug.loadBalance.BalanceRoundRobin},
-    {name: BalanceRunOnMaster, clazz: io.mycat.plug.loadBalance.BalanceRunOnMaster},
-    {name: BalanceRunOnRandomMaster, clazz: io.mycat.plug.loadBalance.BalanceRunOnRandomMaster}
-    ]
+  {name: 'select n', sql: 'select {n}',explain: 'select {n}+1' command: execute , tags: {targets: defaultDs,forceProxy: true}},
 ```
 
-具体参考以下链接
+{}的模板是使用MessageFormat实现的
 
-https://github.com/MyCATApache/Mycat2/blob/master/doc/16-load-balancing-algorithm.md
 
-
-
-## 全局序列号
-
-```yaml
-plug:
-  sequence:
-    sequences: [
-    {name: 'db1_travelrecord', clazz: io.mycat.plug.sequence.SequenceMySQLGenerator ,args: "sql : SELECT db1.mycat_seq_nextval('GLOBAL') , targetName:defaultDs"},
-    {name: 'db1_address', clazz: io.mycat.plug.sequence.SequenceSnowflakeGenerator ,args: 'workerId:1'},
-    ]
-```
-
-名称约定
-
-db1_travelrecord对应metaData配置中的db1.travelrecord,当该名字对应,建表的自增信息存在的时候,自增序列就会自动开启
-
-distributedQuery命令可以查询对应序列号
-
-```sql
-SELECT next_value_for('db1_travelrecord')
-```
-
-
-
-### io.mycat.plug.sequence.SequenceMySQLGenerator
-
-对应1.6 mysql数据库形式的全局序列号
-
-sql是最终查询数据库的sql
-
-targetName是数据源的名字
-
-所需的函数脚本
-
-https://github.com/MyCATApache/Mycat2/blob/052973dfd0a9bd1b1bce85190fd5e828bb9c6a12/mycat2/src/main/resources/dbseq.sql
-
-### io.mycat.plug.sequence.SequenceSnowflakeGenerator
-
-workerId对应雪花算法的参数
-
-
-
-## Mycat2.0分布式查询支持语法
-
-```yaml
-query:
-
-select:
-      SELECT [ STREAM ] [ ALL | DISTINCT ]
-          { * | projectItem [, projectItem ]* }
-      FROM tableExpression
-      [ WHERE booleanExpression ]
-      [ GROUP BY { groupItem [, groupItem ]* } ]
-      [ HAVING booleanExpression ]
-
-selectWithoutFrom:
-      SELECT [ ALL | DISTINCT ]
-          { * | projectItem [, projectItem ]* }
-
-projectItem:
-      expression [ [ AS ] columnAlias ]
-  |   tableAlias . *
-
-tableExpression:
-      tableReference [, tableReference ]*
-  |   tableExpression [ NATURAL ] [ ( LEFT | RIGHT | FULL ) [ OUTER ] ] JOIN tableExpression [ joinCondition ]
-  |   tableExpression CROSS JOIN tableExpression
-  |   tableExpression [ CROSS | OUTER ] APPLY tableExpression
-
-joinCondition:
-      ON booleanExpression
-  |   USING '(' column [, column ]* ')'
-
-tableReference:
-      tablePrimary
-      [ [ AS ] alias [ '(' columnAlias [, columnAlias ]* ')' ] ]
-
-tablePrimary:
-      [ [ catalogName . ] schemaName . ] tableName
-      '(' TABLE [ [ catalogName . ] schemaName . ] tableName ')'
-
-columnDecl:
-      column type [ NOT NULL ]
-
-values:
-      VALUES expression [, expression ]*
-
-groupItem:
-      expression
-  |   '(' ')'
-  |   '(' expression [, expression ]* ')'
-
-```
-
-## Mycat2.0分布式修改支持语法
-
-暂时仅仅改写对应的表名和根据条件拆分sql,具体使用explain语句查看
-
-
-
-## HBT(Human Brain Tech)
-
-HBT在Mycat2中表现为关系表达式领域驱动语言(Relation DSL).
-
-在设计上是Mycat2的运行时的中间语言,关于查询的HBT可以实现与SQL,其他查询优化器,查询编译器的关系表达式相互甚至与SQL DSL框架中的DSL转换.HBT也支持直接从文本和编写代码的方式构建.
-
-
-
-## 使用HBT解决什么问题?
-
-1.允许用户直接编写关系表达式实现功能,不同的SQL方言可以对应同一套关系表达式
-
-2.运行用户运行自定义函数
-
-3.免去优化过程,用户编写的关系表达式可以就是最终的执行计划
-
-4.允许使用函数宏展开关系表达式,比如给逻辑表函数宏指定分片范围自动扩展成对应的物理表
-
-5.允许SQL与关系表达式一并编写,例如叶子是SQL,根是Mycat的运算节点
-
-6.可移植到其他平台运行
-
-7.使用DSL作为中间语言下发到其他Mycat节点上运行
-
-8.方便验证测试
-
-HBTlang文档: <https://github.com/MyCATApache/Mycat2/blob/master/doc/103-HBTlang.md>
-
-
-
-## 常见备用配置模板
-
-读写分离
-
-```yaml
-          {
-             tables:[ 'db1.company'],
-             sqls: [
-             {sql: 'select {any}',command: execute ,tags: {targets: repli,executeType: QUERY ,needTransaction: true}},
-             {sql: 'select {any} for update',command: execute ,tags: {executeType: QUERY_MASTER ,targets: repli,needTransaction: true}},
-             {sql: 'insert {any}',command: execute, tags: {executeType: UPDATE ,targets: repli,needTransaction: true,}},
-             {sql: 'delete {any}',command: execute, tags: {executeType: UPDATE ,targets: repli,needTransaction: true,}}
-             ],
-           },
-```
-
-
-
-## 已知限制问题
-
-###### 不支持服务器预处理
-
-###### proxy事务模式
-
-开启事务后的操作只能是同一个分片
-
-事务里使用全局表会出现非同一分片的全局表无法回滚的现象
-
-对于这种更新操作,,要求强一致性,可以开启xa
-
-
-
-###### 分布式查询引擎
-
-1. 结果集字段名不写别名的情况下,生成的列名是不确定的
-
-2. sql不写order的情况下,结果集可能是未经排序的
-
-3. 不建议写类似sql,sql中没有引用表的列名,这种sql在mycat里未正式支持(0.8版本后可以运行)
-
-   `select 1 from db1.travelrecord where id = 1 limit 1`
-
-4. sql一般带有分片条件,否则无法发挥分表优势,而且位于表名后的where,而且是简单的形式,复杂的条件和不写条件,not表达式都会导致全表扫描
-
-5. sql函数名不能出现Crudate大小写混合的情况,否则无法识别
-
-6. 不建议使用除法,不同的数据库的除法的结果存在整形和浮点两种,使用除法请在sql中使用cast保证类型和类型或者*1.0
-
-7. avg函数默认结果是取整的,所以参数值用*1.0转成浮点可以保证精度
-
-8. 聚合函数max,min函数不能与group by一起用
-
-9. union等集合操作暂时不支持
-
-10. 非查询语句,mycat暂时不会自动处理函数表达式调用,会路由到mysql中调用,所以按日期分表的情况,需要sql中写清楚日期
-
-11. 部分关联子查询暂时不支持
-
-
-
-分布式查询引擎(calcite)检查项
-
-in表达式会编译成多个or表达式,默认情况下会把超过20个常量值变成内联表,mycat2要对此不处理,保持or表达式,因为内联表(LogicalValues)会被进一步'优化为'带有groupby的sql.
-
-
-
-生成的sql遇上异常
-
-```
-SELECT list is not in GROUP BY clause and contains nonaggregated column 'xxx' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by
-```
-
-
-
-mysql设置,即不带only_full_group_by属性
-
-```sql
-SET GLOBAL sql_mode='STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
-
- SET SESSION sql_mode='STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
-```
-
-
-
-
-
-
-
-
-
-## 内置函数列表
-
-原则上mycat不应该对函数运算,想要更多函数支持请提issue
-
-##### 数学函数
-
-https://github.com/MyCATApache/Mycat2/blob/08045e4fda1eb135d2e6a7029ef4bcc5b739563b/mycat2/src/test/java/io/mycat/sql/MathChecker.java
-
-##### 日期函数
-
-https://github.com/MyCATApache/Mycat2/blob/08045e4fda1eb135d2e6a7029ef4bcc5b739563b/mycat2/src/test/java/io/mycat/sql/DateChecker.java
-
-##### 字符函数
-
-https://github.com/MyCATApache/Mycat2/blob/70311cbed295f0a5f1a805c298993f88a6331765/mycat2/src/test/java/io/mycat/sql/CharChecker.java
-
-## SQL支持情况
-
-
-
-
-
-
-
-## 读写分离配置
-
-例子1
-
-https://github.com/MyCATApache/Mycat2/blob/master/example/src/test/resources/io/mycat/example/readWriteSeparation/mycat.yml
-
-该配置需要把使用的表都配置上,并且配置发往从节点的sql
-
-
-
-例子2
-
-```yml
-interceptors:
-  [{user:{username: 'root' ,password: '123456' , ip: '.'},
-    defaultHanlder: {command: execute , tags: {targets: repli,needTransaction: true,executeType: QUERY}},
-    sqls:[
-    {sql: 'insert {any}',command: execute , tags: {targets: defaultDs,needTransaction: true,executeType: INSERT }} ,
-      {sql: 'delete {any}',command: execute , tags: {targets: defaultDs,needTransaction: true,executeType: UPDATE} } ,
-    ] ,
-    sqlsGroup: [*jdbcAdapter],
-    transactionType: proxy  #xa.proxy
-   }]
-```
-
-该配置需要把发往主节点的sql配置不需要配置表名,同时开启事务的情况下发往主节点
-
-## 分片配置
-
-https://github.com/MyCATApache/Mycat2/blob/master/example/src/test/resources/io/mycat/example/sharding/mycat.yml
 
 ##### 更新日志
 
 具体看git记录
+
+2020-5-5拦截器,元数据配置发生变更

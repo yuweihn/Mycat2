@@ -21,8 +21,13 @@ import io.mycat.proxy.handler.NIOHandler;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import io.mycat.proxy.reactor.NIOJob;
 import io.mycat.proxy.reactor.ReactorEnvThread;
+import io.mycat.router.util.StringUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.channels.SocketChannel;
 import java.text.MessageFormat;
 
@@ -30,7 +35,7 @@ import java.text.MessageFormat;
  * @author jamie12221 chen junwen date 2019-05-10 21:13 Session
  **/
 public interface Session<T extends Session> extends Wrapper {
-   static final MycatLogger LOGGER = MycatLoggerFactory.getLogger(Session.class);
+   static final Logger LOGGER = LoggerFactory.getLogger(Session.class);
   /**
    * 通道
    */
@@ -47,7 +52,10 @@ public interface Session<T extends Session> extends Wrapper {
   NIOHandler getCurNIOHandler();
 
   static String getThrowableString(Throwable e) {
-    return MessageFormat.format("{0}",e);
+    StringWriter errors = new StringWriter();
+    e.printStackTrace(new PrintWriter(errors));
+    //去掉重复提示的消息 return MessageFormat.format("{0} \n {1}",e,errors.toString());
+    return errors.toString();
   }
 
   /**

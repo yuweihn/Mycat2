@@ -19,7 +19,9 @@ import com.google.common.collect.ImmutableMap;
 import io.mycat.api.collector.UpdateRowIteratorResponse;
 import io.mycat.calcite.table.MycatLogicTable;
 import io.mycat.calcite.table.MycatPhysicalTable;
+import io.mycat.calcite.table.MycatReflectiveSchema;
 import io.mycat.calcite.table.PreComputationSQLTable;
+import io.mycat.metadata.SchemaHandler;
 import io.mycat.metadata.TableHandler;
 import io.mycat.upondb.*;
 import org.apache.calcite.DataContext;
@@ -108,7 +110,7 @@ public class MycatCalciteDataContext implements DataContext, FrameworkConfig {
     }
 
     public Object get(String name) {
-        Object o = uponDBContext.get(name);
+        Object o = uponDBContext.getVariable(name);
         if (o == null) {
             Map<String, Object> variables = uponDBContext.variables();
             if (variables != null) {
@@ -146,15 +148,15 @@ public class MycatCalciteDataContext implements DataContext, FrameworkConfig {
     public static SchemaPlus getSchema(MycatDBClientBased based) {
         SchemaPlus plus = CalciteSchema.createRootSchema(true).plus();
         MycatDBClientBasedConfig config = based.config();
-        for (Map.Entry<String, Map<String, TableHandler>> stringConcurrentHashMapEntry : config.getLogicTables().entrySet()) {
+        for (Map.Entry<String, SchemaHandler> stringConcurrentHashMapEntry : config.getSchemaMap().entrySet()) {
             SchemaPlus schemaPlus = plus.add(stringConcurrentHashMapEntry.getKey(), new AbstractSchema());
-            for (Map.Entry<String, TableHandler> entry : stringConcurrentHashMapEntry.getValue().entrySet()) {
+            for (Map.Entry<String, TableHandler> entry : stringConcurrentHashMapEntry.getValue().logicTables().entrySet()) {
                 TableHandler logicTable = entry.getValue();
                 MycatLogicTable mycatLogicTable = new MycatLogicTable(logicTable);
                 schemaPlus.add(entry.getKey(), mycatLogicTable);
             }
         }
-        config.getReflectiveSchemas().forEach((key, value) -> plus.add(key, new ReflectiveSchema(value)));
+        config.getReflectiveSchemas().forEach((key, value) -> plus.add(key, new MycatReflectiveSchema(value)));
         return plus;
     }
 

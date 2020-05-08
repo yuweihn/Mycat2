@@ -17,11 +17,14 @@ package io.mycat.datasource.jdbc.transactionSession;
 import io.mycat.MycatDataContext;
 import io.mycat.ThreadUsageEnum;
 import io.mycat.TransactionSession;
+import io.mycat.beans.mycat.TransactionType;
 import io.mycat.datasource.jdbc.JdbcRuntime;
 import io.mycat.datasource.jdbc.datasource.DefaultConnection;
 import io.mycat.logTip.MycatLogger;
 import io.mycat.logTip.MycatLoggerFactory;
 import lombok.SneakyThrows;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.transaction.UserTransaction;
 import java.util.function.Supplier;
@@ -31,8 +34,7 @@ import java.util.function.Supplier;
  **/
 public class JTATransactionSession extends TransactionSessionTemplate implements TransactionSession {
 
-    private static final MycatLogger LOGGER = MycatLoggerFactory
-            .getLogger(JTATransactionSession.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(JTATransactionSession.class);
     private final Supplier<UserTransaction> userTransactionProvider;
     private UserTransaction userTransaction;
     private Thread bindThread;
@@ -102,6 +104,11 @@ public class JTATransactionSession extends TransactionSessionTemplate implements
             this.bindThread = null;
         }
         super.close();
+    }
+
+    @Override
+    public TransactionType transactionType() {
+        return TransactionType.JDBC_TRANSACTION_TYPE;
     }
 
     @Override

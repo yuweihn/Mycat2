@@ -42,6 +42,8 @@ import io.mycat.proxy.session.SessionManager.PartialType;
 import io.mycat.proxy.session.SessionManager.SessionIdAble;
 import io.mycat.replica.ReplicaSelectorRuntime;
 import lombok.ToString;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
@@ -54,7 +56,7 @@ import static io.mycat.proxy.handler.MySQLPacketExchanger.DEFAULT_BACKEND_SESSIO
  * 解耦结果类和实际执行方法
  **/
 public class MySQLTaskUtil {
-    final static MycatLogger LOGGER = MycatLoggerFactory.getLogger(MySQLTaskUtil.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(MySQLTaskUtil.class);
 //    public static void proxyBackend(MycatSession mycat, String sql, String targetName,String databaseName,
 //                                    MySQLDataSourceQuery query) {
 //        MycatMonitor.onRouteSQL(mycat, targetName,databaseName, sql);
@@ -110,10 +112,13 @@ public class MySQLTaskUtil {
                 BiConsumer<MySQLDatasource, SessionCallBack<MySQLClientSession>> getSession = (datasource, mySQLClientSessionSessionCallBack) -> {
                     if (mycat.isBindMySQLSession()) {
                         MySQLClientSession mySQLSession = mycat.getMySQLSession();
-                        if (datasourceName.equals(mySQLSession.getDatasourceName()) && mycat.getMySQLSession() == mySQLSession && mySQLSession.getMycat() == mycat) {
+                        String currentDataSource = mySQLSession.getDatasourceName();
+                        if (datasourceName.equals( currentDataSource)&& mycat.getMySQLSession() == mySQLSession && mySQLSession.getMycat() == mycat) {
                             mySQLClientSessionSessionCallBack.onSession(mySQLSession, null, null);
+                            return;
                         } else {
                             mySQLClientSessionSessionCallBack.onException(new Exception("is binding"), null, null);
+                            return;
                         }
                     } else {
                         mySQLSessionManager.getIdleSessionsOfKey(datasource, mySQLClientSessionSessionCallBack);
@@ -137,10 +142,8 @@ public class MySQLTaskUtil {
                         };
                         if (transactionType.expect(session.isAutomCommit(), session.isMonopolizedByTransaction())) {
                             sessionCallBack.onSession(session, this, null);
-                            return;
                         } else {
                             syncState(session, transactionType, isolation, sessionCallBack);
-                            return;
                         }
                     }
 
@@ -199,7 +202,7 @@ public class MySQLTaskUtil {
                 if (!inTransaction) {
                     return SET_AUTOCOMMIT_OFF;
                 } else {
-                   return SET_AUTOCOMMIT_ON_BEGIN;
+                    return SET_AUTOCOMMIT_ON_BEGIN;
                 }
             }
         }

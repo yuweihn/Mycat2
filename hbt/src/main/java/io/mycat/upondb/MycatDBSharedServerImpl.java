@@ -13,6 +13,8 @@ import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlUpdateStatement;
 import com.alibaba.fastsql.sql.dialect.mysql.visitor.MySqlASTVisitorAdapter;
 import com.alibaba.fastsql.sql.repository.SchemaObject;
 import com.alibaba.fastsql.sql.visitor.SQLASTOutputVisitor;
+import io.mycat.PlanRunner;
+import io.mycat.TextUpdateInfo;
 import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.api.collector.UpdateRowIteratorResponse;
 import io.mycat.beans.mycat.MycatRowMetaData;
@@ -22,9 +24,9 @@ import io.mycat.calcite.MycatCalciteSupport;
 import io.mycat.calcite.prepare.*;
 import io.mycat.calcite.resultset.CalciteRowMetaData;
 import io.mycat.hbt.HBTRunners;
-import io.mycat.hbt.TextUpdateInfo;
 import io.mycat.metadata.MetadataManager;
 import io.mycat.metadata.ParseContext;
+import io.mycat.metadata.SchemaHandler;
 import io.mycat.metadata.TableHandler;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -112,21 +114,21 @@ public class MycatDBSharedServerImpl implements MycatDBSharedServer {
             MySqlInsertStatement insertStatement = (MySqlInsertStatement) sqlStatement;
             SchemaObject schemaObject = (insertStatement).getTableSource().getSchemaObject();
             String schema = SQLUtils.normalize(Optional.ofNullable(schemaObject).map(i -> i.getSchema()).map(i -> i.getName()).orElse(defaultSchema));
-            String tableName = SQLUtils.normalize(insertStatement.getTableName().getSimpleName()).toLowerCase();
+            String tableName = SQLUtils.normalize(insertStatement.getTableName().getSimpleName());
             TableHandler logicTable = getLogicTable(schema, tableName);
             handler = logicTable.insertHandler();
         } else if (sqlStatement instanceof MySqlUpdateStatement) {
             SQLExprTableSource tableSource = (SQLExprTableSource) ((MySqlUpdateStatement) sqlStatement).getTableSource();
             SchemaObject schemaObject = tableSource.getSchemaObject();
             String schema = SQLUtils.normalize(Optional.ofNullable(schemaObject).map(i -> i.getSchema()).map(i -> i.getName()).orElse(defaultSchema));
-            String tableName = SQLUtils.normalize(((MySqlUpdateStatement) sqlStatement).getTableName().getSimpleName().toLowerCase());
+            String tableName = SQLUtils.normalize(((MySqlUpdateStatement) sqlStatement).getTableName().getSimpleName());
             TableHandler logicTable = getLogicTable(schema, tableName);
             handler = logicTable.updateHandler();
         } else if (sqlStatement instanceof MySqlDeleteStatement) {
             SQLExprTableSource tableSource = (SQLExprTableSource) ((MySqlDeleteStatement) sqlStatement).getTableSource();
             SchemaObject schemaObject = tableSource.getSchemaObject();
             String schema = SQLUtils.normalize(Optional.ofNullable(schemaObject).map(i -> i.getSchema()).map(i -> i.getName()).orElse(defaultSchema));
-            String tableName = SQLUtils.normalize(((MySqlDeleteStatement) sqlStatement).getTableName().getSimpleName().toLowerCase());
+            String tableName = SQLUtils.normalize(((MySqlDeleteStatement) sqlStatement).getTableName().getSimpleName());
             TableHandler logicTable = getLogicTable(schema, tableName);
             handler = logicTable.deleteHandler();
         }
@@ -138,8 +140,8 @@ public class MycatDBSharedServerImpl implements MycatDBSharedServer {
 
     @NotNull
     private TableHandler getLogicTable(String schema, String tableName) {
-        Map<String, Map<String, TableHandler>> logicTableMap = MetadataManager.INSTANCE.getLogicTableMap();
-        return Objects.requireNonNull(Objects.requireNonNull(logicTableMap.get(schema), "schema is not existed").get(tableName), "table is not existed");
+        SchemaHandler schemaHandler = MetadataManager.INSTANCE.getSchemaMap().get(schema);
+        return Objects.requireNonNull(Objects.requireNonNull(schemaHandler, "schema is not existed").logicTables().get(tableName), "table is not existed");
     }
 
     @AllArgsConstructor
@@ -318,7 +320,7 @@ public class MycatDBSharedServerImpl implements MycatDBSharedServer {
                 for (SQLAssignItem item : sqlStatement.getItems()) {
                     String target = Objects.toString(item.getTarget());
                     SQLExpr value = item.getValue();
-                    uponDBContext.set(target, value);
+                    uponDBContext.setVariable(target, value);
                 }
             }
 
@@ -386,7 +388,7 @@ public class MycatDBSharedServerImpl implements MycatDBSharedServer {
         ResultSetBuilder resultSetBuilder = ResultSetBuilder.create();
         resultSetBuilder.addColumnInfo("plan", Types.VARCHAR);
         for (String s : explain) {
-            resultSetBuilder.addObjectRowPayload(new Object[]{s});
+            resultSetBuilder.addObjectRowPayload(s);
         }
         return resultSetBuilder.build();
     }
