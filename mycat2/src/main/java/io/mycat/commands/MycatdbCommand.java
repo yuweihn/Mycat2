@@ -162,7 +162,8 @@ public enum MycatdbCommand implements MycatCommand {
                 }
             }
             if (!(statement instanceof com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlExecuteStatement)) {
-                receiver.sendError(new MycatException("no support query. sql={} class={}", req.getText(), statement.getClass()));
+                logger.error("no support query. sql={} class={}", req.getText(), statement.getClass());
+                receiver.proxyShow(statement);
             }else {
                 throw new RuntimeException("may be hbt");
             }
@@ -189,6 +190,7 @@ public enum MycatdbCommand implements MycatCommand {
 
     @NotNull
     private Iterator<SQLStatement> parse(String text) {
+        text = text.trim();
         if (text.startsWith("begin")) {
             SQLStartTransactionStatement sqlStartTransactionStatement = new SQLStartTransactionStatement();
             return new Iterator<SQLStatement>() {

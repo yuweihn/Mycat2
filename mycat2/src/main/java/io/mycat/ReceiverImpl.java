@@ -171,6 +171,10 @@ public class ReceiverImpl implements Response {
      */
     @Override
     public void sendExplain(Class defErrorCommandClass, Object map) {
+        if (map instanceof  List){
+            writePlan(session,   (List)map);
+            return;
+        }
         String message = defErrorCommandClass == null ? Objects.toString(map) : Objects.toString(defErrorCommandClass) + ":" + Objects.toString(map);
         writePlan(session,    Arrays.asList(message.split("\n")));
     }
@@ -335,6 +339,23 @@ public class ReceiverImpl implements Response {
         }
 
     }
+
+    @Override
+    public void multiGlobalInsert(String string, Iterator<TextUpdateInfo> apply) {
+        ExplainDetail detail = getExplainDetail(string, "", ExecuteType.INSERT);
+        detail.globalTableUpdate = true;
+        detail.setTargets(toMap(apply));
+        this.execute(detail);
+    }
+
+    @Override
+    public void multiGlobalUpdate(String string, Iterator<TextUpdateInfo> apply) {
+        ExplainDetail detail = getExplainDetail(string, "", ExecuteType.UPDATE);
+        detail.globalTableUpdate = true;
+        detail.setTargets(toMap(apply));
+        this.execute(detail);
+    }
+
 
     public void executeGlobalUpdateByProxy(ExplainDetail details) {
         block((mycat -> {
