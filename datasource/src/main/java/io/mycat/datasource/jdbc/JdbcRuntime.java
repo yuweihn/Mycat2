@@ -107,7 +107,7 @@ public enum JdbcRuntime {
             }
 
             for (ClusterRootConfig.ClusterConfig replica : config.getCluster().getClusters()) {
-                if ("jdbc".equals(replica.getHeartbeat().getReuqestType())) {
+                if ("jdbc".equals(replica.getHeartbeat().getRequestType())) {
                     String replicaName = replica.getName();
                     for (String datasource : replica.getAllDatasources()) {
                         putHeartFlow(replicaName, datasource);
@@ -193,6 +193,9 @@ public enum JdbcRuntime {
      * @return Value for property 'fetchDataExecutorService'.
      */
     public ExecutorService getFetchDataExecutorService() {
+        if (fetchDataExecutorService==null){
+            fetchDataExecutorService = ExecutorUtil.create("for hbt test",1);
+        }
         return fetchDataExecutorService;
     }
 }
