@@ -88,7 +88,7 @@ public class ReceiverImpl implements Response {
             block(session -> {
                 try (DefaultConnection connection = JdbcRuntime.INSTANCE.getConnection(target)) {
                     try (RowBaseIterator rowBaseIterator = connection.executeQuery(sql.toString())) {
-                        sendResultSet(rowBaseIterator, () -> {
+                        sendResultSet(()->rowBaseIterator, () -> {
                             throw new UnsupportedOperationException();
                         });
                     }
@@ -182,9 +182,9 @@ public class ReceiverImpl implements Response {
     }
 
     @Override
-    public void sendResultSet(RowBaseIterator rowBaseIterator, Supplier<List<String>> explainSupplier) {
+    public void sendResultSet(Supplier<RowBaseIterator> rowBaseIterator, Supplier<List<String>> explainSupplier) {
         if (!this.explainMode) {
-            sendResponse(new MycatResponse[]{new TextResultSetResponse(rowBaseIterator)}, explainSupplier);
+            sendResponse(new MycatResponse[]{new TextResultSetResponse(rowBaseIterator.get())}, explainSupplier);
         } else {
             sendExplain(null, explainSupplier.get());
         }
@@ -288,6 +288,7 @@ public class ReceiverImpl implements Response {
         boolean master = details.needStartTransaction || session.isInTransaction() || !session.isAutocommit() || details.globalTableUpdate || details.executeType.isMaster();
         MycatDataContext client = Objects.requireNonNull(session.unwrap(MycatDataContext.class));
         Map<String, List<String>> tasks = resolveDataSourceName(details.getBalance(), master, Objects.requireNonNull(details.targets));
+        details.setTargets(tasks);
         ExecuteType executeType = details.executeType;
         if (this.explainMode) {
             sendExplain(null, "execute:" + details);

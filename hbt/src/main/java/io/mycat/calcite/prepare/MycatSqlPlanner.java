@@ -28,6 +28,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelShuttleImpl;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.sql.SqlNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,9 +48,14 @@ public class MycatSqlPlanner implements PlanRunner,Proxyable {
         this.prepare = prepare;
         this.mycatCalciteDataContext = MycatCalciteSupport.INSTANCE.create(uponDBContext);
         MycatCalcitePlanner planner = MycatCalciteSupport.INSTANCE.createPlanner(mycatCalciteDataContext);
-        this.relNode = CalciteRunners.complie(planner, sql, prepare.isForUpdate());
+        this.relNode = CalciteRunners.compile(planner, sql, prepare.isForUpdate());
     }
-
+    public MycatSqlPlanner(MycatSQLPrepareObject prepare, SqlNode sql, MycatDBContext uponDBContext) {
+        this.prepare = prepare;
+        this.mycatCalciteDataContext = MycatCalciteSupport.INSTANCE.create(uponDBContext);
+        MycatCalcitePlanner planner = MycatCalciteSupport.INSTANCE.createPlanner(mycatCalciteDataContext);
+        this.relNode = CalciteRunners.compile(planner, sql, prepare.isForUpdate());
+    }
     public List<String> explain() {
         RelDataType rowType = relNode.getRowType();
         return Explains.explain(prepare.getSql(),

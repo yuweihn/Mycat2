@@ -113,7 +113,7 @@ public class SelectSQLHandler extends AbstractSQLHandler<SQLSelectStatement> {
             payloadList.add(payload);
         }
         resultSetBuilder.addObjectRowPayload(payloadList);
-        receiver.sendResultSet(resultSetBuilder.build(), Collections::emptyList);
+        receiver.sendResultSet(()->resultSetBuilder.build(), Collections::emptyList);
         return ExecuteCode.PERFORMED;
     }
 
@@ -152,7 +152,11 @@ public class SelectSQLHandler extends AbstractSQLHandler<SQLSelectStatement> {
 
         ///////////////////////////////common///////////////////////////////
         Map<String, SchemaHandler> schemaMap = mycatDBContext.config().getSchemaMap();
-        String schemaName = collector.getSchema();
+        String schemaName = Optional.ofNullable(collector.getSchema()).orElse(dataContext.getDefaultSchema());
+        if (schemaName == null){
+            receiver.sendError(new MycatException("schema is null"));
+            return ExecuteCode.PERFORMED;
+        }
         Set<String> tables = collector.getTables();
         SchemaHandler schemaHandler = schemaMap.get(schemaName);
         if (schemaHandler == null) {
@@ -187,8 +191,9 @@ public class SelectSQLHandler extends AbstractSQLHandler<SQLSelectStatement> {
             receiver.proxySelect(schemaHandler.defaultTargetName(), statement);
             return ExecuteCode.PERFORMED;
         }
-        ParseContext parseContext = ParseContext.of(dataContext.getDefaultSchema(),statement);
+
         if(false){
+            ParseContext parseContext = ParseContext.of(dataContext.getDefaultSchema(),statement);
             Schema plan = parseContext.getPlan();
             HBTQueryConvertor2 hbtQueryConvertor2 = new HBTQueryConvertor2();
             ResultHandler resultHandler = hbtQueryConvertor2.complie(plan);
@@ -201,7 +206,7 @@ public class SelectSQLHandler extends AbstractSQLHandler<SQLSelectStatement> {
             }
             HBTRunners hbtRunners = new HBTRunners(mycatDBContext);
             RowBaseIterator run = hbtRunners.run(plan);
-            receiver.sendResultSet(run, null);
+            receiver.sendResultSet(()->run, null);
             return ExecuteCode.PERFORMED;
         }
         dataContext.block(() -> {
@@ -221,7 +226,7 @@ public class SelectSQLHandler extends AbstractSQLHandler<SQLSelectStatement> {
                     return;
                 }
             }
-            receiver.sendResultSet(plan.run(), plan::explain);
+            receiver.sendResultSet(()->plan.run(), plan::explain);
         });
 
         return ExecuteCode.PERFORMED;
@@ -282,7 +287,6 @@ public class SelectSQLHandler extends AbstractSQLHandler<SQLSelectStatement> {
                 if (this.schema == null) {
                     this.schema = visitSchema;
                 } else if (!Objects.equals(this.schema, visitSchema)) {
-                    this.errors.add(new MycatException("one select no support multiple schema. sql={};\n", statement));
                 }
             }
 
