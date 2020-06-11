@@ -21,9 +21,10 @@ import io.mycat.config.ShardingQueryRootConfig;
 import io.mycat.hbt.HBTRunners;
 import io.mycat.hbt.ast.base.Schema;
 import io.mycat.metadata.SchemaHandler;
-import io.mycat.metadata.TableHandler;
+import io.mycat.TableHandler;
 import io.mycat.replica.ReplicaSelectorRuntime;
 import io.mycat.route.*;
+import io.mycat.route.ParseContext;
 import io.mycat.sqlHandler.AbstractSQLHandler;
 import io.mycat.sqlHandler.ExecuteCode;
 import io.mycat.sqlHandler.SQLRequest;
@@ -34,11 +35,10 @@ import io.mycat.util.Response;
 import io.mycat.util.SQLContext;
 import lombok.Getter;
 
-import javax.annotation.Resource;
+
 import java.sql.JDBCType;
 import java.util.*;
 
-@Resource
 public class SelectSQLHandler extends AbstractSQLHandler<SQLSelectStatement> {
     //    public static String NULL = new String(new char[]{(char)0XFB});
 //    public static int NULL = 0XFB;
