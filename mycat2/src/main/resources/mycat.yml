@@ -19,8 +19,8 @@ metadata: #读写分离无需配置
                                      `create_time` datetime NOT NULL COMMENT '创建时间',
                                      PRIMARY KEY (`id`)
                                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mycat-demo-user0';",
-                  dataNodes: [{targetName: defaultDs ,schemaName: dev_01, tableName: user_test},
-                              {targetName: defaultDs2 ,schemaName: dev_02, tableName: user_test}] #9999999999
+                  dataNodes: [{targetName: repli ,schemaName: dev_01, tableName: user_test},
+                              {targetName: repli ,schemaName: dev_02, tableName: user_test}] #9999999999
                 },
               }
             }]
