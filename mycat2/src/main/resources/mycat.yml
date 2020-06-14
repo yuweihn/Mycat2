@@ -1,7 +1,12 @@
 metadata:
-  schemas: [{
-              schemaName: 'db1' ,   targetName: 'repli',
-            }]
+  schemas: [
+  {
+    schemaName: 'dev_01' ,   targetName: 'repli'
+  },
+  {
+    schemaName: 'dev_02' ,   targetName: 'repli'
+  }
+  ]
 interceptors:
   [{
      user: {ip: '.', password: '123456', username: root}
