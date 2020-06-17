@@ -1,4 +1,4 @@
-package io.mycat.example.sharingXA;
+package io.mycat.example.shardingLocal;
 
 import io.mycat.ConfigProvider;
 import io.mycat.MycatCore;
@@ -17,13 +17,13 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-public class ShardingXAExample {
+public class ShardingLocalExample {
     @SneakyThrows
     public static void main(String[] args) {
-        String resource = Paths.get( ShardingXAExample.class.getResource("").toURI()).toAbsolutePath().toString();
+        String resource = Paths.get( ShardingLocalExample.class.getResource("").toURI()).toAbsolutePath().toString();
         System.out.println(resource);
         System.setProperty("MYCAT_HOME", resource);
-        ConfigProvider bootConfig = RootHelper.INSTANCE.bootConfig(ShardingXAExample.class);
+        ConfigProvider bootConfig = RootHelper.INSTANCE.bootConfig(ShardingLocalExample.class);
         MycatCore.INSTANCE.init(bootConfig);
     }
 
@@ -71,7 +71,7 @@ public class ShardingXAExample {
 
             Set<String> set2 = new HashSet<>();
             for (int i = 0; i < 10; i++) {
-                statement.execute("INSERT INTO `db1`.`travelrecord` (`id`, `user_id`) VALUES ('1', '1'); ");
+                statement.execute("INSERT INTO `db1`.`travelrecord` (`user_id`) VALUES ( '1'); ");
             }
 
 
@@ -148,7 +148,9 @@ public class ShardingXAExample {
                     }
                     Assert.assertTrue(set.size() == 1);//验证有事务的情况下,不读写分离
                 }
-
+                String string1 = TestUtil.getString(statement.executeQuery(
+                        "select * from travelrecord"
+                ));
                 {
                     statement.execute("INSERT INTO `db1`.`travelrecord` (`id`,`user_id`) VALUES ('1','1');");
                     mySQLConnection.rollback();

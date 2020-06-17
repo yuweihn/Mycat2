@@ -313,7 +313,7 @@ public class ReceiverImpl implements Response {
                         session.getIsolation());
                 return;
             }
-            if ((executeType == QUERY_MASTER || executeType == QUERY) && MycatDatasourceUtil.isJdbcDatasource(datasourceName)) {
+            if ((executeType == QUERY_MASTER || executeType == QUERY)) {
                 block(mycat -> {
                     switch (executeType) {
                         case QUERY_MASTER:
@@ -400,7 +400,10 @@ public class ReceiverImpl implements Response {
                         session.getIsolation());
                 return;
             }
-            throw new IllegalArgumentException();
+            try (DefaultConnection connection = JdbcRuntime.INSTANCE.getConnection(targetName)) {
+                UpdateRowIteratorResponse updateRowIteratorResponse = connection.executeUpdate(sql, true, 0);
+                writeToMycatSession(session, updateRowIteratorResponse);
+            }
         }));
     }
 
