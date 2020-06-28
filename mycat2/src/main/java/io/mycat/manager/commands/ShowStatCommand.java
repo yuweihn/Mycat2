@@ -42,6 +42,7 @@ public class ShowStatCommand implements ManageCommand {
                 .addColumnInfo("CBO_TIME", JDBCType.BIGINT)
                 .addColumnInfo("CONNECTION_POOL_TIME", JDBCType.BIGINT)
                 .addColumnInfo("CONNECTION_QUERY_TIME", JDBCType.BIGINT)
+                .addColumnInfo("EXECUTION_TIME", JDBCType.BIGINT)
                 .addColumnInfo("TOTAL_TIME", JDBCType.BIGINT)
         ;
 
@@ -60,6 +61,7 @@ public class ShowStatCommand implements ManageCommand {
             long rboTime =(value.getRboTime());
             long connectionPoolTime = (value.getConnectionPoolTime());
             long connectionQueryTIme = (value.getConnectionQueryTime());
+            long executionTime = value.getExecutionTime();
             long TOTAL_TIME = (value.getWholeTime());
             builder.addObjectRowPayload(Arrays.asList(
                     statement,
@@ -74,6 +76,7 @@ public class ShowStatCommand implements ManageCommand {
                     cboTime,
                     connectionPoolTime,
                     connectionQueryTIme,
+                    executionTime,
                     TOTAL_TIME
             ));
         }
