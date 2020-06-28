@@ -1,6 +1,3 @@
-server:
-  ip: 0.0.0.0
-
 metadata: #读写分离无需配置
   schemas: [{
               schemaName: 'dev_01' ,   targetName: 'repli',
