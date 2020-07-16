@@ -5,7 +5,7 @@
     <parent>
         <artifactId>parent</artifactId>
         <groupId>io.mycat</groupId>
-        <version>1.11-05</version>
+        <version>1.12-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -97,28 +97,47 @@
                     </execution>
                 </executions>
             </plugin>
+<!--            <plugin>-->
+<!--                <artifactId>maven-assembly-plugin</artifactId>-->
+<!--                <version>3.1.1</version>-->
+<!--                <configuration>-->
+<!--                    <finalName>mycat2-testsuite-${project.version}</finalName>-->
+<!--                    <appendAssemblyId>false</appendAssemblyId>-->
+<!--                    <descriptorRefs>-->
+<!--                        <descriptorRef>jar-with-dependencies</descriptorRef>-->
+<!--                    </descriptorRefs>-->
+<!--                    <archive>-->
+<!--                        <manifest>-->
+<!--                            <mainClass>io.mycat.testsuite.tools.Testsuite</mainClass>-->
+<!--                        </manifest>-->
+<!--                    </archive>-->
+<!--                </configuration>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <id>make-assembly</id> &lt;!&ndash; this is used for inheritance merges &ndash;&gt;-->
+<!--                        <phase>package</phase> &lt;!&ndash; 指定在打包节点执行jar包合并操作 &ndash;&gt;-->
+<!--                        <goals>-->
+<!--                            <goal>single</goal>-->
+<!--                        </goals>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--            </plugin>-->
             <plugin>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.1.1</version>
-                <configuration>
-                    <finalName>mycat2-testsuite-${project.version}</finalName>
-                    <appendAssemblyId>false</appendAssemblyId>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                    <archive>
-                        <manifest>
-                            <mainClass>io.mycat.testsuite.Testsuite</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>make-assembly</id> <!-- this is used for inheritance merges -->
-                        <phase>package</phase> <!-- 指定在打包节点执行jar包合并操作 -->
+                        <id>copy-dependencies</id>
+                        <phase>prepare-package</phase>
                         <goals>
-                            <goal>single</goal>
+                            <goal>copy-dependencies</goal>
                         </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>false</overWriteSnapshots>
+                            <overWriteIfNewer>true</overWriteIfNewer>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
