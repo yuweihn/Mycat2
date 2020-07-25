@@ -1,6 +1,7 @@
 metadata: #读写分离无需配置
   schemas: [{
-              schemaName: 'dev_01' ,   targetName: 'repli',
+              schemaName: 'dev_01',
+              targetName: 'repli',
               shadingTables: {
                 user_test: {
                   columns: [{
@@ -15,7 +16,7 @@ metadata: #读写分离无需配置
                   createTableSQL: "CREATE TABLE `user_test` (`id` bigint(20) NOT NULL, `version` int(11) NOT NULL DEFAULT '0' COMMENT '版本号', `user_name` varchar(50) NOT NULL COMMENT '用户姓名', `mobile` varchar(20) DEFAULT NULL COMMENT '手机号码', `create_time` datetime NOT NULL COMMENT '创建时间', PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='mycat-demo-user0';",
                   dataNodes: [{targetName: repli ,schemaName: dev_01, tableName: user_test},
                               {targetName: repli ,schemaName: dev_02, tableName: user_test}] #9999999999
-                },
+                }
               }
             }]
 interceptors: [
