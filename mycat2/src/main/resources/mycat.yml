@@ -9,6 +9,7 @@ metadata: #读写分离无需配置
                     shardingType: NATURE_DATABASE_TABLE ,#类型:自然分片,即根据一列(支持)或者多个列(暂不支持)的值映射成一个值,再根据该值通过单维度的分片算法计算出数据分片范围
                     function: {
                       clazz: io.mycat.router.function.PartitionByLong,
+                      name: partitionByLong,
                       properties: {partitionCount: '2', partitionLength: '512'},
                       ranges: {}
                     }
