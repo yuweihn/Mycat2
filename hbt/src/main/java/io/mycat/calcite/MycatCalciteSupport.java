@@ -90,9 +90,20 @@ public enum MycatCalciteSupport implements Context {
     public final FrameworkConfig config;
     public final CalciteConnectionConfig calciteConnectionConfig;
     public final IdentityHashMap<Class, Object> map = new IdentityHashMap<>();
-    public final Multimap<String, Function> functions = ImmutableMultimap.of(
-            "date_format", ScalarFunctionImpl.create(MycatFunctions.DateFormatFunction.class, "eval")
-    );
+    public final Multimap<String, Function> functions = (Multimap) ImmutableMultimap.builder()
+            .put("date_format", ScalarFunctionImpl.create(MycatFunctions.DateFormatFunction.class, "eval"))
+            .put("UNIX_TIMESTAMP", ScalarFunctionImpl.create(MycatFunctions.UnixTimestampFunction.class, "eval"))
+            .put("concat", ScalarFunctionImpl.create(MycatFunctions.Concat2Function.class, "eval"))
+            .put("concat", ScalarFunctionImpl.create(MycatFunctions.Concat3Function.class, "eval"))
+            .put("concat", ScalarFunctionImpl.create(MycatFunctions.Concat4Function.class, "eval"))
+            .put("PI", ScalarFunctionImpl.create(MycatFunctions.PiFunction.class, "eval"))
+            .put("CONV", ScalarFunctionImpl.create(MycatFunctions.CONVFunction.class, "eval"))
+            .put("crc32", ScalarFunctionImpl.create(MycatFunctions.CRC32Function.class, "eval"))
+            .put("log", ScalarFunctionImpl.create(MycatFunctions.LOGFunction.class, "eval"))
+            .put("log2", ScalarFunctionImpl.create(MycatFunctions.LOG2Function.class, "eval"))
+            .put("log10", ScalarFunctionImpl.create(MycatFunctions.LOG10Function.class, "eval"))
+            .build();
+
     /*
 
     new SqlParserImplFactory() {
@@ -328,11 +339,13 @@ public enum MycatCalciteSupport implements Context {
     public CalciteConnectionConfig getCalciteConnectionConfig() {
         return calciteConnectionConfig;
     }
-    public SqlString convertToSql(RelNode input, SqlDialect dialect, boolean forUpdate){
-        return convertToSql(input,dialect,forUpdate,Collections.emptyList());
+
+    public SqlString convertToSql(RelNode input, SqlDialect dialect, boolean forUpdate) {
+        return convertToSql(input, dialect, forUpdate, Collections.emptyList());
     }
-    public SqlString convertToSql(RelNode input, SqlDialect dialect, boolean forUpdate,List<Object> params) {
-        MycatImplementor mycatImplementor = new MycatImplementor(MycatSqlDialect.DEFAULT,params);
+
+    public SqlString convertToSql(RelNode input, SqlDialect dialect, boolean forUpdate, List<Object> params) {
+        MycatImplementor mycatImplementor = new MycatImplementor(MycatSqlDialect.DEFAULT, params);
         SqlImplementor.Result implement = mycatImplementor.implement(input);
         SqlNode sqlNode = implement.asStatement();
         if (forUpdate) {

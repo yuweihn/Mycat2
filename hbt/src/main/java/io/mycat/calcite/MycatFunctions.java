@@ -1,14 +1,11 @@
 package io.mycat.calcite;
 
-import io.mycat.api.collector.RowBaseIterator;
-import io.mycat.datasource.jdbc.JdbcRuntime;
-import io.mycat.datasource.jdbc.datasource.DefaultConnection;
-import io.mycat.replica.ReplicaSelectorRuntime;
 import org.apache.calcite.linq4j.function.Parameter;
 
 import java.time.LocalDate;
 import java.time.format.TextStyle;
 import java.util.Locale;
+import java.util.Objects;
 
 import static java.time.format.DateTimeFormatter.BASIC_ISO_DATE;
 
@@ -32,13 +29,59 @@ public class MycatFunctions {
             if (!format.contains("%")) {
                 return format;
             }
-            String datasource = ReplicaSelectorRuntime.INSTANCE.getDatasourceNameByRandom();
-            try (DefaultConnection connection = JdbcRuntime.INSTANCE.getConnection(datasource)) {
-                RowBaseIterator rowBaseIterator = connection.executeQuery("select data_format('" + dateText + "','" + format + "')");
-                rowBaseIterator.next();
-                return rowBaseIterator.getString(1);
-            }
+            return Objects.toString(UnsolvedMysqlFunctionUtil.eval("data_format", dateText, format));
         }
     }
 
+    public static class UnixTimestampFunction {
+        public static Long eval(@Parameter(name = "date") String dateText) {
+            return ((Number) UnsolvedMysqlFunctionUtil.eval("UNIX_TIMESTAMP", dateText)).longValue();
+        }
+    }
+
+    public static class Concat2Function {
+        public static String eval(String arg0, String arg1) {
+            return arg0 + arg1;
+        }
+    }
+    public static class Concat3Function {
+        public static String eval(String arg0, String arg1,String arg2) {
+            return arg0 + arg1+arg2;
+        }
+    }
+    public static class Concat4Function {
+        public static String eval(String arg0, String arg1,String arg2,String arg3) {
+            return arg0 + arg1+arg2+arg3;
+        }
+    }
+    public static class PiFunction {
+        public static double eval() {
+            return Math.PI;
+        }
+    }
+    public static class CONVFunction {
+        public static String eval(String arg0,String arg1,String arg2) {
+           return  ((String) Objects.toString(UnsolvedMysqlFunctionUtil.eval("CONV", arg0,arg1,arg2)));
+        }
+    }
+    public static class CRC32Function {
+        public static String eval(String arg0) {
+            return  ((String) Objects.toString(UnsolvedMysqlFunctionUtil.eval("crc32", arg0)));
+        }
+    }
+    public static class LOGFunction {
+        public static String eval(String arg0) {
+            return  ((String) Objects.toString(UnsolvedMysqlFunctionUtil.eval("LOG", arg0)));
+        }
+    }
+    public static class LOG10Function {
+        public static String eval(String arg0) {
+            return  ((String) Objects.toString(UnsolvedMysqlFunctionUtil.eval("LOG10", arg0)));
+        }
+    }
+    public static class LOG2Function {
+        public static String eval(String arg0) {
+            return  ((String) Objects.toString(UnsolvedMysqlFunctionUtil.eval("LOG2", arg0)));
+        }
+    }
 }
