@@ -17,7 +17,6 @@ import java.util.TimeZone;
  * @author cjw
  **/
 public class MycatCore {
-
     public static final String PROPERTY_MODE_LOCAL = "local";
     public static final String PROPERTY_MODE_CLUSTER = "cluster";
     public static final String PROPERTY_METADATADIR = "metadata";
