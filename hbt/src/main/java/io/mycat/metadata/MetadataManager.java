@@ -22,7 +22,6 @@ import com.alibaba.fastsql.sql.ast.expr.*;
 import com.alibaba.fastsql.sql.ast.statement.SQLCreateViewStatement;
 import com.alibaba.fastsql.sql.ast.statement.SQLExprTableSource;
 import com.alibaba.fastsql.sql.ast.statement.SQLInsertStatement;
-import com.alibaba.fastsql.sql.dialect.mysql.ast.expr.MySqlUserName;
 import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlCreateTableStatement;
 import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlInsertStatement;
 import com.alibaba.fastsql.sql.parser.SQLParserUtils;
@@ -45,7 +44,7 @@ import io.mycat.plug.sequence.SequenceGenerator;
 import io.mycat.querycondition.*;
 import io.mycat.replica.ReplicaSelectorRuntime;
 import io.mycat.router.ShardingTableHandler;
-import io.mycat.router.function.PartitionRuleFunctionManager;
+import io.mycat.router.mycat1xfunction.PartitionRuleFunctionManager;
 import io.mycat.util.SplitUtil;
 import lombok.Getter;
 import lombok.SneakyThrows;
@@ -137,10 +136,17 @@ public class MetadataManager {
                                 schemaConfigs.add(config);
                                 return config;
                             });
-                    Map<String, NormalTableConfig> normalTableConfigs = logicSchemaConfig.getNormalTables();
+
                     Map<String, NormalTableConfig> adds = getDefaultNormalTable(connection, schemaName);
+                    Set<String> existed = new HashSet<>();
+                    existed.addAll( logicSchemaConfig.getNormalTables().keySet());
+                    existed.addAll( logicSchemaConfig.getGlobalTables().keySet());
+                    existed.addAll( logicSchemaConfig.getShadingTables().keySet());
+                    existed.addAll( logicSchemaConfig.getCustomTables().keySet());
                     adds.forEach((n, v) -> {
-                        normalTableConfigs.computeIfAbsent(n, (ignored) -> v);
+                        if (!existed.contains(n)){
+                            logicSchemaConfig.getNormalTables().put(n,v);
+                        }
                     });
                 }
             }
