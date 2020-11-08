@@ -59,7 +59,7 @@ public class MycatDataContextImpl implements MycatDataContext {
     public MycatDataContextImpl(TransactionSessionRunner runner) {
         this.runner = runner;
         this.id = IDS.getAndIncrement();
-        switchTransaction(TransactionType.PROXY_TRANSACTION_TYPE);
+        switchTransaction(TransactionType.DEFAULT);
     }
 
 
@@ -90,11 +90,15 @@ public class MycatDataContextImpl implements MycatDataContext {
     }
 
     @Override
-    public Object getVariable(String target) {
+    public Object getVariable(boolean global,String target) {
+        if (global){
+            MysqlVariableService variableService = MetaClusterCurrent.wrapper(MysqlVariableService.class);
+            return variableService.getGlobalVariable(target);
+        }
         if (target.contains("autocommit")) {
-            return this.isAutocommit() ? "1" : "1" ;
+            return this.isAutocommit() ? "1" : "0" ;
         } else if (target.equalsIgnoreCase("xa")) {
-            return this.getTransactionSession().name();
+            return this.getTransactionType() == TransactionType.JDBC_TRANSACTION_TYPE?"1":"0";
         } else if (target.contains("net_write_timeout")) {
             return this.getVariable(MycatDataContextEnum.NET_WRITE_TIMEOUT);
         } else if ("sql_select_limit".equalsIgnoreCase(target)) {

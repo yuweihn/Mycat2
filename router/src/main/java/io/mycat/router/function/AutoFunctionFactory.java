@@ -272,7 +272,7 @@ public class AutoFunctionFactory {
                     randSeed = 31;
                 }
 
-                tableFunction = value -> strHash(num,startIndex,endIndex,valType,randSeed,value);
+                tableFunction = value -> strHash(num, startIndex, endIndex, valType, randSeed, value);
             }
         }
         if (dbMethod != null && tableMethod != null) {
@@ -281,14 +281,19 @@ public class AutoFunctionFactory {
                     String tableShardingKey = getShardingKey(tableMethod);
                     String dbShardingKey = getShardingKey(dbMethod);
                     if (tableShardingKey.equalsIgnoreCase(dbShardingKey)) {
+                        int total = dbNum * tableNum;
                         tableFunction = o -> {
-                            int total = dbNum * tableNum;
                             return singleRemainderHash(total, o);
                         };
                         dbFunction = (o) -> {
-                            int total = dbNum * tableNum;
+                            if (o == null) return 0;
                             if (o instanceof Number) {
-                                return ((Number) o).intValue() % total / tableNum;
+                                long l = ((Number) o).longValue();
+                                long i = l% total / tableNum;
+                                if (i < 0) {
+                                    throw new IllegalArgumentException();
+                                }
+                                return (int)i;
                             }
                             if (o instanceof String) {
                                 return hashCode((String) o) % total / tableNum;
@@ -310,11 +315,12 @@ public class AutoFunctionFactory {
                         tableFunction = (o) -> {
                             int total = dbNum * tableNum;
                             if (o instanceof Number) {
-                                int intValue = ((Number) o).intValue();
-                                return
-                                        (intValue) % dbNum * tableNum
-                                                +
-                                                (intValue / dbNum) % tableNum;
+                                long intValue = ((Number) o).longValue();
+
+                                long l = (intValue) % dbNum * tableNum
+                                        +
+                                        (intValue / dbNum) % tableNum;
+                                return (int)l;
                             }
                             if (o instanceof String) {
                                 return hashCode((String) o) % total / tableNum;
@@ -351,6 +357,10 @@ public class AutoFunctionFactory {
                                     Object value = rangeVariable.getValue();
                                     dIndex = finalDbFunction.applyAsInt(value);
                                     getDbIndex = true;
+                                    if (dIndex < 0) {
+                                        finalDbFunction.applyAsInt(value);
+                                        throw new IllegalArgumentException();
+                                    }
                                     break;
                                 case RANGE:
                                 default:
@@ -377,7 +387,11 @@ public class AutoFunctionFactory {
                     }
                 }
                 if (getDbIndex && getTIndex) {
-                    return Collections.singletonList(cache.get(new Key(dIndex, tIndex)));
+                    DataNode dataNode = cache.get(new Key(dIndex, tIndex));
+                    if (dataNode == null) {
+                        return (List) datanodes;
+                    }
+                    return Collections.singletonList(dataNode);
                 }
                 if (getDbIndex) {
                     List<DataNode> list = new ArrayList<>();
@@ -412,7 +426,7 @@ public class AutoFunctionFactory {
 
             @Override
             public List<DataNode> calculate(Map<String, Collection<RangeVariable>> values) {
-                return function.apply(values);
+                return Objects.requireNonNull(function.apply(values));
             }
 
             @Override
@@ -428,6 +442,7 @@ public class AutoFunctionFactory {
     }
 
     public static int mm(int num, Object o) {
+        if (o == null) return 0;
         Integer mm = null;
         if (o instanceof String) {
             o = LocalDate.parse((String) o);
@@ -447,6 +462,7 @@ public class AutoFunctionFactory {
     }
 
     public static int dd(int num, Object o) {
+        if (o == null) return 0;
         Integer day = null;
         if (o instanceof String) {
             o = LocalDate.parse((String) o);
@@ -466,6 +482,7 @@ public class AutoFunctionFactory {
     }
 
     public static int mmdd(int num, Object o) {
+        if (o == null) return 0;
         Integer day = null;
         if (o instanceof String) {
             o = LocalDate.parse((String) o);
@@ -485,17 +502,19 @@ public class AutoFunctionFactory {
     }
 
     public static int strHash(int num, int startIndex, int endIndex, int valType, int randSeed, Object value) {
+        if (value == null) value = "null";
         String s = mySubstring(startIndex, endIndex, value.toString());
         if (valType == 0) {
             return hashCode(s, randSeed) % num;
         }
-        if (valType == 1){
+        if (valType == 1) {
             return Integer.parseInt(s) % num;
         }
-       throw new UnsupportedOperationException();
+        throw new UnsupportedOperationException();
     }
 
     public static int yyyyWeek(int num, Object o) {
+        if (o == null) return 0;
         Integer YYYY = null;
         Integer WEEK = null;
         if (o instanceof String) {
@@ -518,6 +537,7 @@ public class AutoFunctionFactory {
     }
 
     public static int week(int num, Object o) {
+        if (o == null) return 0;
         Integer day = null;
         if (o instanceof String) {
             o = LocalDate.parse((String) o);
@@ -537,6 +557,7 @@ public class AutoFunctionFactory {
     }
 
     public static int yyyydd(int num, Object o) {
+        if (o == null) return 0;
         Integer YYYY = null;
         Integer DD = null;
         if (o instanceof String) {
@@ -559,6 +580,7 @@ public class AutoFunctionFactory {
     }
 
     public static int yyyymm(int num, Object o) {
+        if (o == null) return 0;
         Integer YYYY = null;
         Integer MM = null;
         if (o instanceof String) {
@@ -581,8 +603,9 @@ public class AutoFunctionFactory {
     }
 
     public static int singleRangeHash(int num, int n, Object o) {
+        if (o == null) o = "null";
         if (o instanceof Number) {
-            return ((Number) o).intValue() % num;
+            return (int) (((Number) o).longValue() % num);
         }
         if (o instanceof String) {
             return hashCode(((String) o).substring(n)) % num;
@@ -591,8 +614,9 @@ public class AutoFunctionFactory {
     }
 
     public static int singleRightShift(int num, int shift, Object o) {
+        if (o == null) o = "null";
         if (o instanceof Number) {
-            return ((Number) o).intValue() >> shift % num;
+            return (int)( ((Number) o).longValue() >> shift % num);
         }
         if (o instanceof String) {
             return hashCode((String) o) >> shift % num;
@@ -601,8 +625,9 @@ public class AutoFunctionFactory {
     }
 
     public static int singleModHash(int num, Object o) {
+        if (o == null) o = "null";
         if (o instanceof Number) {
-            return Math.floorMod(((Number) o).intValue(), num);
+            return (int)Math.floorMod(((Number) o).longValue(), num);
         }
         if (o instanceof String) {
             return Math.floorMod(hashCode((String) o), num);
@@ -611,8 +636,11 @@ public class AutoFunctionFactory {
     }
 
     public static int singleRemainderHash(int num, Object o) {
+        if (o == null) o = "null";
         if (o instanceof Number) {
-            return ((Number) o).intValue() % num;
+            long l = ((Number) o).longValue();
+            long l1 = l % num;
+            return (int)l1;
         }
         if (o instanceof String) {
             return hashCode((String) o) % num;
@@ -638,6 +666,7 @@ public class AutoFunctionFactory {
     }
 
     public static int hashCode(String value) {
+        if (value == null) value = "null";
         return hashCode(value, 31);
     }
 
@@ -651,6 +680,7 @@ public class AutoFunctionFactory {
 
     public static String mySubstring(int startIndex,
                                      int endIndex, String value) {
+        if (value == null) value = "null";
         if (startIndex >= 0 && endIndex >= 0 && endIndex > startIndex) {
             return value.substring(Math.min(value.length(), startIndex), Math.min(value.length(), endIndex));
         }
