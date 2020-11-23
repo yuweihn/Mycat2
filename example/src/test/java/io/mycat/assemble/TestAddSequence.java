@@ -1,9 +1,5 @@
-package io.mycat.example.assemble;
+package io.mycat.assemble;
 
-import com.alibaba.fastsql.DbType;
-import com.alibaba.fastsql.sql.SQLUtils;
-import com.alibaba.fastsql.sql.ast.SQLStatement;
-import com.alibaba.fastsql.sql.parser.SQLParserUtils;
 import com.mysql.cj.jdbc.MysqlDataSource;
 import org.junit.Assert;
 import org.junit.Test;
@@ -76,7 +72,7 @@ public class TestAddSequence {
                     "  PRIMARY KEY (`id`),\n" +
                     "  KEY `id` (`id`)\n" +
                     ") ENGINE=InnoDB  DEFAULT CHARSET=utf8"
-                    + " dbpartition by hash(id) tbpartition by hash(user_id) tbpartitions 2 dbpartitions 2;");
+                    + " dbpartition by hash(id) tbpartition by hash(id) tbpartitions 2 dbpartitions 2;");
             AssembleExample.execute(connection, "delete from  db1.travelrecord");
             AssembleExample.execute(connection, "INSERT INTO `db1`.`travelrecord` (`user_id`) VALUES ('9999999999');");
             List<Map<String, Object>> maps1 = AssembleExample.executeQuery(connection, "select last_insert_id()");
