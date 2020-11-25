@@ -21,6 +21,11 @@ import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.api.collector.RowIteratorUtil;
 import io.mycat.beans.mycat.MycatRowMetaData;
 import io.mycat.calcite.resultset.CalciteRowMetaData;
+import io.mycat.calcite.sqlfunction.CRC32Function;
+import io.mycat.calcite.sqlfunction.mathfunction.Log2Function;
+import io.mycat.calcite.sqlfunction.mathfunction.LogFunction;
+import io.mycat.calcite.sqlfunction.mathfunction.RandFunction;
+import io.mycat.calcite.sqlfunction.mathfunction.TruncateFunction;
 import org.apache.calcite.mycat.*;
 import io.mycat.calcite.sqlfunction.cmpfunction.StrictEqualFunction;
 import io.mycat.calcite.sqlfunction.datefunction.*;
@@ -216,10 +221,10 @@ public enum MycatCalciteSupport implements Context {
                 try {
                     map.put("IFNULL", SqlStdOperatorTable.COALESCE);
                     build.put("SUBSTR", SqlStdOperatorTable.SUBSTRING);
-                    build.put("CURDATE", SqlStdOperatorTable.CURRENT_DATE);
-                    build.put("CURRENT_DATE", SqlStdOperatorTable.CURRENT_DATE);
+                    build.put("CURDATE", CurDateFunction.INSTANCE);
+                    build.put("CURRENT_DATE", CurDateFunction.INSTANCE);
 //                    build.put("NOW", SqlStdOperatorTable.LOCALTIMESTAMP);
-                    build.put("LOG", SqlStdOperatorTable.LOG10);
+//                    build.put("LOG", SqlStdOperatorTable.LOG);
                     build.put("PI", SqlStdOperatorTable.PI);
                     build.put("POW", SqlStdOperatorTable.POWER);
                     build.put("concat", ConcatFunction.INSTANCE);
@@ -253,6 +258,7 @@ public enum MycatCalciteSupport implements Context {
                             LengthFunction.INSTANCE,
                             loadFileFunction.INSTANCE,
                             LocateFunction.INSTANCE,
+                            Locate2Function.INSTANCE,
                             LpadFunction.INSTANCE,
                             LtrimFunction.INSTANCE,
                             MakeSetFunction.INSTANCE,
@@ -281,7 +287,7 @@ public enum MycatCalciteSupport implements Context {
                             /////////////////////////////////////////
                             AddDateFunction.INSTANCE,
 //                            DateAddFunction.INSTANCE,
-                            AddTimeFunction.INSTANCE,
+                            RexImpTable.AddTimeFunction.INSTANCE,
                             ConvertTzFunction.INSTANCE,
                             CurDateFunction.INSTANCE,
                             DateDiffFunction.INSTANCE,
@@ -343,7 +349,19 @@ public enum MycatCalciteSupport implements Context {
                             MycatLastInsertIdFunction.INSTANCE,
                             MycatConnectionIdFunction.INSTANCE,
                             MycatCurrentUserFunction.INSTANCE,
-                            MycatUserFunction.INSTANCE
+                            MycatUserFunction.INSTANCE,
+                            ConvFunction.INSTANCE,
+                            BitOrFunction.INSTANCE,
+                            TrimLeadingFunction.INSTANCE,
+                            TrimBothFunction.INSTANCE,
+                            TrimTrailingFunction.INSTANCE,
+                            CRC32Function.INSTANCE,
+                            LogFunction.INSTANCE,
+                            Log2Function.INSTANCE,
+                            RandFunction.INSTANCE,
+                            TruncateFunction.INSTANCE,
+                            DaynameFunction.INSTANCE,
+                            DayOfYearFunction.INSTANCE
                     ).forEach(i -> build.put(i.getName(), i));
                     build.put("CHARACTER_LENGTH", CharLengthFunction.INSTANCE);
                     build.put("LCASE", LowerFunction.INSTANCE);
