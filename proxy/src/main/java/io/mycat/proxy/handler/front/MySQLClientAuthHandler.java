@@ -29,6 +29,7 @@ import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.Authenticator;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.proxy.session.MycatSessionManager;
+import io.mycat.proxy.session.ProcessState;
 import io.mycat.util.CachingSha2PasswordPlugin;
 import io.mycat.util.MysqlNativePasswordPluginUtil;
 import io.mycat.util.StringUtil;
@@ -49,7 +50,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
 
     static final Logger LOGGER = LoggerFactory.getLogger(MySQLClientAuthHandler.class);
     public byte[] seed;
-    public MycatSession mycat;
+//    public MycatSession mycat;
     private boolean finished = false;
     private AuthPacket auth;
     public String clientAuthPluginName = CachingSha2PasswordPlugin.PROTOCOL_PLUGIN_NAME;
@@ -60,9 +61,9 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
         this.mycatSessionManager = mycatSessionManager;
     }
 
-    public void setMycatSession(MycatSession mycatSession) {
-        this.mycat = mycatSession;
-    }
+//    public void setMycatSession(MycatSession mycatSession) {
+//        this.mycat = mycatSession;
+//    }
 
     @Override
     public void onSocketRead(MycatSession mycat) {
@@ -73,33 +74,32 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
             if (!mycat.readFromChannel()) {
                 return;
             }
+            mycat.setResponseFinished(ProcessState.READY);
 //            MycatSecurityConfig securityManager = runtime.getSecurityManager();
             byte[] password = new byte[]{};
             if (!isChangeAuthPlugin) {
                 //密码读取与验证
                 this.auth = readResponseAuthPacket(mycat);
-                if (true) {
-                    String authPluginName = auth.getAuthPluginName();
-                    int capabilities = auth.getCapabilities();
-                    //切换auth_plugin
-                    if (MySQLServerCapabilityFlags.isPluginAuth(capabilities)
-                            && !authPluginName.equals(clientAuthPluginName)) {
-                        //发送切换包的auth_response
-                        isChangeAuthPlugin = true;
-                        AuthSwitchRequestPacket authSwitchRequestPacket = new AuthSwitchRequestPacket();
-                        clientAuthPluginName = StringUtil.isEmpty(authPluginName) ? MysqlNativePasswordPluginUtil.PROTOCOL_PLUGIN_NAME : authPluginName;
-                        authSwitchRequestPacket.setAuthPluginName(clientAuthPluginName);
-                        authSwitchRequestPacket.setStatus((byte) 0xfe);
-                        authSwitchRequestPacket.setAuthPluginData(new String(seed));
+                String authPluginName = auth.getAuthPluginName();
+                int capabilities = auth.getCapabilities();
+                //切换auth_plugin
+                if (MySQLServerCapabilityFlags.isPluginAuth(capabilities)
+                        && !authPluginName.equals(clientAuthPluginName)) {
+                    //发送切换包的auth_response
+                    isChangeAuthPlugin = true;
+                    AuthSwitchRequestPacket authSwitchRequestPacket = new AuthSwitchRequestPacket();
+                    clientAuthPluginName = StringUtil.isEmpty(authPluginName) ? MysqlNativePasswordPluginUtil.PROTOCOL_PLUGIN_NAME : authPluginName;
+                    authSwitchRequestPacket.setAuthPluginName(clientAuthPluginName);
+                    authSwitchRequestPacket.setStatus((byte) 0xfe);
+                    authSwitchRequestPacket.setAuthPluginData(new String(seed));
 
-                        MySQLPayloadWriter mySQLPayloadWriter = new MySQLPayloadWriter(1024);
-                        authSwitchRequestPacket.writePayload(mySQLPayloadWriter);
-                        mycat.writeBytes(mySQLPayloadWriter.toByteArray(), true);
-                        return;
-                    }
-                    //握手包中的加密密码
-                    password = auth.getPassword();
+                    MySQLPayloadWriter mySQLPayloadWriter = new MySQLPayloadWriter(1024);
+                    authSwitchRequestPacket.writePayload(mySQLPayloadWriter);
+                    mycat.writeBytes(mySQLPayloadWriter.toByteArray(), true);
+                    return;
                 }
+                //握手包中的加密密码
+                password = auth.getPassword();
             } else {
                 MySQLPacket mySQLPacket = mycat.currentProxyPayload();
                 password = mySQLPacket.readEOFStringBytes();
@@ -203,8 +203,8 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
     public void onException(MycatSession session, Exception e) {
         MycatMonitor.onAuthHandlerException(session, e);
         LOGGER.error("{}", e);
-        onClear(mycat);
-        mycat.close(false, e);
+        onClear(session);
+        session.close(false, e);
     }
 
     public void onClear(MycatSession session) {
@@ -212,7 +212,7 @@ public class MySQLClientAuthHandler implements NIOHandler<MycatSession> {
         MycatMonitor.onAuthHandlerClear(session);
     }
 
-    public void sendAuthPackge() {
+    public void sendAuthPackge(MycatSession mycat) {
         byte[][] seedParts = MysqlNativePasswordPluginUtil.nextSeedBuild();
         this.seed = seedParts[2];
         HandshakePacket hs = new HandshakePacket();
