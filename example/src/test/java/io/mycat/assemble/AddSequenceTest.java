@@ -1,15 +1,20 @@
 package io.mycat.assemble;
 
+import io.mycat.hint.CreateClusterHint;
+import io.mycat.hint.CreateDataSourceHint;
 import org.junit.Assert;
 import org.junit.Test;
 
 import javax.annotation.concurrent.NotThreadSafe;
 import java.sql.Connection;
 import java.sql.Statement;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 @NotThreadSafe
+@net.jcip.annotations.NotThreadSafe
 public class AddSequenceTest implements MycatTest {
 
 
@@ -17,6 +22,7 @@ public class AddSequenceTest implements MycatTest {
     public void testAddSequence() throws Exception {
 
         try (Connection connection = getMySQLConnection(8066)) {
+            execute(connection,RESET_CONFIG);
             execute(connection, "CREATE DATABASE db1");
 
 
@@ -50,7 +56,7 @@ public class AddSequenceTest implements MycatTest {
                     statement.execute("INSERT INTO `db1`.`mycat_sequence` (`name`, `current_value`) VALUES ('db1_travelrecord', '0');");
                 }
             }
-
+            addC0(connection);
 
             execute(connection, "CREATE TABLE db1.`travelrecord` (\n" +
                     "  `id` bigint NOT NULL AUTO_INCREMENT,\n" +
@@ -83,4 +89,6 @@ public class AddSequenceTest implements MycatTest {
             Assert.assertTrue(maps2.toString().contains("1"));
         }
     }
+
+
 }

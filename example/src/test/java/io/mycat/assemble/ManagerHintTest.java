@@ -11,12 +11,15 @@ import java.util.List;
 import java.util.Map;
 
 @NotThreadSafe
+@net.jcip.annotations.NotThreadSafe
 public class ManagerHintTest implements MycatTest {
 
     @Test
     public void testShowBufferUsage() throws Exception {
         try (Connection mycatConnection = getMySQLConnection(8066)) {
+            execute(mycatConnection,RESET_CONFIG);
             try (Statement statement = mycatConnection.createStatement()) {
+
                 ResultSet resultSet = statement.executeQuery(
                         "/*+ mycat:showBufferUsage{}*/");
                 resultSet.next();
@@ -27,6 +30,7 @@ public class ManagerHintTest implements MycatTest {
     @Test
     public void testShowUsers() throws Exception {
         try (Connection mycatConnection = getMySQLConnection(8066)) {
+            execute(mycatConnection,RESET_CONFIG);
             List<Map<String, Object>> maps = executeQuery(mycatConnection,
                     "/*+ mycat:showUsers{}*/");
             Assert.assertTrue(!maps.isEmpty());
@@ -36,6 +40,7 @@ public class ManagerHintTest implements MycatTest {
     @Test
     public void testShowSchemas() throws Exception {
         try (Connection mycatConnection = getMySQLConnection(8066)) {
+            execute(mycatConnection,RESET_CONFIG);
             Assert.assertTrue(
                     executeQuery(mycatConnection,
                             "/*+ mycat:showSchemas{}*/").size() > 2);

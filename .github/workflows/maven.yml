@@ -30,4 +30,9 @@ jobs:
         host port: 3307
         mysql root password: 123456
     - name: test
-      run: mvn test --file pom.xml  
+      run: |
+            mvn -B package -Dmaven.test.skip=true
+        java -jar mycat2/target/mycat2-1.12-SNAPSHOT-jar-with-dependencies.jar
+            sleep 5s
+            mvn -o test
+
