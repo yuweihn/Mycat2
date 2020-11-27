@@ -61,7 +61,7 @@ public enum MycatHandler implements NIOHandler<MycatSession> {
             }
         } catch (ClosedChannelException e) {
             MycatMonitor.onMycatHandlerCloseException(mycat, e);
-            onException(mycat, e);
+            mycat.close(true,e);
             return;
         } catch (Exception e) {
             MycatMonitor.onMycatHandlerReadException(mycat, e);
@@ -77,7 +77,7 @@ public enum MycatHandler implements NIOHandler<MycatSession> {
             }
         } catch (Exception e) {
             MycatMonitor.onMycatHandlerWriteException(mycat, e);
-            onException(mycat, e);
+            mycat.close(false,e);
         }
     }
 
@@ -91,20 +91,20 @@ public enum MycatHandler implements NIOHandler<MycatSession> {
             }
         } catch (Exception e) {
             MycatMonitor.onMycatHandlerWriteException(mycat, e);
-            onException(mycat, e);
+            mycat.close(false,e);
         }
     }
 
     @Override
     public void onException(MycatSession mycat, Exception e) {
         MycatMonitor.onMycatHandlerException(mycat, e);
-        LOGGER.error("{}", e);
+        LOGGER.error("", e);
         MycatSessionWriteHandler writeHandler = mycat.getWriteHandler();
         if (writeHandler != null) {
             writeHandler.onException(mycat, e);
         }
         onClear(mycat);
-        mycat.close(false, e.toString());
+        mycat.writeErrorEndPacketBySyncInProcessError();
     }
 
     /**

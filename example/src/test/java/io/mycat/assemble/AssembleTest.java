@@ -91,7 +91,13 @@ public class AssembleTest implements MycatTest {
             Connection mysql3307 = getMySQLConnection(3307);){
             execute(mycatConnection,RESET_CONFIG);
             execute(mysql3306, "drop database if exists db1");
+            execute(mysql3306, "drop database if exists db1_0");
+            execute(mysql3306, "drop database if exists db1_1");
+
             execute(mysql3307, "drop database if exists db1");
+            execute(mysql3307, "drop database if exists db1_0");
+            execute(mysql3307, "drop database if exists db1_1");
+
             List<Map<String, Object>> maps = executeQuery(mycatConnection,
                     "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'db1' UNION SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'xxx' UNION SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = 'db1' ");
 
@@ -134,7 +140,7 @@ public class AssembleTest implements MycatTest {
             );
 
             execute(mycatConnection,
-                    "insert  into `travelrecord`(`id`,`user_id`,`traveldate`,`fee`,`days`,`blob`) values (12,'999',NULL,NULL,NULL,NULL);"
+                    "insert  into `travelrecord`(`id`,`user_id`) values (12,'999');"
             );
             List<Map<String, Object>> maps2 = executeQuery(mycatConnection, "select LAST_INSERT_ID()");
             Assert.assertTrue(maps2
@@ -189,7 +195,7 @@ public class AssembleTest implements MycatTest {
             execute(mycatConnection, "delete from db1.travelrecord");
             Assert.assertFalse(hasData(mycatConnection, "db1", "travelrecord"));
             execute(mycatConnection,
-                    "insert  into db1.`travelrecord`(`id`,`user_id`,`traveldate`,`fee`,`days`,`blob`) values (12,'999',NULL,NULL,NULL,NULL);"
+                    "insert  into db1.`travelrecord`(`id`,`user_id`) values (12,'999');"
             );
 
             {
@@ -221,7 +227,7 @@ public class AssembleTest implements MycatTest {
             execute(mycatConnection, "delete from db1.travelrecord");
             Assert.assertFalse(hasData(mycatConnection, "db1", "travelrecord"));
             execute(mycatConnection,
-                    "insert  into db1.`travelrecord`(`id`,`user_id`,`traveldate`,`fee`,`days`,`blob`) values (12,'999',NULL,NULL,NULL,NULL);"
+                    "insert  into db1.`travelrecord`(`id`,`user_id`) values (12,'999');"
             );
             Assert.assertTrue(
                     executeQuery(mycatConnection, "select LAST_INSERT_ID()").toString().contains("12")
@@ -347,7 +353,7 @@ public class AssembleTest implements MycatTest {
                 executeQuery(mycatConnection, "SELECT @@autocommit;").toString().contains("0")
         );
         execute(mycatConnection,
-                "insert  into `travelrecord`(`id`,`user_id`,`traveldate`,`fee`,`days`,`blob`) values (1,'999',NULL,NULL,NULL,NULL),(999999999,'999',NULL,NULL,NULL,NULL);");
+                "insert  into `travelrecord`(`id`,`user_id`) values (1,'999'),(999999999,'999');");
         mycatConnection.rollback();
 
         mycatConnection.setAutoCommit(true);
@@ -363,14 +369,14 @@ public class AssembleTest implements MycatTest {
                 executeQuery(mycatConnection, "SELECT @@autocommit;").toString().contains("0")
         );
         execute(mycatConnection,
-                "insert  into `travelrecord`(`id`,`user_id`,`traveldate`,`fee`,`days`,`blob`) values (1,'999',NULL,NULL,NULL,NULL),(999999999,'999',NULL,NULL,NULL,NULL);");
+                "insert  into `travelrecord`(`id`,`user_id`) values (1,'999'),(999999999,'999');");
         mycatConnection.commit();
 
         mycatConnection.setAutoCommit(true);
         Assert.assertTrue(
                 executeQuery(mycatConnection, "SELECT @@autocommit;").toString().contains("1")
         );
-        Assert.assertEquals(2, executeQuery(mycatConnection, "select id from db1.travelrecord").size());
+        Assert.assertEquals(1, executeQuery(mycatConnection, "select id from db1.travelrecord").size());
     }
 
 }

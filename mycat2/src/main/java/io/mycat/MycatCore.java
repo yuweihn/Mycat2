@@ -42,7 +42,7 @@ public class MycatCore {
         if (path == null) {
             path =  Paths.get(this.getClass().getProtectionDomain().getCodeSource().getLocation().toURI()).toString();;
         }
-        this.baseDirectory = Paths.get(path).toAbsolutePath();
+        this.baseDirectory = Paths.get(path).getParent().getParent().toAbsolutePath();
         System.out.println("path:" + this.baseDirectory);
         ServerConfiguration serverConfiguration = new ServerConfigurationImpl(MycatCore.class, path);
         MycatServerConfig serverConfig = serverConfiguration.serverConfig();

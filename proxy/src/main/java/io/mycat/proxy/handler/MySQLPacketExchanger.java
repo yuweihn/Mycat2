@@ -47,7 +47,7 @@ public enum MySQLPacketExchanger {
     };
 
     private static void onExceptionClearCloseInResponse(MycatSession mycat, Exception e) {
-        LOGGER.error("{}", e);
+        LOGGER.error("", e);
         MycatMonitor.onPacketExchangerException(mycat, e);
         MySQLClientSession mysql = mycat.getMySQLSession();
         if (mysql != null) {
@@ -61,7 +61,7 @@ public enum MySQLPacketExchanger {
 
     private static void onExceptionClearCloseInRequest(MycatSession mycat, Exception e,
                                                        PacketExchangerCallback callback) {
-        LOGGER.error("{}", e);
+        LOGGER.error("", e);
         MycatMonitor.onPacketExchangerWriteException(mycat, e);
         MySQLClientSession mysql = mycat.getMySQLSession();
         if (mysql != null) {
@@ -421,7 +421,6 @@ public enum MySQLPacketExchanger {
 
         @Override
         public void writeToChannel(MycatSession mycat) throws IOException {
-            try {
                 MySQLClientSession mySQLSession = Objects.requireNonNull(mycat.getMySQLSession());
                 mySQLSession.clearReadWriteOpts();
                 ProxyBuffer proxyBuffer = mycat.currentProxyBuffer();
@@ -455,9 +454,6 @@ public enum MySQLPacketExchanger {
                         }
                     }
                 }
-            } catch (Exception e) {
-                onExceptionClearCloseInResponse(mycat, e);
-            }
         }
 
         @Override
