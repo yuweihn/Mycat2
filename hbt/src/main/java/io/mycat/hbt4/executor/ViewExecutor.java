@@ -61,16 +61,17 @@ public class ViewExecutor implements Executor {
         LinkedList<Future<RowBaseIterator>> futureArrayList = new LinkedList<>();
 
         for (Map.Entry<String, SqlString> entry : expandToSql.entries()) {
-            Connection mycatConnection = factory.getConnection(entry.getKey());
-            if (mycatConnection.isClosed()){
+            MycatConnection mycatConnection = factory.getConnection(entry.getKey());
+            Connection connection = mycatConnection.unwrap(Connection.class);
+            if (connection.isClosed()){
                 LOGGER.error("mycatConnection:{} has closed", mycatConnection);
             }
             futureArrayList.add(mycatWorker.submit(() -> {
                 if(LOGGER.isDebugEnabled()){
-                    LOGGER.debug("mycatConnection:{} sql:{} params:{}",
-                            mycatConnection,entry.getValue(),params);
+                    LOGGER.debug("mycatConnection:{} {} sql:{} params:{}",
+                            mycatConnection,connection,entry.getValue(),params);
                 }
-                return executeQuery(mycatConnection, calciteRowMetaData, entry.getValue(), params);
+                return executeQuery(connection, calciteRowMetaData, entry.getValue(), params);
             }));
         }
         AtomicBoolean flag = new AtomicBoolean();

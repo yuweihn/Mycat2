@@ -258,7 +258,7 @@ public class SqlFunctionTest implements MycatTest {
     public void testAggFunction() throws Exception {
         initShardingTable();
 
-        checkValue("select id from db1.travelrecord GROUP BY id", "(1)(999999999)");
+        checkValue("select id from db1.travelrecord GROUP BY id  order by id ", "(1)(999999999)");
         checkValue("select id from db1.travelrecord GROUP BY id,user_id order by id ", "(999999999)(1)");
         checkValue("select id from db1.travelrecord GROUP BY id,user_id having id != 1 order by id", "(999999999)");
         checkValue("select id from db1.travelrecord GROUP BY id,user_id having max(id) > 1 order by id", "(999999999)");
@@ -308,10 +308,16 @@ public class SqlFunctionTest implements MycatTest {
         execute(mysql3306, "USE `db1`;");
 
         execute(mycatConnection, "CREATE TABLE db1.`travelrecord` (\n" +
-                "  `id` bigint NOT NULL AUTO_INCREMENT\n," +
-                "  `user_id` varchar(100) DEFAULT NULL" +
+                "  `id` bigint NOT NULL AUTO_INCREMENT,\n" +
+                "  `user_id` varchar(100) DEFAULT NULL,\n" +
+                "  `traveldate` date DEFAULT NULL,\n" +
+                "  `fee` decimal(10,0) DEFAULT NULL,\n" +
+                "  `days` int DEFAULT NULL,\n" +
+                "  `blob` longblob,\n" +
+                "  PRIMARY KEY (`id`),\n" +
+                "  KEY `id` (`id`)\n" +
                 ") ENGINE=InnoDB  DEFAULT CHARSET=utf8"
-                + " dbpartition by hash(id) dbpartitions 2");
+                + " dbpartition by hash(id) tbpartition by hash(id) tbpartitions 2 dbpartitions 2;");
         execute(mycatConnection, "CREATE TABLE `company` ( `id` int(11) NOT NULL AUTO_INCREMENT,`companyname` varchar(20) DEFAULT NULL,`addressid` int(11) DEFAULT NULL,PRIMARY KEY (`id`))");
         execute(mysql3306, "CREATE TABLE if not exists db1.`travelrecord` (\n" +
                 "  `id` bigint NOT NULL AUTO_INCREMENT\n," +
@@ -408,6 +414,7 @@ public class SqlFunctionTest implements MycatTest {
         //like
         checkValue("select id,user_id from db1.travelrecord where user_id LIKE '99%' order by id");
 
+        checkValue("select 1");
     }
 }
 

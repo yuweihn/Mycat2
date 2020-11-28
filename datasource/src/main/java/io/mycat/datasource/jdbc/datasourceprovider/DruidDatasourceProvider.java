@@ -44,9 +44,14 @@ public class DruidDatasourceProvider implements DatasourceProvider {
     datasource.setPassword(password);
     datasource.setUsername(username);
     datasource.setUrl(url);
-    datasource.setMaxWait(TimeUnit.SECONDS.toMillis(3));
+    datasource.setMaxWait(TimeUnit.SECONDS.toMillis(60));
     datasource.setMaxActive(maxCon);
     datasource.setMinIdle(minCon);
+    datasource.setKeepAlive(true);
+    datasource.setTestOnReturn(true);
+    datasource.setTestOnBorrow(true);
+    datasource.setValidationQuery("select 'x'");
+    datasource.setTestWhileIdle(true);
 
     if (maxRetryCount > 0) {
       datasource.setConnectionErrorRetryAttempts(maxRetryCount);

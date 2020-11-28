@@ -20,17 +20,14 @@ import io.mycat.beans.mycat.TransactionType;
 import io.mycat.beans.resultset.MycatProxyResponse;
 import io.mycat.beans.resultset.MycatResponse;
 import io.mycat.beans.resultset.MycatResultSetResponse;
-import io.mycat.bindthread.BindThread;
 import io.mycat.proxy.session.MycatSession;
 import io.mycat.resultset.BinaryResultSetResponse;
 import io.mycat.resultset.TextResultSetResponse;
-import io.mycat.util.ByteUtil;
 import io.mycat.util.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
-import java.util.concurrent.TimeUnit;
 
 public class SQLExecuterWriter implements SQLExecuterWriterHandler {
     final int total;
@@ -67,7 +64,9 @@ public class SQLExecuterWriter implements SQLExecuterWriterHandler {
 
     public void writeToMycatSession(MycatResponse response) {
         boolean moreResultSet = !(this.count == 1);
+        TransactionSession transactionSession = session.getDataContext().getTransactionSession();
         if (explain) {
+            transactionSession.clearJdbcConnection();
             sendResultSet(moreResultSet, response.explain());
             return;
         }
@@ -80,19 +79,22 @@ public class SQLExecuterWriter implements SQLExecuterWriterHandler {
                     return;
                 }
                 case UPDATEOK: {
+                    transactionSession.clearJdbcConnection();
                     session.writeOk(moreResultSet);
                     return;
                 }
                 case ERROR: {
+                    transactionSession.clearJdbcConnection();
                     session.writeErrorEndPacketBySyncInProcessError();
                     return;
                 }
                 case PROXY: {
                     MycatProxyResponse proxyResponse = (MycatProxyResponse) mycatResponse;
-                    TransactionSession transactionSession = session.getDataContext().getTransactionSession();
+
                     if (this.count == 1 && transactionSession.transactionType() == TransactionType.PROXY_TRANSACTION_TYPE) {
                         MycatServer mycatServer = MetaClusterCurrent.wrapper(MycatServer.class);
                         if (mycatServer.getDatasource(proxyResponse.getTargetName()) != null) {
+                            transactionSession.clearJdbcConnection();
                             MySQLTaskUtil.proxyBackendByDatasourceName(session, proxyResponse.getTargetName(), proxyResponse.getSql(),
                                     MySQLTaskUtil.TransactionSyncType.create(session.isAutocommit(), session.isInTransaction()),
                                     session.getIsolation());
@@ -111,6 +113,7 @@ public class SQLExecuterWriter implements SQLExecuterWriterHandler {
                             long[] res = connection.executeUpdate(proxyResponse.getSql(), true);
                             session.setAffectedRows(res[0]);
                             session.setLastInsertId(res[1]);
+                            transactionSession.clearJdbcConnection();
                             session.writeOk(moreResultSet);
                             return;
                         }
@@ -118,6 +121,7 @@ public class SQLExecuterWriter implements SQLExecuterWriterHandler {
                             long[] res = connection.executeUpdate(proxyResponse.getSql(), false);
                             session.setAffectedRows(res[0]);
                             session.setLastInsertId(res[1]);
+                            transactionSession.clearJdbcConnection();
                             session.writeOk(moreResultSet);
                             return;
                         }
@@ -128,7 +132,6 @@ public class SQLExecuterWriter implements SQLExecuterWriterHandler {
                 case COMMIT: {
                     MycatDataContext dataContext = session.getDataContext();
                     TransactionType transactionType = dataContext.transactionType();
-                    TransactionSession transactionSession = dataContext.getTransactionSession();
                     switch (transactionType) {
                         case PROXY_TRANSACTION_TYPE:
                             if (moreResultSet) {
@@ -160,7 +163,6 @@ public class SQLExecuterWriter implements SQLExecuterWriterHandler {
                 case ROLLBACK: {
                     MycatDataContext dataContext = session.getDataContext();
                     TransactionType transactionType = dataContext.transactionType();
-                    TransactionSession transactionSession = dataContext.getTransactionSession();
                     switch (transactionType) {
                         case PROXY_TRANSACTION_TYPE:
                             if (moreResultSet) {
@@ -191,7 +193,6 @@ public class SQLExecuterWriter implements SQLExecuterWriterHandler {
                 case BEGIN: {
                     MycatDataContext dataContext = session.getDataContext();
                     TransactionType transactionType = dataContext.transactionType();
-                    TransactionSession transactionSession = dataContext.getTransactionSession();
                     switch (transactionType) {
                         case PROXY_TRANSACTION_TYPE: {
                             transactionSession.begin();
@@ -239,6 +240,7 @@ public class SQLExecuterWriter implements SQLExecuterWriterHandler {
             byte[] row = rowIterator.next();
             session.writeBytes(row, false);
         }
+        currentResultSet.close();
         session.writeRowEndPacket(moreResultSet, false);
     }
 
