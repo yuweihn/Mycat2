@@ -17,3 +17,4 @@ dependency-reduced-pom.xml
 /autohandler/logs/mycat.log
 /autohandler/conf/ruledata/crc32slot_mysqldb_AUTOSLOT.properties
 /autohandler/conf/ruledata/test.properties
+/mycat2/src/main/resources/mycat.yml
