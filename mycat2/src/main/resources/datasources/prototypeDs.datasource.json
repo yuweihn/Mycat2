@@ -9,9 +9,9 @@
 	"maxRetryCount":5,
 	"minCon":1,
 	"name":"prototypeDs",
-	"password":"123456",
+	"password":"dev",
 	"type":"JDBC",
-	"url":"jdbc:mysql://localhost:3306/mysql?useUnicode=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8",
-	"user":"root",
+	"url":"jdbc:mysql://mysql.yuweix.com:3307/dev_01?useUnicode=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8",
+	"user":"yuwei",
 	"weight":0
 }
