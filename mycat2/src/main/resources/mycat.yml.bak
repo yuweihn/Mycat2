@@ -28,22 +28,22 @@ interceptors: [
   }
 ]
 datasource:
-  datasources: [{name: defaultDs, ip: db-mysql.yuweix.com,port: 3307,user: yuwei,password: dev,maxCon: 10000,minCon: 0,
+  datasources: [{name: defaultDs, ip: mysql.yuweix.com,port: 3307,user: yuwei,password: dev,maxCon: 10000,minCon: 0,
                  maxRetryCount: 3, #连接重试次数
                  maxConnectTimeout: 10000, #连接超时时间 毫秒
                  dbType: mysql, #
-                 url: 'jdbc:mysql://db-mysql.yuweix.com:3307?useUnicode=true&serverTimezone=UTC',
+                 url: 'jdbc:mysql://mysql.yuweix.com:3307?useUnicode=true&serverTimezone=UTC',
                  weight: 1, #负载均衡权重
                  initSqls: []
     , #建立连接后执行的sql,在此可以写上use xxx初始化默认database
                  instanceType:,#READ,WRITE,READ_WRITE ,集群信息中是主节点,则默认为读写,副本则为读,此属性可以强制指定可写,
                  initSqlsGetConnection: true
   },
-    {name: defaultDs2, ip: db-mysql.yuweix.com,port: 3307,user: yuwei,password: dev,maxCon: 10000,minCon: 0,
+    {name: defaultDs2, ip: mysql.yuweix.com,port: 3307,user: yuwei,password: dev,maxCon: 10000,minCon: 0,
      maxRetryCount: 3,
      maxConnectTimeout: 10000,
      dbType: mysql,
-     url: 'jdbc:mysql://db-mysql.yuweix.com:3307?useUnicode=true&serverTimezone=UTC',
+     url: 'jdbc:mysql://mysql.yuweix.com:3307?useUnicode=true&serverTimezone=UTC',
      weight: 1,
      initSqls: [],
      instanceType:,#READ,WRITE,READ_WRITE
