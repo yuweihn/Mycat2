@@ -11,8 +11,9 @@ import lombok.*;
 public class UserConfig {
     private String username;
     private String password;
-    private String ip = "127.0.0.1";
-    private String transactionType = "xa";
+    private String ip = null;
+    private String transactionType = "proxy";
+    private String dialect = "mysql";
 
     public static void main(String[] args) {
         String s = JsonUtil.toJson(new UserConfig());

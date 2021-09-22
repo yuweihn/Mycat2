@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -39,11 +39,11 @@ public abstract class AbstractMycatResultSetResponse implements MycatResultSetRe
   public Iterator<byte[]> columnDefIterator() {
     return new Iterator<byte[]>() {
       final int count = columnCount();
-      int index = 1;
+      int index = 0;
 
       @Override
       public boolean hasNext() {
-        return index <= count;
+        return index < count;
       }
 
       @Override

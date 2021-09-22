@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -343,12 +343,6 @@ public class TextResultSetHandler implements ResultSetHandler {
     this.currentColumnDefList = new ColumnDefPacket[columnCount];
     collector.onResultSetStart();
   }
-
-  @Override
-  public void onRowEof(MySQLPacket mySQLPacket, int startPos, int endPos) {
-    collector.onResultSetEnd();
-  }
-
   @Override
   public void onRowOk(MySQLPacket mySQLPacket, int startPos, int endPos) {
     collector.onResultSetEnd();

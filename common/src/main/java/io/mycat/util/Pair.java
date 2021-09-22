@@ -23,76 +23,42 @@
  */
 package io.mycat.util;
 
+import lombok.EqualsAndHashCode;
+
 /**
  * (created at 2010-7-21)
  *
  * @author mycat
  */
+@EqualsAndHashCode
 public final class Pair<K, V> {
 
-  private static final int HASH_CONST = 37;
-  private final K key;
-  private final V value;
+    private static final int HASH_CONST = 37;
+    private final K key;
+    private final V value;
 
-  public Pair(K key, V value) {
-    this.key = key;
-    this.value = value;
-  }
-  public static <K,V> Pair of(K key, V value) {
-return   new Pair<>(key,value);
-  }
-  public K getKey() {
-    return key;
-  }
+    public Pair(K key, V value) {
+        this.key = key;
+        this.value = value;
+    }
 
-  public V getValue() {
-    return value;
-  }
+    public static <K, V> Pair of(K key, V value) {
+        return new Pair<>(key, value);
+    }
 
-  @Override
-  public String toString() {
-    StringBuilder sb = new StringBuilder();
-    sb.append("(").append(key).append(", ").append(value).append(")");
-    return sb.toString();
-  }
+    public K getKey() {
+        return key;
+    }
 
-  @Override
-  public int hashCode() {
-    int hash = 17;
-    if (key == null) {
-      hash += HASH_CONST;
-    } else {
-      hash = hash << 5 + hash << 1 + hash + key.hashCode();
+    public V getValue() {
+        return value;
     }
-    if (value == null) {
-      hash += HASH_CONST;
-    } else {
-      hash = hash << 5 + hash << 1 + hash + value.hashCode();
-    }
-    return hash;
-  }
 
-  @SuppressWarnings("rawtypes")
-  @Override
-  public boolean equals(Object obj) {
-    if (this == obj) {
-      return true;
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(").append(key).append(", ").append(value).append(")");
+        return sb.toString();
     }
-    if (!(obj instanceof Pair)) {
-      return false;
-    }
-    Pair that = (Pair) obj;
-    return isEquals(this.key, that.key) && isEquals(this.value, that.value);
-  }
-
-  private boolean isEquals(Object o1, Object o2) {
-    if (o1 == o2) {
-      return true;
-    }
-    if (o1 == null) {
-      return o2 == null;
-    }
-    return o1.equals(o2);
-  }
 
 }

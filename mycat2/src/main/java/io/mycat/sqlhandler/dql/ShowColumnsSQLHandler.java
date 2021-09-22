@@ -1,12 +1,25 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.sqlhandler.dql;
 
-import com.alibaba.fastsql.sql.ast.statement.SQLShowColumnsStatement;
+import com.alibaba.druid.sql.ast.statement.SQLShowColumnsStatement;
 import io.mycat.MycatDataContext;
 import io.mycat.sqlhandler.AbstractSQLHandler;
-import io.mycat.sqlhandler.ExecuteCode;
 import io.mycat.sqlhandler.SQLRequest;
-import io.mycat.util.Response;
-
+import io.mycat.Response;
+import io.vertx.core.Future;
 
 
 /**
@@ -16,83 +29,8 @@ import io.mycat.util.Response;
 public class ShowColumnsSQLHandler extends AbstractSQLHandler<SQLShowColumnsStatement> {
 
     @Override
-    protected void onExecute(SQLRequest<SQLShowColumnsStatement> request, MycatDataContext dataContext, Response response) throws Exception {
+    protected Future<Void> onExecute(SQLRequest<SQLShowColumnsStatement> request, MycatDataContext dataContext, Response response){
         SQLShowColumnsStatement ast = request.getAst();
-        response.tryBroadcastShow(ast.toString());
-//        response.proxyShow(ast);
-//        return ExecuteCode.PERFORMED;
-//        String defaultSchema = dataContext.getDefaultSchema();
-//        String schema = ast.getDatabase() != null ? SQLUtils.normalize(ast.getDatabase().getSimpleName()) : defaultSchema;
-//        boolean full = ast.isFull();
-//        String table = SQLUtils.normalize(ast.getTable().getSimpleName());
-//
-//        SQLSelectBuilderImpl sqlSelectBuilder = new SQLSelectBuilderImpl(DbType.mysql);
-//        if (ast.getLike() != null) {
-//            sqlSelectBuilder.whereAnd(" COLUMN_NAME " + ast.getLike());
-//        }
-//        if (ast.getWhere() != null) {
-//            sqlSelectBuilder.whereAnd(ast.getWhere().toString());
-//        }
-//        if (full) {
-//            sqlSelectBuilder.selectWithAlias("COLUMN_NAME", "Field");
-//            sqlSelectBuilder.selectWithAlias("DATA_TYPE", "Type");
-//            sqlSelectBuilder.selectWithAlias("COLLATION_NAME", "Collection");
-//            sqlSelectBuilder.selectWithAlias("IS_NULLABLE", "Null");
-//            sqlSelectBuilder.selectWithAlias("COLUMN_KEY", "Key");
-//            sqlSelectBuilder.selectWithAlias("COLUMN_DEFAULT", "Default");
-//            sqlSelectBuilder.selectWithAlias("EXTRA", "Extra");
-//            sqlSelectBuilder.selectWithAlias("PRIVILEGES", "Privileges");
-//            sqlSelectBuilder.selectWithAlias("COLUMN_COMMENT", "Comment");
-//        } else {
-//            sqlSelectBuilder.selectWithAlias("COLUMN_NAME", "Field");
-//            sqlSelectBuilder.selectWithAlias("DATA_TYPE", "Type");
-//            sqlSelectBuilder.selectWithAlias("IS_NULLABLE", "Null");
-//            sqlSelectBuilder.selectWithAlias("COLUMN_KEY", "key");
-//            sqlSelectBuilder.selectWithAlias("COLUMN_DEFAULT", "Default");
-//            sqlSelectBuilder.selectWithAlias("EXTRA", "Extra");
-//        }
-//        String sql = sqlSelectBuilder.from("information_schema.COLUMNS").toString();
-//
-//        SchemaObject table1 = MetadataManager.INSTANCE.TABLE_REPOSITORY.findTable(schema + "." + table);
-//        if (table1 == null) {
-//            response.proxyShow(ast);
-//            return ExecuteCode.PERFORMED;
-//        }
-//        InformationSchema informationSchema = InformationSchemaRuntime.INSTANCE.get();
-//        TableHandler tableHandler = MetadataManager.INSTANCE.getTable(schema, table);
-//        List<InformationSchema.COLUMNS_TABLE_OBJECT> array = new ArrayList<>();
-//        long index = 0;
-//        for (SimpleColumnInfo column : tableHandler.getColumns()) {
-//            SQLColumnDefinition table1Column = table1.findColumn(column.getColumnName());
-//            String columnName = SQLUtils.normalize(column.getColumnName());
-//            InformationSchema.COLUMNS_TABLE_OBJECT.COLUMNS_TABLE_OBJECTBuilder builder
-//                    = InformationSchema
-//                    .COLUMNS_TABLE_OBJECT
-//                    .builder()
-//                    .TABLE_CATALOG("def")
-//                    .TABLE_SCHEMA(schema)
-//                    .TABLE_NAME(table)
-//                    .COLUMN_NAME(columnName)
-//                    .ORDINAL_POSITION(index);
-//            if (table1Column.getDefaultExpr() != null) {
-//                builder.COLUMN_DEFAULT(table1Column.getDefaultExpr().toString());
-//            }
-//
-//            builder.IS_NULLABLE(column.isNullable() ? "YES" : "NO");
-//            builder.DATA_TYPE(table1Column.getDataType().toString());
-//
-//            array.add(builder.build());
-//            index++;
-//        }
-//        informationSchema.COLUMNS = array.toArray(new InformationSchema.COLUMNS_TABLE_OBJECT[0]);
-//        MycatDBClientMediator client = MycatDBs.createClient(dataContext, new MycatDBClientBasedConfig(MetadataManager.INSTANCE.getSchemaMap()
-//                , Collections.singletonMap("information_schema", InformationSchemaRuntime.INSTANCE.get()
-//        ), false));
-//        ;
-//
-//        response.sendResultSet(() -> client.query(sql), () -> {
-//            throw new UnsupportedOperationException();
-//        });
-//        return ExecuteCode.PERFORMED;
+        return response.proxySelectToPrototype(ast.toString());
     }
 }

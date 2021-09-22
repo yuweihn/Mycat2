@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -14,22 +14,24 @@
  */
 package io.mycat.beans.mysql.packet;
 
+import com.mysql.cj.CharsetMapping;
 import io.mycat.MycatException;
 import io.mycat.beans.mycat.MycatRowMetaData;
 import io.mycat.beans.mysql.MySQLFieldInfo;
 import io.mycat.beans.mysql.MySQLFieldsType;
 import io.mycat.util.StringUtil;
 
-import java.sql.ResultSetMetaData;
+import java.sql.JDBCType;
 import java.util.Arrays;
 
 /**
  * @author jamie12221 date 2019-05-07 13:58
- *
+ * <p>
  * 字段包实现
  **/
 public class ColumnDefPacketImpl implements ColumnDefPacket {
 
+    final static byte[] EMPTY = new byte[]{};
     byte[] columnCatalog;
     byte[] columnSchema;
     byte[] columnTable;
@@ -44,53 +46,73 @@ public class ColumnDefPacketImpl implements ColumnDefPacket {
     byte columnDecimals;
     byte[] columnDefaultValues;
 
-    final static byte[] EMPTY = new byte[]{};
-
     public ColumnDefPacketImpl() {
     }
 
-    public ColumnDefPacketImpl(final ResultSetMetaData resultSetMetaData, int columnIndex) {
+//    public ColumnDefPacketImpl(final ResultSetMetaData resultSetMetaData, int columnIndex) {
+//        try {
+//            this.columnSchema = resultSetMetaData.getSchemaName(columnIndex).getBytes();
+//            this.columnName = resultSetMetaData.getColumnLabel(columnIndex).getBytes();
+//            this.columnOrgName = resultSetMetaData.getColumnName(columnIndex).getBytes();
+//            this.columnNextLength = 0xC;
+//            this.columnLength = 256;
+//            this.columnType = MySQLFieldsType.fromJdbcType(resultSetMetaData.getColumnType(columnIndex));
+//            this.columnDecimals = (byte) resultSetMetaData.getScale(columnIndex);
+//            this.columnCharsetSet = 0x21;
+//        } catch (Exception e) {
+//            throw new MycatException(e);
+//        }
+//    }
+
+    public ColumnDefPacketImpl(final MycatRowMetaData resultSetMetaData, int columnIndex) {
         try {
-            this.columnSchema = resultSetMetaData.getSchemaName(columnIndex).getBytes();
-            this.columnName = resultSetMetaData.getColumnLabel(columnIndex).getBytes();
-            this.columnOrgName = resultSetMetaData.getColumnName(columnIndex).getBytes();
+            String schemaName = resultSetMetaData.getSchemaName(columnIndex);
+            if (StringUtil.isEmpty(schemaName)) {
+                schemaName = "";//mysql workbench 该字段不能为长度0
+            }
+            int jdbcColumnType = resultSetMetaData.getColumnType(columnIndex);
+            this.columnSchema =  new byte[]{};
+            String columnName = resultSetMetaData.getColumnName(columnIndex);
+            this.columnName = getBytes(columnName);
+            this.columnOrgName = new byte[]{};
+            this.columnOrgTable = new byte[]{};
+            this.columnTable = new byte[]{};
             this.columnNextLength = 0xC;
-            this.columnLength = 256;
-            this.columnType = MySQLFieldsType.fromJdbcType(resultSetMetaData.getColumnType(columnIndex));
+            this.columnType = MySQLFieldsType.fromJdbcType(jdbcColumnType);
+            this.columnLength = resultSetMetaData.getColumnType(columnIndex)== JDBCType.BIT.getVendorTypeNumber()?1  : columnName.length();
             this.columnDecimals = (byte) resultSetMetaData.getScale(columnIndex);
+            if (!resultSetMetaData.isNullable(columnIndex)){
+                this.columnFlags |= MySQLFieldsType.NOT_NULL_FLAG;
+            }
             this.columnCharsetSet = 0x21;
+            switch (JDBCType.valueOf(jdbcColumnType)) {
+                case BINARY:
+                case VARBINARY:
+                case LONGVARBINARY:
+                case BLOB:
+                case CLOB:{
+                    this.columnFlags |= MySQLFieldsType.BLOB_FLAG;
+                    this.columnFlags |= MySQLFieldsType.BINARY_FLAG;
+                    this.columnCharsetSet|=  CharsetMapping.MYSQL_COLLATION_INDEX_binary;
+                    break;
+                }
+                case TIMESTAMP:{
+                    this.columnFlags |= MySQLFieldsType.TIMESTAMP_FLAG;
+                    break;
+                }
+            }
+
         } catch (Exception e) {
             throw new MycatException(e);
         }
     }
 
-    byte[] getBytes(String text){
-        if(text==null||"".equals(text)){
+    byte[] getBytes(String text) {
+        if (text == null || "".equals(text)) {
             return EMPTY;
         }
         return text.getBytes();
     }
-    public ColumnDefPacketImpl(final MycatRowMetaData resultSetMetaData, int columnIndex) {
-        try {
-            String schemaName = resultSetMetaData.getSchemaName(columnIndex);
-            if (StringUtil.isEmpty(schemaName )){
-                schemaName = "UNKNOWN";//mysql workbench 该字段不能为长度0
-            }
-            this.columnSchema = getBytes(schemaName);
-            this.columnName = getBytes(resultSetMetaData.getColumnLabel(columnIndex));
-            this.columnOrgName = getBytes(resultSetMetaData.getColumnName(columnIndex));
-            this.columnOrgTable = "UNKNOWN".getBytes();
-            this.columnTable = "UNKNOWN".getBytes();
-            this.columnNextLength = 0xC;
-            this.columnLength = 256;
-            this.columnType = MySQLFieldsType.fromJdbcType(resultSetMetaData.getColumnType(columnIndex));
-            this.columnDecimals = (byte) resultSetMetaData.getScale(columnIndex);
-            this.columnCharsetSet = 0x21;
-        } catch (Exception e) {
-            throw new MycatException(e);
-        }
-    }
-
 
     public ColumnDefPacket toColumnDefPacket(MySQLFieldInfo def, String alias) {
         ColumnDefPacket columnDefPacket = new ColumnDefPacketImpl();
@@ -299,9 +321,9 @@ public class ColumnDefPacketImpl implements ColumnDefPacket {
         this.columnDecimals = buffer.readByte();
         buffer.skipInReading(2);
         if (!buffer.readFinished()) {
-            int len = buffer.readLenencInt();
-            if (len > 0) {
-                this.columnDefaultValues = buffer.readFixStringBytes(len);
+            Long len = buffer.readLenencInt();
+            if (len!=null&&len > 0) {
+                this.columnDefaultValues = buffer.readFixStringBytes(len.intValue());
             }
         }
     }

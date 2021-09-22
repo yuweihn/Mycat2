@@ -1,3 +1,17 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.beans.mycat;
 
 import io.mycat.api.collector.AbstractObjectRowIterator;
@@ -14,12 +28,12 @@ public class ResultSetBuilder {
     final List<ColumnInfo> columnInfos = new ArrayList<>();
     final List<Object[]> objectList = new ArrayList<>();
 
-    public static ResultSetBuilder create() {
-        return new ResultSetBuilder();
+    public ResultSetBuilder() {
+
     }
 
-    public ResultSetBuilder() {
-        columnInfos.add(null);
+    public static ResultSetBuilder create() {
+        return new ResultSetBuilder();
     }
 
     public ResultSetBuilder addColumnInfo(String schemaName, String tableName, String columnName, int columnType, int precision, int scale, String columnLabel, boolean isAutoIncrement, boolean isCaseSensitive, boolean isNullable, boolean isSigned, int displaySize) {
@@ -67,9 +81,18 @@ public class ResultSetBuilder {
     }
 
     /**
+     * 跳过头部的null
+     *
+     * @return
+     */
+    public List<ColumnInfo> getColumnInfos() {
+        return columnInfos.subList(1, columnInfos.size());
+    }
+
+    /**
      * @author Junwen Chen
      **/
-    public static class SimpleDefMycatRowMetaData implements MycatRowMetaData , Serializable {
+    public static class SimpleDefMycatRowMetaData implements MycatRowMetaData, Serializable {
         final List<ColumnInfo> columnInfos;
 
         public SimpleDefMycatRowMetaData(List<ColumnInfo> columnInfos) {
@@ -78,7 +101,7 @@ public class ResultSetBuilder {
 
         @Override
         public int getColumnCount() {
-            return columnInfos.size() - 1;
+            return columnInfos.size();
         }
 
         @Override
@@ -147,7 +170,6 @@ public class ResultSetBuilder {
         }
     }
 
-
     static public class DefObjectRowIteratorImpl extends AbstractObjectRowIterator implements Serializable {
         final MycatRowMetaData mycatRowMetaData;
         final Iterator<Object[]> iterator;
@@ -178,14 +200,5 @@ public class ResultSetBuilder {
             close = true;
         }
 
-    }
-
-    /**
-     * 跳过头部的null
-     *
-     * @return
-     */
-    public List<ColumnInfo> getColumnInfos() {
-        return columnInfos.subList(1, columnInfos.size());
     }
 }

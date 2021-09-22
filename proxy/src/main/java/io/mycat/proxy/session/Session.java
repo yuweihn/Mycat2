@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -19,6 +19,8 @@ import io.mycat.proxy.handler.NIOHandler;
 import io.mycat.proxy.reactor.MycatReactorThread;
 import io.mycat.proxy.reactor.NIOJob;
 import io.mycat.proxy.reactor.ReactorEnvThread;
+import io.mycat.util.VertxUtil;
+import io.vertx.core.impl.future.PromiseInternal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,8 +58,9 @@ public interface Session<T extends Session> extends Wrapper {
 
   /**
    * 该session的标识符,唯一
+   * @return
    */
-  int sessionId();
+  long sessionId();
 
   /**
    * 获取该session,最近活跃的时间
@@ -67,12 +70,12 @@ public interface Session<T extends Session> extends Wrapper {
   /**
    * 把session内buffer写入通道
    */
-  void writeToChannel() throws IOException;
+  PromiseInternal<Void> writeToChannel() throws IOException;
 
   /**
    * 会话关闭时候的的动作，需要清理释放资源
    */
-  void close(boolean normal, String hint);
+  PromiseInternal<Void> close(boolean normal, String hint);
 
   /**
    * 读事件回调
@@ -110,8 +113,9 @@ public interface Session<T extends Session> extends Wrapper {
   /**
    * session内buffer写入通道,根据一定条件判断数据写入完毕后回调方法
    */
-  default void writeFinished(T session) {
+  default PromiseInternal<Void>  writeFinished(T session) {
     session.getCurNIOHandler().onWriteFinished(session);
+    return VertxUtil.newSuccessPromise();
   }
 
   default String setLastMessage(Throwable e) {
@@ -125,20 +129,21 @@ public interface Session<T extends Session> extends Wrapper {
    * 设置回调函数,若果设置了回调,则该session的资源释放取决于回调代码什么时候结束,
    */
 
-  default void close(boolean normal, Exception hint) {
-    close(normal, getThrowableString(hint));
+  default PromiseInternal<Void>  close(boolean normal, Exception hint) {
+    return close(normal, getThrowableString(hint));
   }
 
-  default void lazyClose(boolean normal, String hint) {
+  default PromiseInternal<Void>  lazyClose(boolean normal, String hint) {
+    PromiseInternal<Void> promise = VertxUtil.newPromise();
     getIOThread().addNIOJob(new NIOJob() {
       @Override
       public void run(ReactorEnvThread reactor) throws Exception {
-        close(normal, hint);
+        close(normal, hint).onComplete(o-> promise.tryComplete());
       }
 
       @Override
       public void stop(ReactorEnvThread reactor, Exception reason) {
-        close(normal, hint);
+        close(normal, hint).onComplete(o-> promise.tryComplete());
       }
 
       @Override
@@ -146,6 +151,7 @@ public interface Session<T extends Session> extends Wrapper {
         return hint;
       }
     });
+    return promise;
   }
 
   default long currentTimeMillis() {

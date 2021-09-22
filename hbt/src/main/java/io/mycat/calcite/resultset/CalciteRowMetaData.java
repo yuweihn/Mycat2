@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -27,14 +27,11 @@ import java.util.List;
  * @author Junwen Chen
  **/
 public class CalciteRowMetaData implements MycatRowMetaData {
-    final ArrayList<RelDataTypeField> fieldList;
+    final List<RelDataTypeField> fieldList;
     private List<String> aliasList = null;
 
     public CalciteRowMetaData(List<RelDataTypeField> fieldList) {
-        ArrayList<RelDataTypeField> objects = new ArrayList<>();
-        objects.add(null);
-        objects.addAll(fieldList);
-        this.fieldList = objects;
+        this.fieldList = fieldList;
     }
 
     public CalciteRowMetaData(List<RelDataTypeField> fieldList, List<String> aliasList) {
@@ -44,7 +41,10 @@ public class CalciteRowMetaData implements MycatRowMetaData {
 
     @Override
     public int getColumnCount() {
-        return fieldList.size() - 1;
+        if (this.aliasList != null && !this.aliasList.isEmpty()) {
+            return this.aliasList.size();
+        }
+        return fieldList.size();
     }
 
     @Override
@@ -77,8 +77,11 @@ public class CalciteRowMetaData implements MycatRowMetaData {
 
     @Override
     public String getColumnName(int column) {
-        if (this.aliasList != null) {
-            return this.aliasList.get(column - 1);
+        if (this.aliasList != null && this.aliasList.size() > column) {
+            String columnName = this.aliasList.get(column);
+            if (columnName != null) {
+                return columnName;
+            }
         }
         return getColumn(column).getName();
     }

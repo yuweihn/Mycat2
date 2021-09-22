@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -45,6 +45,9 @@ public class ScheduleUtil {
         return timerTask;
     }
 
+    public static int getScheduleCount() {
+        return COUNTER.get();
+    }
 
     @Getter
     public static abstract class TimerTask {
@@ -77,10 +80,5 @@ public class ScheduleUtil {
                 e.printStackTrace();
             }
         }
-    }
-
-
-    public static int getScheduleCount() {
-        return COUNTER.get();
     }
 }

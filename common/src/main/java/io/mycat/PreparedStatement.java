@@ -23,25 +23,29 @@
  */
 package io.mycat;
 
-import com.alibaba.fastsql.sql.SQLUtils;
-import com.alibaba.fastsql.sql.ast.SQLExpr;
-import com.alibaba.fastsql.sql.ast.SQLReplaceable;
-import com.alibaba.fastsql.sql.ast.SQLStatement;
-import com.alibaba.fastsql.sql.ast.expr.*;
-import com.alibaba.fastsql.sql.ast.statement.SQLDeleteStatement;
-import com.alibaba.fastsql.sql.ast.statement.SQLInsertStatement;
-import com.alibaba.fastsql.sql.ast.statement.SQLSelectStatement;
-import com.alibaba.fastsql.sql.ast.statement.SQLUpdateStatement;
-import com.alibaba.fastsql.sql.dialect.mysql.visitor.MySqlASTVisitorAdapter;
-import com.alibaba.fastsql.sql.parser.ParserException;
+import com.alibaba.druid.sql.SQLUtils;
+import com.alibaba.druid.sql.ast.SQLExpr;
+import com.alibaba.druid.sql.ast.SQLReplaceable;
+import com.alibaba.druid.sql.ast.SQLStatement;
+import com.alibaba.druid.sql.ast.expr.*;
+import com.alibaba.druid.sql.ast.statement.SQLDeleteStatement;
+import com.alibaba.druid.sql.ast.statement.SQLInsertStatement;
+import com.alibaba.druid.sql.ast.statement.SQLSelectStatement;
+import com.alibaba.druid.sql.ast.statement.SQLUpdateStatement;
+import com.alibaba.druid.sql.dialect.mysql.visitor.MySqlASTVisitorAdapter;
+import com.alibaba.druid.sql.parser.ParserException;
+import io.mycat.util.HexFormatUtil;
 import lombok.SneakyThrows;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.util.control.Exception;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -72,6 +76,49 @@ public class PreparedStatement {
         this.parametersNumber = parametersNumber;
         this.parametersType = new int[parametersNumber];
         this.longDataMap = new HashMap<>();
+    }
+
+    public static SQLExpr fromJavaObject(Object o, TimeZone timeZone) {
+        if (o == null) {
+            return new SQLNullExpr();
+        }
+
+        if (o instanceof String) {
+            return new SQLCharExpr((String) o);
+        }
+
+        if (o instanceof Byte || o instanceof Short || o instanceof Integer || o instanceof Long || o instanceof BigInteger) {
+            return new SQLIntegerExpr((Number) o);
+        }
+
+        if (o instanceof Number) {
+            return new SQLNumberExpr((Number) o);
+        }
+        if (o instanceof LocalDate) {
+            o = java.sql.Date.valueOf((LocalDate) o);
+            return fromJavaObject(o,timeZone);
+        }
+
+        if (o instanceof Date) {
+            return new SQLTimestampExpr((Date) o, timeZone);
+        }
+        if (o instanceof byte[]) {
+            String s = HexFormatUtil.bytesToHexString((byte[]) o);
+            return new SQLHexExpr(s);
+        }
+        if (o instanceof Byte) {
+            String s = HexFormatUtil.bytesToHexString(new byte[]{(Byte)o});
+            return new SQLHexExpr(s);
+        }
+
+        LOGGER.warn("not support class : {}", o.getClass());
+
+
+        return new SQLCharExpr((String) o.toString());
+    }
+
+    public static SQLExpr fromJavaObject(Object o) {
+        return fromJavaObject(o, null);
     }
 
     public long getId() {
@@ -140,16 +187,8 @@ public class PreparedStatement {
         if (this.bindValues != values) {
             throw new AssertionError();
         }
-        SQLStatement sqlStatement;
-        if (statement instanceof SQLSelectStatement ||
-                statement instanceof SQLInsertStatement ||
-                statement instanceof SQLUpdateStatement ||
-                statement instanceof SQLDeleteStatement) {
-            sqlStatement= statement.clone();
-        }else {
-            sqlStatement = SQLUtils.parseSingleMysqlStatement(this.statement.toString());
-        }
-
+        SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(this.statement.toString());
+        boolean primitiveArg = !(sqlStatement instanceof SQLSelectStatement);
         sqlStatement.accept(new MySqlASTVisitorAdapter() {
             int index;
 
@@ -160,48 +199,16 @@ public class PreparedStatement {
                     if (index < bindValues.length) {
                         io.mycat.BindValue value = bindValues[index++];
                         if (!value.isNull) {
-                            o = value.getJavaObject();
+                            o = value.getJavaObject(primitiveArg);
                         }
                     }
                     SQLReplaceable parent = (SQLReplaceable) x.getParent();
-                    parent.replace(x, SQLExprUtils.fromJavaObject(o));
+                    parent.replace(x, PreparedStatement.fromJavaObject(o));
                 }
                 super.endVisit(x);
             }
         });
         return sqlStatement;
-    }
-
-    public static SQLExpr fromJavaObject(Object o, TimeZone timeZone) {
-        if (o == null) {
-            return new SQLNullExpr();
-        }
-
-        if (o instanceof String) {
-            return new SQLCharExpr((String) o);
-        }
-
-        if (o instanceof BigDecimal) {
-            return new SQLDecimalExpr((BigDecimal) o);
-        }
-
-        if (o instanceof Byte || o instanceof Short || o instanceof Integer || o instanceof Long || o instanceof BigInteger) {
-            return new SQLIntegerExpr((Number) o);
-        }
-
-        if (o instanceof Number) {
-            return new SQLNumberExpr((Number) o);
-        }
-
-        if (o instanceof Date) {
-            return new SQLTimestampExpr((Date) o, timeZone);
-        }
-
-        throw new ParserException("not support class : " + o.getClass());
-    }
-
-    public static SQLExpr fromJavaObject(Object o) {
-        return fromJavaObject(o, null);
     }
 
     public BindValue[] getBindValues() {

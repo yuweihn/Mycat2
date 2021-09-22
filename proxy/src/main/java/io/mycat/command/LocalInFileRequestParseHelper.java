@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <chenjunwen>
+ * Copyright (C) <2021>  <chenjunwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -15,7 +15,9 @@
 package io.mycat.command;
 
 
+import io.mycat.proxy.session.MySQLServerSession;
 import io.mycat.proxy.session.MycatSession;
+import io.vertx.core.Future;
 
 /**
  * @author jamie12221
@@ -24,11 +26,11 @@ import io.mycat.proxy.session.MycatSession;
  **/
 public interface LocalInFileRequestParseHelper {
 
-  void handleQuery(byte[] sql, MycatSession seesion) throws Exception;
+  Future<Void> handleQuery(byte[] sql, MySQLServerSession seesion) throws Exception;
 
-  void handleContentOfFilename(byte[] sql, MycatSession session);
+  Future<Void> handleContentOfFilename(byte[] sql, MySQLServerSession session);
 
-  void handleContentOfFilenameEmptyOk(MycatSession session);
+  Future<Void> handleContentOfFilenameEmptyOk(MySQLServerSession session);
 
   interface LocalInFileSession {
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -30,22 +30,14 @@ import java.util.stream.Collectors;
  **/
 public class LoadBalanceManager {
 
-    private final Map<String, LoadBalanceStrategy> map = new HashMap<>();
     private static final Logger LOGGER = LoggerFactory.getLogger(LoadBalanceManager.class);
-    private final LoadBalanceStrategy defaultLoadBalanceStrategy ;
-
-    public LoadBalanceStrategy getLoadBalanceStrategy(String clazz)
-            throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-        LoadBalanceStrategy o = null;
-        Class<?> aClass = Class.forName(clazz);
-        Method method = aClass.getMethod("values");
-        Object[] invoke = (Object[]) method.invoke(null);
-        o = (LoadBalanceStrategy) invoke[0];
-        return o;
+    private final Map<String, LoadBalanceStrategy> map = new HashMap<>();
+    private final LoadBalanceStrategy defaultLoadBalanceStrategy;
+    public LoadBalanceManager(){
+        this(null);
     }
-
     public LoadBalanceManager(LoadBalance rootConfig) {
-        if (rootConfig == null){
+        if (rootConfig == null) {
             defaultLoadBalanceStrategy = BalanceRandom.INSTANCE;
             return;
         }
@@ -83,6 +75,16 @@ public class LoadBalanceManager {
         } else {
             defaultLoadBalanceStrategy = balanceName;
         }
+    }
+
+    public LoadBalanceStrategy getLoadBalanceStrategy(String clazz)
+            throws ClassNotFoundException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+        LoadBalanceStrategy o = null;
+        Class<?> aClass = Class.forName(clazz);
+        Method method = aClass.getMethod("values");
+        Object[] invoke = (Object[]) method.invoke(null);
+        o = (LoadBalanceStrategy) invoke[0];
+        return o;
     }
 
     private LoadBalanceConfig getLoadBalanceConfig(Class instance) {

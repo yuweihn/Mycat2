@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -334,7 +334,8 @@ public class MycatMonitorLogCallback implements MycatMonitorCallback {
   @Override
   public final void onBackendRead(Session session, ByteBuffer view, int startIndex,
       int len) {
-    if (recordDump) {
+    if (true) {
+      LOGGER.debug("onBackendRead sessionId:{}",session.sessionId());
       DumpUtil.printAsHex(view, startIndex, len);
     }
   }

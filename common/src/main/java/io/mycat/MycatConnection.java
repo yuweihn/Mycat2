@@ -1,10 +1,10 @@
 package io.mycat;
 
-import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.beans.mycat.MycatRowMetaData;
-import io.mycat.beans.mycat.UpdateRowMetaData;
+import io.reactivex.rxjava3.core.Observable;
+import io.mycat.api.collector.MysqlPayloadObject;
 
-public interface MycatConnection extends AutoCloseable,Wrapper {
+public interface MycatConnection extends AutoCloseable, Wrapper {
 
     public long[] executeUpdate(String sql, boolean needGeneratedKeys);
 
@@ -12,5 +12,5 @@ public interface MycatConnection extends AutoCloseable,Wrapper {
 
     public boolean isClosed();
 
-    public RowBaseIterator executeQuery(MycatRowMetaData mycatRowMetaData, String sql);
+    public Observable<MysqlPayloadObject> executeQuery(MycatRowMetaData mycatRowMetaData, String sql);
 }

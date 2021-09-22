@@ -1,19 +1,26 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat;
 
 
-import com.alibaba.fastsql.sql.SQLUtils;
-import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlCreateTableStatement;
-
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public interface TableHandler {
-//
-//    public Function<MySqlInsertStatement, Iterable<ParameterizedValues>> insertHandler();
-//
-//    public Function<MySqlUpdateStatement, Iterable<TextUpdateInfo>> updateHandler();
-//
-//    public Function<MySqlDeleteStatement, Iterable<TextUpdateInfo>> deleteHandler();
 
     public LogicTableType getType();
 
@@ -23,7 +30,15 @@ public interface TableHandler {
 
     String getCreateTableSQL();
 
+    default SimpleColumnInfo getPrimaryKey(){
+        return getColumns().stream()
+                .filter(SimpleColumnInfo::isPrimaryKey)
+                .findFirst().orElse(null);
+    }
+
     List<SimpleColumnInfo> getColumns();
+
+    Map<String,IndexInfo> getIndexes();
 
     SimpleColumnInfo getColumnByName(String name);
 
@@ -40,7 +55,6 @@ public interface TableHandler {
     void createPhysicalTables();
 
     void dropPhysicalTables();
-
 
 
 }

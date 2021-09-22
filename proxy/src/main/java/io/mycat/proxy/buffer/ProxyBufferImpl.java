@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -210,7 +210,9 @@ public final class ProxyBufferImpl implements ProxyBuffer, MySQLPacket<ProxyBuff
     public void writeToChannel(SocketChannel channel) throws IOException {
         applyChannelWritingIndex();
         int oldIndex = channelWriteStartIndex();
-        if (channel.write(buffer) == -1) {
+        int remaining = buffer.remaining();
+        int write = channel.write(buffer);
+        if (write == -1) {
             throw new ClosedChannelException();
         }
         channelWriteStartIndex(buffer.position());

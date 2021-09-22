@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -71,9 +71,6 @@ public interface MySQLPacketCallback {
 
   }
 
-  default void onRowEof(MySQLPacket mySQLPacket, int startPos, int endPos) {
-
-  }
 
   void onFinishedCollect(MySQLClientSession mysql);
 

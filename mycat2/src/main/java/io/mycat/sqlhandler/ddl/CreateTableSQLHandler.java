@@ -1,15 +1,31 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.sqlhandler.ddl;
 
-import com.alibaba.fastsql.sql.SQLUtils;
-import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlCreateTableStatement;
-import io.mycat.MycatDataContext;
-import io.mycat.MycatException;
-import io.mycat.MycatRouterConfigOps;
+import com.alibaba.druid.sql.SQLUtils;
+import com.alibaba.druid.sql.dialect.mysql.ast.statement.MySqlCreateTableStatement;
+import io.mycat.*;
+import io.mycat.beans.mycat.MycatErrorCode;
+import io.mycat.config.MycatRouterConfigOps;
 import io.mycat.sqlhandler.AbstractSQLHandler;
 import io.mycat.sqlhandler.ConfigUpdater;
 import io.mycat.sqlhandler.SQLRequest;
 import io.mycat.util.JsonUtil;
-import io.mycat.util.Response;
+import io.vertx.core.Future;
+import io.vertx.core.shareddata.Lock;
+import org.apache.calcite.avatica.Meta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,28 +44,40 @@ public class CreateTableSQLHandler extends AbstractSQLHandler<MySqlCreateTableSt
     public static final CreateTableSQLHandler INSTANCE = new CreateTableSQLHandler();
 
     @Override
-    protected void onExecute(SQLRequest<MySqlCreateTableStatement> request, MycatDataContext dataContext, Response response)  throws Exception {
-        Map hint= Optional.ofNullable( request.getAst().getHeadHintsDirect())
-              .map(i->i.get(0))
-              .map(i->i.getText())
-              .filter(i->{
-                  i=i.replaceAll(" ","");
-                  return i.contains("+mycat:createTable{");
-              }).map(i->i.substring(i.indexOf("{"))).map(i-> JsonUtil.from(i,Map.class)).orElse(null);
+    protected Future<Void> onExecute(SQLRequest<MySqlCreateTableStatement> request, MycatDataContext dataContext, Response response) {
+        LockService lockService = MetaClusterCurrent.wrapper(LockService.class);
+        Future<Lock> lockFuture = lockService.getLockWithTimeout(DDL_LOCK);
+        return lockFuture.flatMap(lock -> {
+            try{
+                Map hint = Optional.ofNullable(request.getAst().getHeadHintsDirect())
+                        .map(i -> i.get(0))
+                        .map(i -> i.getText())
+                        .filter(i -> {
+                            i = i.replaceAll(" ", "");
+                            return i.contains("+mycat:createTable{");
+                        }).map(i -> i.substring(i.indexOf("{"))).map(i -> JsonUtil.from(i, Map.class)).orElse(null);
 
-        MySqlCreateTableStatement ast = request.getAst();
-        String schemaName = ast.getSchema() == null ? dataContext.getDefaultSchema() : SQLUtils.normalize(ast.getSchema());
-        String tableName = ast.getTableName() == null ? null : SQLUtils.normalize(ast.getTableName());
-        if (tableName == null) {
-            response.sendError(new MycatException("CreateTableSQL need tableName"));
-            return;
-        }
-        if (schemaName == null) {
-            response.sendError("No database selected", 1046);
-            return;
-        }
-        createTable(hint, schemaName, tableName, ast);
-        response.sendOk();
+                MySqlCreateTableStatement ast = request.getAst();
+                String schemaName = ast.getSchema() == null ? dataContext.getDefaultSchema() : SQLUtils.normalize(ast.getSchema());
+                String tableName = ast.getTableName() == null ? null : SQLUtils.normalize(ast.getTableName());
+               if (ast.getSchema()==null){
+                   ast.setSchema(schemaName);
+               }
+                if (tableName == null) {
+                    return response.sendError(new MycatException("CreateTableSQL need tableName"));
+                }
+                if (schemaName == null) {
+                    return response.sendError("No database selected", 1046);
+                }
+                createTable(hint, schemaName, tableName, ast);
+                return response.sendOk();
+            }catch (Throwable throwable){
+                return Future.failedFuture(throwable);
+            }finally {
+                lock.release();
+            }
+        });
+
     }
 
     public void createTable(Map hint,
@@ -60,7 +88,7 @@ public class CreateTableSQLHandler extends AbstractSQLHandler<MySqlCreateTableSt
             Object sql = hint.get("createTableSql");
             if (sql instanceof MySqlCreateTableStatement) {
                 createTableSql = (MySqlCreateTableStatement) sql;
-            }else {
+            } else {
                 createTableSql = (MySqlCreateTableStatement)
                         SQLUtils.parseSingleMysqlStatement(Objects.toString(sql));
             }
@@ -72,12 +100,12 @@ public class CreateTableSQLHandler extends AbstractSQLHandler<MySqlCreateTableSt
                 schemaName = SQLUtils.normalize(ast.getSchema());
                 tableName = SQLUtils.normalize(ast.getTableName());
             }
-            if (hint == null) {
-                if (createTableSql.isBroadCast()){
+            if (hint == null || (hint != null && hint.isEmpty())) {
+                if (createTableSql.isBroadCast()) {
                     ops.putGlobalTable(schemaName, tableName, createTableSql);
-                }else if(createTableSql.getDbPartitionBy()==null&&createTableSql.getTablePartitionBy() == null){
+                } else if (createTableSql.getDbPartitionBy() == null && createTableSql.getTablePartitionBy() == null) {
                     ops.putNormalTable(schemaName, tableName, createTableSql);
-                }else{
+                } else {
                     ops.putHashTable(schemaName, tableName, createTableSql);
                 }
 
@@ -105,6 +133,11 @@ public class CreateTableSQLHandler extends AbstractSQLHandler<MySqlCreateTableSt
 
             }
             ops.commit();
+            MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
+            TableHandler table = metadataManager.getTable(schemaName, tableName);
+            if (table==null){
+                throw new MycatException("create table fail:"+schemaName+"."+tableName);
+            }
         }
     }
 //

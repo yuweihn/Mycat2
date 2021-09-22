@@ -17,6 +17,8 @@
 package io.mycat.calcite;
 
 import com.google.common.collect.*;
+import io.mycat.MetaClusterCurrent;
+import io.mycat.config.ServerConfig;
 import org.apache.calcite.avatica.util.ByteString;
 import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.linq4j.tree.Expressions;
@@ -588,7 +590,7 @@ public abstract class SqlImplementor {
         private final boolean ignoreCast;
 
         protected Context(SqlDialect dialect, int fieldCount) {
-            this(dialect, fieldCount, false);
+            this(dialect, fieldCount, MetaClusterCurrent.exist(ServerConfig.class) && MetaClusterCurrent.wrapper(ServerConfig.class).isIgnoreCast());
         }
 
         protected Context(SqlDialect dialect, int fieldCount, boolean ignoreCast) {
@@ -622,6 +624,9 @@ public abstract class SqlImplementor {
         public SqlNode toSql(RexProgram program, RexNode rex) {
             final RexSubQuery subQuery;
             final SqlNode sqlSubQuery;
+            if (rex.getKind() == SqlKind.SEARCH) {
+                rex = RexUtil.expandSearch(MycatCalciteSupport.RexBuilder, program, rex);
+            }
             switch (rex.getKind()) {
                 case LOCAL_REF:
                     final int index = ((RexLocalRef) rex).getIndex();
@@ -679,7 +684,15 @@ public abstract class SqlImplementor {
                         final Enum symbol = (Enum) literal.getValue();
                         return SqlLiteral.createSymbol(symbol, POS);
                     }
-                    switch (literal.getTypeName().getFamily()) {
+                    if (literal.getTypeName() == SqlTypeName.ROW) {
+                        List<RexNode> list = (List) literal.getValue();
+                        ImmutableList.Builder<SqlNode> builder = ImmutableList.builder();
+                        for (RexNode o : list) {
+                            builder.add(toSql(program, o));
+                        }
+                        return SqlStdOperatorTable.ROW.createCall(SqlParserPos.ZERO, builder.build());
+                    }
+                    switch (Objects.requireNonNull(Objects.requireNonNull(Objects.requireNonNull(literal).getTypeName()).getFamily())) {
                         case CHARACTER:
                             return SqlLiteral.createCharString((String) literal.getValue2(), POS);
                         case NUMERIC:
@@ -694,8 +707,8 @@ public abstract class SqlImplementor {
                                     POS);
                         case INTERVAL_YEAR_MONTH:
                         case INTERVAL_DAY_TIME:
-                            final boolean negative = literal.getValueAs(Boolean.class);
-                            return SqlLiteral.createInterval(negative ? -1 : 1,
+//                            final boolean negative = !literal.getValueAs(Boolean.class);
+                            return SqlLiteral.createInterval(1,
                                     literal.getValueAs(String.class),
                                     literal.getType().getIntervalQualifier(), POS);
                         case DATE:
@@ -709,8 +722,8 @@ public abstract class SqlImplementor {
                                     literal.getValueAs(TimestampString.class),
                                     literal.getType().getPrecision(), POS);
                         case BINARY:
-                          ByteString value = (ByteString) literal.getValue();
-                          return SqlLiteral.createBinaryString(value.getBytes(),POS);
+                            ByteString value = (ByteString) literal.getValue();
+                            return SqlLiteral.createBinaryString(value.getBytes(), POS);
                         case ANY:
                         case NULL:
                             switch (literal.getTypeName()) {
@@ -803,6 +816,10 @@ public abstract class SqlImplementor {
                     if (rex instanceof RexOver) {
                         return toSql(program, (RexOver) rex);
                     }
+                    if (rex instanceof RexCorrelVariable) {
+                        SqlNode sqlNode = new SqlIdentifier(rex.toString(), SqlParserPos.ZERO);
+                        return sqlNode;
+                    }
 
                     final RexCall call = (RexCall) stripCastFromString(rex, dialect);
                     SqlOperator op = call.getOperator();
@@ -827,6 +844,21 @@ public abstract class SqlImplementor {
                                 assert nodeList.size() == 1;
                                 return nodeList.get(0);
                             } else {
+                                if (call.getOperands().size() == 1) {
+                                    RexNode rexNode = call.getOperands().get(0);
+                                    if (rexNode.getType().getSqlTypeName().getFamily() == call.getType().getSqlTypeName().getFamily()) {
+                                        return nodeList.get(0);
+                                    }
+                                    if (rexNode instanceof RexDynamicParam) {
+                                        return nodeList.get(0);
+                                    }
+                                    if (rexNode instanceof RexInputRef) {
+                                        return nodeList.get(0);
+                                    }
+                                    if (rexNode instanceof RexLocalRef) {
+                                        return nodeList.get(0);
+                                    }
+                                }
                                 nodeList.add(dialect.getCastSpec(call.getType()));
                             }
                     }
@@ -1069,6 +1101,7 @@ public abstract class SqlImplementor {
         }
 
         void addOrderItem(List<SqlNode> orderByList, RelFieldCollation field) {
+            boolean added = false;
             if (field.nullDirection != RelFieldCollation.NullDirection.UNSPECIFIED) {
                 final boolean first =
                         field.nullDirection == RelFieldCollation.NullDirection.FIRST;
@@ -1080,9 +1113,13 @@ public abstract class SqlImplementor {
                     field = new RelFieldCollation(field.getFieldIndex(),
                             field.getDirection(),
                             RelFieldCollation.NullDirection.UNSPECIFIED);
+                    added = true;
                 }
             }
+            //Each(targetName=c0, sql=SELECT * FROM db1_0.travelrecord_0 WHERE (`id` = ?) ORDER BY (`id` IS NULL), `id`)
+//            if (!added) {
             orderByList.add(toSql(field));
+//            }
         }
 
         /**

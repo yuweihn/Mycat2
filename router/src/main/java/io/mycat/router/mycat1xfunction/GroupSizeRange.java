@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <mycat>
+ * Copyright (C) <2021>  <mycat>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -15,6 +15,7 @@
 package io.mycat.router.mycat1xfunction;
 
 import io.mycat.util.NumberParseUtil;
+import lombok.EqualsAndHashCode;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -22,6 +23,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.stream.Stream;
 
+@EqualsAndHashCode
 public class GroupSizeRange {
 
   public final int groupSize;

@@ -1,3 +1,17 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.api.collector;
 
 import io.mycat.beans.mycat.MycatRowMetaData;
@@ -5,14 +19,10 @@ import lombok.SneakyThrows;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.Time;
-import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 
@@ -25,7 +35,9 @@ public class BlockQueueRowBaseIterator implements RowBaseIterator {
     final long timeout;
     final TimeUnit unit;
     volatile Runnable closeCallback;
-
+    Object[] row;
+    int index;
+    volatile MycatRowMetaData mycatRowMetaData;
     public BlockQueueRowBaseIterator(BlockingQueue<Object[]> queue, MycatRowMetaData mycatRowMetaData, long timeout, TimeUnit unit, Runnable closeCallback) {
         this.queue = queue;
         this.mycatRowMetaData = mycatRowMetaData;
@@ -33,10 +45,6 @@ public class BlockQueueRowBaseIterator implements RowBaseIterator {
         this.unit = unit;
         this.closeCallback = closeCallback;
     }
-
-    Object[] row;
-    int index;
-    volatile MycatRowMetaData mycatRowMetaData;
 
     @Override
     @SneakyThrows
@@ -50,14 +58,14 @@ public class BlockQueueRowBaseIterator implements RowBaseIterator {
         if (row == null || row.length != 0) {
             row = queue.poll(timeout, unit);
             return row.length != 0;
-        }else {
+        } else {
             return false;
         }
     }
 
     @Override
     public synchronized void close() {
-        if (closeCallback!=null) {
+        if (closeCallback != null) {
             closeCallback.run();
             closeCallback = null;
         }
@@ -65,17 +73,17 @@ public class BlockQueueRowBaseIterator implements RowBaseIterator {
 
     @Override
     public boolean wasNull() {
-        return row[index-1] == null;
+        return row[index - 1] == null;
     }
 
     @Override
     public String getString(int columnIndex) {
-        return row[index-1].toString();
+        return row[index - 1].toString();
     }
 
     @Override
     public boolean getBoolean(int columnIndex) {
-    throw new UnsupportedOperationException();
+        throw new UnsupportedOperationException();
     }
 
     @Override
@@ -140,7 +148,7 @@ public class BlockQueueRowBaseIterator implements RowBaseIterator {
 
     @Override
     public Object getObject(int columnIndex) {
-        return row[columnIndex-1];
+        return row[columnIndex - 1];
     }
 
     @Override

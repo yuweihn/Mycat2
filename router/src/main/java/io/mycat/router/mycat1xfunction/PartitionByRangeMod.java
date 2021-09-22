@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <mycat>
+ * Copyright (C) <2021>  <mycat>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -14,10 +14,13 @@
  */
 package io.mycat.router.mycat1xfunction;
 
+import io.mycat.router.CustomRuleFunction;
 import io.mycat.router.Mycat1xSingleValueRuleFunction;
 import io.mycat.router.ShardingTableHandler;
 
 import java.math.BigInteger;
+import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 
@@ -62,5 +65,25 @@ public class PartitionByRangeMod extends Mycat1xSingleValueRuleFunction {
     this.defaultNode = Integer.parseInt(Objects.toString(prot.get("defaultNode")));
     this.longRanges = GroupSizeRange.getGroupSizeRange(ranges);
     this.partitionCount = GroupSizeRange.getPartitionCount(this.longRanges);
+  }
+  @Override
+  public boolean isSameDistribution(CustomRuleFunction customRuleFunction) {
+    if (customRuleFunction == null) return false;
+    if (PartitionByRangeMod.class.isAssignableFrom(customRuleFunction.getClass())) {
+      PartitionByRangeMod ruleFunction = (PartitionByRangeMod) customRuleFunction;
+
+       GroupSizeRange[] longRanges = ruleFunction.longRanges;
+       int defaultNode = ruleFunction.defaultNode;
+       int partitionCount = ruleFunction.partitionCount;
+
+      return Arrays.equals(this.longRanges, longRanges) &&
+              Objects.equals(this.defaultNode, defaultNode) &&
+              Objects.equals(this.partitionCount, partitionCount);
+    }
+    return false;
+  }
+  @Override
+  public String getErUniqueID() {
+    return  getClass().getName()+":"+Arrays.toString(longRanges) + defaultNode + partitionCount;
   }
 }

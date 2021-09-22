@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -14,16 +14,14 @@
  */
 package io.mycat.proxy.session;
 
-import io.mycat.Authenticator;
-import io.mycat.MycatDataContext;
-import io.mycat.TransactionSession;
-import io.mycat.beans.mycat.TransactionType;
 import io.mycat.buffer.BufferPool;
 import io.mycat.command.CommandDispatcher;
 import io.mycat.proxy.handler.front.MySQLClientAuthHandler;
 import io.mycat.proxy.monitor.MycatMonitor;
 import io.mycat.proxy.reactor.SessionThread;
 import io.mycat.proxy.session.SessionManager.FrontSessionManager;
+import io.mycat.runtime.MycatDataContextImpl;
+import io.vertx.core.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +29,10 @@ import java.io.IOException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Function;
 
@@ -46,18 +47,10 @@ public class MycatSessionManager implements FrontSessionManager<MycatSession> {
     private static final Logger LOGGER = LoggerFactory.getLogger(MycatSessionManager.class);
     private final ConcurrentLinkedDeque<MycatSession> mycatSessions = new ConcurrentLinkedDeque<>();
     private final Function<MycatSession, CommandDispatcher> commandDispatcher;
-    private final Authenticator authenticator;
-    private final Map<TransactionType, Function<MycatDataContext, TransactionSession>> transcationFactoryMap;
-    private final MycatContextThreadPool mycatContextThreadPool;
 
-    public MycatSessionManager(Function<MycatSession, CommandDispatcher> function,
-                               Authenticator authenticator,
-                               Map<TransactionType, Function<MycatDataContext, TransactionSession>> transcationFactoryMap,
-                               MycatContextThreadPool mycatContextThreadPool) {
+
+    public MycatSessionManager(Function<MycatSession, CommandDispatcher> function) {
         this.commandDispatcher = function;
-        this.authenticator = Objects.requireNonNull(authenticator);
-        this.transcationFactoryMap = transcationFactoryMap;
-        this.mycatContextThreadPool = mycatContextThreadPool;
     }
 
 
@@ -76,7 +69,7 @@ public class MycatSessionManager implements FrontSessionManager<MycatSession> {
      * 调用该方法的时候 mycat session已经关闭了
      */
     @Override
-    public void removeSession(MycatSession mycat, boolean normal, String reason) {
+    public Future<Void> removeSession(MycatSession mycat, boolean normal, String reason) {
         try {
             MycatMonitor.onCloseMycatSession(mycat, normal, reason);
             mycatSessions.remove(mycat);
@@ -85,6 +78,7 @@ public class MycatSessionManager implements FrontSessionManager<MycatSession> {
         } catch (Exception e) {
             LOGGER.error("", e);
         }
+        return Future.succeededFuture();
     }
 
 
@@ -92,8 +86,8 @@ public class MycatSessionManager implements FrontSessionManager<MycatSession> {
     public void acceptNewSocketChannel(Object keyAttachement, BufferPool bufPool,
                                        Selector nioSelector, SocketChannel frontChannel) throws IOException {
         MySQLClientAuthHandler mySQLClientAuthHandler = new MySQLClientAuthHandler(this);
-        MycatSession mycat = new MycatSession(SessionManager.nextSessionId(), bufPool,
-                mySQLClientAuthHandler, this, transcationFactoryMap, mycatContextThreadPool);
+        MycatSession mycat = new MycatSession(new MycatDataContextImpl(), bufPool,
+                mySQLClientAuthHandler, this);
 
 
         //用于monitor监控获取session
@@ -118,9 +112,5 @@ public class MycatSessionManager implements FrontSessionManager<MycatSession> {
 
     public void initCommandDispatcher(MycatSession session) {
         session.setCommandHandler(commandDispatcher.apply(session));
-    }
-
-    public Authenticator getAuthenticator() {
-        return authenticator;
     }
 }

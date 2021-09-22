@@ -6,15 +6,17 @@ import io.mycat.router.ShardingTableHandler;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 public class TableHandlerMocks {
 
     public static ShardingTableHandler mockTableHandlerWithDataNodes(int count) {
-        ArrayList<DataNode> dataNodes = new ArrayList<>();
+        ArrayList<Partition> partitions = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             String name = String.valueOf(i);
-            DataNode dataNode = new DataNode() {
+            Partition partition = new Partition() {
 
                 @Override
                 public String getTargetName() {
@@ -30,8 +32,23 @@ public class TableHandlerMocks {
                 public String getTable() {
                     return name;
                 }
+
+                @Override
+                public Integer getDbIndex() {
+                    return null;
+                }
+
+                @Override
+                public Integer getTableIndex() {
+                    return null;
+                }
+
+                @Override
+                public Integer getIndex() {
+                    return null;
+                }
             };
-            dataNodes.add(dataNode);
+            partitions.add(partition);
         }
         return new ShardingTableHandler() {
 
@@ -41,13 +58,44 @@ public class TableHandlerMocks {
             }
 
             @Override
-            public List<DataNode> dataNodes() {
-                return dataNodes;
+            public List<Partition> dataNodes() {
+                return partitions;
             }
 
             @Override
             public List<SimpleColumnInfo> getColumns() {
                 return null;
+            }
+
+            @Override
+            public Map<String,IndexInfo> getIndexes() {
+                return null;
+            }
+
+            @Override
+            public Optional canIndexTableScan(int[] projects) {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<Iterable<Object[]>> canIndexTableScan(int[] projects, int[] filterIndex, Object[] value) {
+                return Optional.empty();
+            }
+
+
+            @Override
+            public Optional canIndexTableScan() {
+                return Optional.empty();
+            }
+
+            @Override
+            public boolean canIndex() {
+                return false;
+            }
+
+            @Override
+            public int getIndexBColumnName(String name) {
+                return 0;
             }
 
 

@@ -13,24 +13,34 @@ import java.util.List;
 @Data
 @EqualsAndHashCode
 public class ClusterConfig {
+    @javax.validation.constraints.NotNull
     private String clusterType = "MASTER_SLAVE";
+    @javax.validation.constraints.NotNull
     private String switchType = "SWITCH";
+    @javax.validation.constraints.NotNull
     private String readBalanceType = "BALANCE_ALL";
+    @javax.validation.constraints.NotNull
     private String name;
     private String readBalanceName;
     private String writeBalanceName;
-    private List<String> masters;
-    private List<String> replicas;
+    @javax.validation.constraints.NotNull
+    private List<String> masters = new ArrayList<>();
+    private List<String> replicas = new ArrayList<>();
     private HeartbeatConfig heartbeat = HeartbeatConfig.builder()
             .minSwitchTimeInterval(300)
             .heartbeatTimeout(1000)
             .slaveThreshold(0)
-            .maxRetry(3)
+            .maxRetryCount(3)
             .build();
     private Integer maxCon = 2000;
     private TimerConfig timer = null;
 
     public ClusterConfig() {
+    }
+
+    public static void main(String[] args) {
+        ClusterConfig clusterConfig = new ClusterConfig();
+        System.out.println(JsonUtil.toJson(clusterConfig));
     }
 
     public List<String> allDatasources() {
@@ -44,11 +54,6 @@ public class ClusterConfig {
         nodes.addAll(masters);
         nodes.addAll(replicas);
         return nodes;
-    }
-
-    public static void main(String[] args) {
-        ClusterConfig clusterConfig = new ClusterConfig();
-        System.out.println(JsonUtil.toJson(clusterConfig));
     }
 
 }

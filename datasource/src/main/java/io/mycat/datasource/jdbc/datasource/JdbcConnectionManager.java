@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -15,17 +15,19 @@
 package io.mycat.datasource.jdbc.datasource;
 
 
-import io.mycat.ConnectionManager;
-import io.mycat.MycatException;
-import io.mycat.MycatWorkerProcessor;
-import io.mycat.ScheduleUtil;
+import com.alibaba.druid.pool.DruidPooledConnection;
+import com.alibaba.druid.util.JdbcUtils;
+import io.mycat.*;
 import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.config.ClusterConfig;
 import io.mycat.config.DatasourceConfig;
+import io.mycat.config.ServerConfig;
 import io.mycat.datasource.jdbc.DatasourceProvider;
-import io.mycat.datasource.jdbc.datasourceprovider.DruidDatasourceProvider;
-import io.mycat.replica.ReplicaSelectorRuntime;
+import io.mycat.datasource.jdbc.DruidDatasourceProvider;
+import io.mycat.replica.ReplicaSelectorManager;
+import io.mycat.replica.ScheduledHanlde;
 import io.mycat.replica.heartbeat.HeartBeatStrategy;
+import io.vertx.core.Vertx;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,6 +38,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * @author jamie12221 date 2019-05-10 14:46 该类型需要并发处理
@@ -44,34 +47,33 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
     private static final Logger LOGGER = LoggerFactory.getLogger(JdbcConnectionManager.class);
     private final ConcurrentHashMap<String, JdbcDataSource> dataSourceMap = new ConcurrentHashMap<>();
     private final DatasourceProvider datasourceProvider;
-    private final MycatWorkerProcessor workerProcessor;
-    private final ReplicaSelectorRuntime replicaSelector;
+    private final ReplicaSelectorManager replicaSelector;
 
     public JdbcConnectionManager(String customerDatasourceProvider,
-                                 Map<String,DatasourceConfig> datasources,
-                                 Map<String,ClusterConfig> clusterConfigs,
-                                 MycatWorkerProcessor workerProcessor,
-                                 ReplicaSelectorRuntime replicaSelector) {
-        this(datasources, clusterConfigs, createDatasourceProvider(customerDatasourceProvider), workerProcessor, replicaSelector);
+                                 Map<String, DatasourceConfig> datasources,
+                                 Map<String, ClusterConfig> clusterConfigs,
+                                 ReplicaSelectorManager replicaSelector) {
+        this(datasources, clusterConfigs, createDatasourceProvider(customerDatasourceProvider), replicaSelector);
     }
 
     private static DatasourceProvider createDatasourceProvider(String customerDatasourceProvider) {
+        ServerConfig serverConfig = MetaClusterCurrent.wrapper(ServerConfig.class);
         String defaultDatasourceProvider = Optional.ofNullable(customerDatasourceProvider).orElse(DruidDatasourceProvider.class.getName());
         try {
-            return (DatasourceProvider) Class.forName(defaultDatasourceProvider)
+            DatasourceProvider o = (DatasourceProvider) Class.forName(defaultDatasourceProvider)
                     .getDeclaredConstructor().newInstance();
+            o.init(serverConfig);
+            return o;
         } catch (Exception e) {
             throw new MycatException("can not load datasourceProvider:{}", customerDatasourceProvider);
         }
     }
 
-    public JdbcConnectionManager(Map<String,DatasourceConfig> datasources,
-                                 Map<String,ClusterConfig> clusterConfigs,
+    public JdbcConnectionManager(Map<String, DatasourceConfig> datasources,
+                                 Map<String, ClusterConfig> clusterConfigs,
                                  DatasourceProvider provider,
-                                 MycatWorkerProcessor workerProcessor,
-                                 ReplicaSelectorRuntime replicaSelector) {
+                                 ReplicaSelectorManager replicaSelector) {
         this.datasourceProvider = Objects.requireNonNull(provider);
-        this.workerProcessor = workerProcessor;
         this.replicaSelector = replicaSelector;
 
         for (DatasourceConfig datasource : datasources.values()) {
@@ -96,17 +98,17 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
 
     @Override
     public void addDatasource(DatasourceConfig key) {
-        dataSourceMap.computeIfAbsent(key.getName(), dataSource1 -> {
-            JdbcDataSource dataSource = datasourceProvider.createDataSource(key);
-            replicaSelector.registerDatasource(dataSource1, () -> dataSource.counter.get());
-            return dataSource;
-        });
+        JdbcDataSource jdbcDataSource = dataSourceMap.get(key.getName());
+        if (jdbcDataSource != null) {
+            jdbcDataSource.close();
+        }
+        dataSourceMap.put(key.getName(), datasourceProvider.createDataSource(key));
     }
 
     @Override
     public void removeDatasource(String jdbcDataSourceName) {
         JdbcDataSource remove = dataSourceMap.remove(jdbcDataSourceName);
-        if (remove!=null){
+        if (remove != null) {
             remove.close();
         }
     }
@@ -117,62 +119,68 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
 
     public DefaultConnection getConnection(String name, Boolean autocommit,
                                            int transactionIsolation, boolean readOnly) {
-        JdbcDataSource key = Objects.requireNonNull(Optional.ofNullable(dataSourceMap.get(name))
-                .orElseGet(() -> {
-                    return dataSourceMap.get(replicaSelector.getDatasourceNameByReplicaName(name, true, null));
-                }),()->"unknown target:"+name);
-        if (key.counter.updateAndGet(operand -> {
-            if (operand < key.getMaxCon()) {
-                return ++operand;
-            }
-            return operand;
-        }) < key.getMaxCon()) {
-            DefaultConnection defaultConnection;
-            try {
-                DatasourceConfig config = key.getConfig();
-                Connection connection = key.getDataSource().getConnection();
-                defaultConnection = new DefaultConnection(connection, key, autocommit, transactionIsolation, readOnly, this);
-                try {
-                    return defaultConnection;
-                } finally {
-                    LOGGER.debug("获取连接:{} {}", name, defaultConnection);
-                    if (config.isInitSqlsGetConnection()) {
-                        if (config.getInitSqls() != null && !config.getInitSqls().isEmpty()) {
-                            try (Statement statement = connection.createStatement()) {
-                                for (String initSql : config.getInitSqls()) {
-                                    statement.execute(initSql);
-                                }
-                            }
+        final JdbcDataSource key = dataSourceMap.computeIfAbsent(name, s -> {
+            JdbcDataSource jdbcDataSource = dataSourceMap.get(replicaSelector.getDatasourceNameByReplicaName(s, true, null));
+            return Objects.requireNonNull(jdbcDataSource, "unknown target:" + name);
+        });
+        DefaultConnection defaultConnection;
+        Connection connection = null;
+        try {
+            DatasourceConfig config = key.getConfig();
+            connection = key.getDataSource().getConnection();
+            defaultConnection = new DefaultConnection(connection, key, autocommit, transactionIsolation, readOnly, this);
+            LOGGER.debug("get connection:{} {}", name, defaultConnection);
+            if (config.isInitSqlsGetConnection()) {
+                if (config.getInitSqls() != null && !config.getInitSqls().isEmpty()) {
+                    try (Statement statement = connection.createStatement()) {
+                        for (String initSql : config.getInitSqls()) {
+                            statement.execute(initSql);
                         }
                     }
                 }
-            } catch (SQLException e) {
-                LOGGER.debug("", e);
-                key.counter.decrementAndGet();
-                throw new MycatException(e);
             }
-        } else {
-            throw new MycatException("max limit");
+            key.counter.getAndIncrement();
+            return defaultConnection;
+        } catch (SQLException e) {
+            if (connection != null) {
+                JdbcUtils.close(connection);
+            }
+            LOGGER.debug("", e);
+            throw new MycatException(e);
         }
     }
 
     @Override
     public void closeConnection(DefaultConnection connection) {
-        connection.getDataSource().counter.updateAndGet(operand -> {
-            if (operand == 0) {
-                return 0;
-            }
-            return --operand;
-        });
-        if (LOGGER.isDebugEnabled()){
-            LOGGER.debug("close :{} {}", connection,connection.connection);
+        connection.getDataSource().counter.decrementAndGet();
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("close :{} {}", connection, connection.connection);
         }
-
+        //LOGGER.error("{} {}",connection,connection.connection, new Throwable());
+        /**
+         *
+         * To prevent the transaction from being committed at close time,
+         * it is implemented in some databases.
+         */
         try {
-            connection.connection.close();
+            if (!connection.connection.getAutoCommit()) {
+                connection.connection.rollback();
+                connection.connection.setAutoCommit(true);
+            }
         } catch (SQLException e) {
             LOGGER.error("", e);
         }
+        JdbcUtils.close(connection.connection);
+    }
+
+    @Override
+    public void close() {
+        ScheduleUtil.getTimer().schedule(() -> {
+            for (JdbcDataSource value : dataSourceMap.values()) {
+                value.close();
+            }
+        }, 3, TimeUnit.SECONDS);
+
     }
 
     public Map<String, JdbcDataSource> getDatasourceInfo() {
@@ -183,11 +191,14 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
         replicaSelector.putHeartFlow(replicaName, datasource, new Consumer<HeartBeatStrategy>() {
             @Override
             public void accept(HeartBeatStrategy heartBeatStrategy) {
-                workerProcessor.getMycatWorker().submit(() -> {
+                IOExecutor vertx = MetaClusterCurrent.wrapper(IOExecutor.class);
+                vertx.executeBlocking(promise -> {
                     try {
                         heartbeat(heartBeatStrategy);
                     } catch (Exception e) {
                         heartBeatStrategy.onException(e);
+                    } finally {
+                        promise.tryComplete();
                     }
                 });
             }
@@ -196,17 +207,21 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
                 DefaultConnection connection = null;
                 try {
                     connection = getConnection(datasource);
-                    List<Map<String, Object>> resultList;
-                    try (RowBaseIterator iterator = connection
-                            .executeQuery(heartBeatStrategy.getSql())) {
-                        resultList = iterator.getResultSetMap();
+                    ArrayList<List<Map<String, Object>>> resultList = new ArrayList<>();
+                    List<String> sqls = heartBeatStrategy.getSqls();
+                    for (String sql : sqls) {
+                        try (RowBaseIterator iterator = connection
+                                .executeQuery(sql)) {
+                            resultList.add(iterator.getResultSetMap());
+
+                        } catch (Exception e) {
+                            LOGGER.error("jdbc heartbeat ", e);
+                            return;
+                        }
                     }
-                    LOGGER.debug("jdbc heartbeat {}", Objects.toString(resultList));
                     heartBeatStrategy.process(resultList);
-                } catch (Exception e) {
-                    heartBeatStrategy.onException(e);
-                    throw e;
                 } catch (Throwable e) {
+                    heartBeatStrategy.onException(e);
                     LOGGER.error("", e);
                 } finally {
                     if (connection != null) {
@@ -217,13 +232,8 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
         });
     }
 
-    @Override
-    protected void finalize() throws Throwable {
-        super.finalize();
-        ScheduleUtil.getTimer().schedule(() -> {
-            for (JdbcDataSource value : dataSourceMap.values()) {
-                value.close();
-            }
-        },1,TimeUnit.MINUTES);
+
+    public DatasourceProvider getDatasourceProvider() {
+        return datasourceProvider;
     }
 }

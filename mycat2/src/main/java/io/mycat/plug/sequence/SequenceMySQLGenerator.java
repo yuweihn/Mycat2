@@ -1,7 +1,22 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.plug.sequence;
 
 import io.mycat.MetaClusterCurrent;
 import io.mycat.config.SequenceConfig;
+import io.mycat.datasource.jdbc.datasource.DefaultConnection;
 import io.mycat.datasource.jdbc.datasource.JdbcConnectionManager;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
 import io.mycat.replica.ReplicaSelectorRuntime;
@@ -29,22 +44,20 @@ public class SequenceMySQLGenerator implements SequenceHandler {
 
     public void init(String sql, String targetName) {
         init(sql, targetName, (s, s2) -> {
-            ReplicaSelectorRuntime selectorRuntime = MetaClusterCurrent.wrapper(ReplicaSelectorRuntime.class);
             JdbcConnectionManager jdbcConnectionManager = MetaClusterCurrent.wrapper(JdbcConnectionManager.class);
-            String datasourceName = selectorRuntime.getDatasourceNameByReplicaName(s, true, null);
-            JdbcDataSource jdbcDataSource = jdbcConnectionManager.getDatasourceInfo().get(datasourceName);
-            try (Connection connection1 = jdbcDataSource.getDataSource().getConnection()) {
-                try (Statement statement = connection1.createStatement()) {
-                    try (ResultSet resultSet = statement.executeQuery(s2)) {
-                        while (resultSet.next()) {
-                            return resultSet.getString(1);
+            try(DefaultConnection mycatConnection = jdbcConnectionManager.getConnection(targetName)){
+                Connection rawConnection = mycatConnection.getRawConnection();
+                    try (Statement statement = rawConnection.createStatement()) {
+                        try (ResultSet resultSet = statement.executeQuery(s2)) {
+                            while (resultSet.next()) {
+                                return resultSet.getString(1);
+                            }
                         }
                     }
+                } catch (SQLException e) {
+                    throw new RuntimeException("can not get queryTargetName:" + s + ",sql:" + s2 + " e");
                 }
-            } catch (SQLException e) {
-                throw new RuntimeException("can not get queryTargetName:" + s + ",sql:" + s2 + " e");
-            }
-            return null;
+                return null;
         });
     }
 
@@ -73,7 +86,7 @@ public class SequenceMySQLGenerator implements SequenceHandler {
     @Override
     public void init(SequenceConfig args, long workerId) {
         String[] split = args.getName().split("_");
-        String db = split[0];
+        String db = Optional.ofNullable(args.getSchemaName()).orElse(split[0]);
         String targetName = Optional.ofNullable(args.getTargetName()).orElse("prototype");
         init(String.format("select %s.mycat_seq_nextval('%s')",db, args.getName()),targetName);
     }

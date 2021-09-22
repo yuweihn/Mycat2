@@ -1,15 +1,33 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.beans.mycat;
 
 import java.io.Serializable;
 import java.sql.ResultSetMetaData;
 
-public class CopyMycatRowMetaData implements MycatRowMetaData , Serializable {
+public class CopyMycatRowMetaData implements MycatRowMetaData, Serializable {
     final Column[] columns;
+
+    public CopyMycatRowMetaData(Column[] columns) {
+        this.columns = columns;
+    }
 
     public CopyMycatRowMetaData(MycatRowMetaData mycatRowMetaData) {
         int columnCount = mycatRowMetaData.getColumnCount();
-        this.columns = new Column[columnCount + 1];
-        for (int i = 1; i <= columnCount; i++) {
+        this.columns = new Column[columnCount];
+        for (int i = 0; i < columnCount; i++) {
             boolean autoIncrement = mycatRowMetaData.isAutoIncrement(i);
             boolean caseSensitive = mycatRowMetaData.isCaseSensitive(i);
             boolean signed = mycatRowMetaData.isSigned(i);
@@ -41,7 +59,7 @@ public class CopyMycatRowMetaData implements MycatRowMetaData , Serializable {
 
     @Override
     public int getColumnCount() {
-        return columns.length - 1;
+        return columns.length;
     }
 
     @Override
@@ -51,47 +69,47 @@ public class CopyMycatRowMetaData implements MycatRowMetaData , Serializable {
 
     @Override
     public boolean isCaseSensitive(int column) {
-        return columns[column].isCaseSensitive(column);
+        return columns[column].isCaseSensitive();
     }
 
     @Override
     public boolean isSigned(int column) {
-        return columns[column].isSigned(column);
+        return columns[column].isSigned();
     }
 
     @Override
     public int getColumnDisplaySize(int column) {
-        return columns[column].getColumnDisplaySize(column);
+        return columns[column].getColumnDisplaySize();
     }
 
     @Override
     public String getColumnName(int column) {
-        return columns[column].getColumnName(column);
+        return columns[column].getColumnName();
     }
 
     @Override
     public String getSchemaName(int column) {
-        return columns[column].getSchemaName(column);
+        return columns[column].getSchemaName();
     }
 
     @Override
     public int getPrecision(int column) {
-        return columns[column].getPrecision(column);
+        return columns[column].getPrecision();
     }
 
     @Override
     public int getScale(int column) {
-        return columns[column].getScale(column);
+        return columns[column].getScale();
     }
 
     @Override
     public String getTableName(int column) {
-        return columns[column].getTableName(column);
+        return columns[column].getTableName();
     }
 
     @Override
     public int getColumnType(int column) {
-        return columns[column].getColumnType(column);
+        return columns[column].getColumnType();
     }
 
     @Override
@@ -110,7 +128,7 @@ public class CopyMycatRowMetaData implements MycatRowMetaData , Serializable {
     }
 
 
-    public static class Column {
+    public static class Column implements Serializable{
         boolean autoIncrement;
         boolean caseSensitive;
         boolean signed;
@@ -154,39 +172,39 @@ public class CopyMycatRowMetaData implements MycatRowMetaData , Serializable {
             return autoIncrement;
         }
 
-        public boolean isCaseSensitive(int column) {
+        public boolean isCaseSensitive() {
             return caseSensitive;
         }
 
-        public boolean isSigned(int column) {
+        public boolean isSigned() {
             return signed;
         }
 
-        public int getColumnDisplaySize(int column) {
+        public int getColumnDisplaySize() {
             return columnDisplaySize;
         }
 
-        public String getColumnName(int column) {
+        public String getColumnName() {
             return columnName;
         }
 
-        public String getSchemaName(int column) {
+        public String getSchemaName() {
             return schemaName;
         }
 
-        public int getPrecision(int column) {
+        public int getPrecision() {
             return precision;
         }
 
-        public int getScale(int column) {
+        public int getScale() {
             return scale;
         }
 
-        public String getTableName(int column) {
+        public String getTableName() {
             return tableName;
         }
 
-        public int getColumnType(int column) {
+        public int getColumnType() {
             return columnType;
         }
 

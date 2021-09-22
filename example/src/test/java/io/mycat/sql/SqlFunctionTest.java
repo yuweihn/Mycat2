@@ -3,8 +3,7 @@ package io.mycat.sql;
 import com.alibaba.druid.util.JdbcUtils;
 import com.mysql.cj.jdbc.MysqlDataSource;
 import io.mycat.assemble.MycatTest;
-import io.mycat.hint.CreateClusterHint;
-import io.mycat.hint.CreateDataSourceHint;
+import io.mycat.hint.*;
 import org.jetbrains.annotations.NotNull;
 import org.junit.Assert;
 import org.junit.Test;
@@ -47,8 +46,8 @@ public class SqlFunctionTest implements MycatTest {
         check("SELECT LEFT('foobarbar', 5) ");
         check("SELECT LENGTH('text') ");
         check("SELECT LOCATE('bar', 'foobarbar') ");
-//        check("SELECT LPAD('hi',4,'??') ");todo
-////        check("SELECT LPAD('hi',1,'??') ");
+        check("SELECT LPAD('hi',4,'??') ");
+        check("SELECT LPAD('hi',1,'??') ");
         check("SELECT LTRIM('  barbar') ");
         check("SELECT MAKE_SET(1,'a','b','c') ");
         check("SELECT MAKE_SET(1|4,'hello','nice','world') ");
@@ -78,6 +77,7 @@ public class SqlFunctionTest implements MycatTest {
         check("SELECT LOWER('A') ");
         check("SELECT LCASE('A') ");
         check("SELECT UNHEX('GG') ");
+        uncheckValue("SELECT ROW_COUNT() ");
 
 
     }
@@ -87,8 +87,8 @@ public class SqlFunctionTest implements MycatTest {
     }
 
     private void check(String s) throws Exception {
-        try (Connection mySQLConnection = getMySQLConnection(3306);
-             Connection mycatConnection = getMySQLConnection(8066);
+        try (Connection mySQLConnection = getMySQLConnection(DB1);
+             Connection mycatConnection = getMySQLConnection(DB_MYCAT);
         ) {
             Assert.assertEquals(
                     executeQueryAsString(mySQLConnection, s)
@@ -98,15 +98,15 @@ public class SqlFunctionTest implements MycatTest {
 
     private void uncheckValue(String s) throws Exception {
         try (
-                Connection mycatConnection = getMySQLConnection(8066);
+                Connection mycatConnection = getMySQLConnection(DB_MYCAT);
         ) {
             executeQuery(mycatConnection, s);
         }
     }
 
     private void checkValue(String s) throws Exception {
-        try (Connection mySQLConnection = getMySQLConnection(3306);
-             Connection mycatConnection = getMySQLConnection(8066);
+        try (Connection mySQLConnection = getMySQLConnection(DB1);
+             Connection mycatConnection = getMySQLConnection(DB_MYCAT);
         ) {
             Assert.assertEquals(
                     executeQuery(mySQLConnection, s)
@@ -134,7 +134,7 @@ public class SqlFunctionTest implements MycatTest {
         ResultSet rs = null;
         try {
             stmt = conn.createStatement();
-
+            System.out.println(s);
 
             rs = stmt.executeQuery(s);
 
@@ -146,8 +146,8 @@ public class SqlFunctionTest implements MycatTest {
                 for (int i = 0, size = rsMeta.getColumnCount(); i < size; ++i) {
                     String columName = rsMeta.getColumnLabel(i + 1).replaceAll(" ", "");
                     Object value = rs.getString(i + 1);
-                    if (row.containsKey(columName)){
-                        columName = columName+i;
+                    if (row.containsKey(columName)) {
+                        columName = columName + i;
                     }
                     row.put(columName, value);
                 }
@@ -202,7 +202,7 @@ public class SqlFunctionTest implements MycatTest {
         checkValue("SELECT ADDTIME(\"2017-06-15 09:34:21\", \"2\");");//
         checkValue("SELECT CURDATE();");//
         checkValue("SELECT CURRENT_DATE();");//
-        checkValue("SELECT CURRENT_TIME();");//
+        uncheckValue("SELECT CURRENT_TIME();");//
         checkValue("SELECT DATE('2003-12-31 01:02:03');");//
         uncheckValue("SELECT CURTIME() + 0;");//
         checkValue("SELECT DATEDIFF('2007-12-31 23:59:59','2007-12-30')");//
@@ -219,39 +219,52 @@ public class SqlFunctionTest implements MycatTest {
         checkValue("SELECT EXTRACT(MONTH FROM \"2017-06-15\");");
         checkValue("SELECT FROM_DAYS(685467);");
         checkValue("SELECT HOUR(\"2017-06-20 09:34:00\");");
-//        checkValue("SELECT LAST_DAY(\"2017-06-20\");");
-//        checkValue("SELECT LOCALTIME();");
-//        checkValue("SELECT LOCALTIMESTAMP();");
-//        checkValue("SELECT MAKEDATE(2017, 3);");
-//        checkValue("SELECT MAKETIME(11, 35, 4);");
-//        checkValue("SELECT MICROSECOND(\"2017-06-20 09:34:00.000023\");");
-//        checkValue("SELECT MINUTE(\"2017-06-20 09:34:00\");");
-//        checkValue("SELECT MONTH(\"2017-06-15\");");
-//        checkValue("SELECT MONTHNAME(\"2017-06-15\");");
-//
-//        checkValue("SELECT NOW();");
-//        checkValue("SELECT PERIOD_ADD(201703, 5)");
-//        checkValue("SELECT PERIOD_DIFF(201710, 201703);");
-//        checkValue("SELECT QUARTER(\"2017-06-15\");");
-//        checkValue("SELECT QUARTER(\"2017-06-15\");");
-//        checkValue("SELECT SECOND(\"2017-06-20 09:34:00.000023\");");
-//        checkValue("SELECT SEC_TO_TIME(1);");
-//        checkValue("SELECT STR_TO_DATE(\"August 10 2017\", \"%M %d %Y\");");
-//        checkValue("SELECT SUBDATE(\"2017-06-15\", INTERVAL 10 DAY);");
-//        checkValue("SELECT SUBTIME(\"2017-06-15 10:24:21.000004\", \"5.000001\");");
-//        uncheckValue("SELECT SYSDATE();");
-//        checkValue("SELECT TIME(\"19:30:10\");");
-//        checkValue("SELECT TIME_FORMAT(\"19:30:10\", \"%H %i %s\");");
-//        uncheckValue("SELECT TIME_TO_SEC(\"19:30:10\");");
-//        checkValue("SELECT TIMEDIFF(\"13:10:11\", \"13:10:10\");");
-//        checkValue("SELECT TIMESTAMP(\"2017-07-23\",  \"13:10:11\");");
-//        checkValue("SELECT TO_DAYS(\"2017-06-20\");");
-//        checkValue("SELECT WEEK(\"2017-06-15\");");
-//        checkValue("SELECT WEEKDAY(\"2017-06-15\");");
-//        checkValue("SELECT WEEKOFYEAR(\"2017-06-15\");");
-//        checkValue("SELECT YEAR(\"2017-06-15\");");
-//        checkValue("SELECT YEARWEEK(\"2017-06-15\");");
+        checkValue("SELECT LAST_DAY(\"2017-06-20\");");
+        uncheckValue("SELECT LOCALTIME();");
+        uncheckValue("SELECT LOCALTIMESTAMP();");
+        checkValue("SELECT MAKEDATE(2017, 3);");
+        checkValue("SELECT MAKETIME(11, 35, 4);");
+        checkValue("SELECT MICROSECOND(\"2017-06-20 09:34:00.000023\");");
+        checkValue("SELECT MINUTE(\"2017-06-20 09:34:00\");");
+        checkValue("SELECT MONTH(\"2017-06-15\");");
+        checkValue("SELECT MONTHNAME(\"2017-06-15\");");
+
+        uncheckValue("SELECT NOW();");
+        checkValue("SELECT PERIOD_ADD(201703, 5)");
+        checkValue("SELECT PERIOD_DIFF(201710, 201703);");
+        checkValue("SELECT QUARTER(\"2017-06-15\");");
+        checkValue("SELECT QUARTER(\"2017-06-15\");");
+        checkValue("SELECT SECOND(\"2017-06-20 09:34:00.000023\");");
+        checkValue("SELECT SEC_TO_TIME(1);");
+        checkValue("SELECT STR_TO_DATE(\"August 10 2017\", \"%M %d %Y\");");
+        checkValue("SELECT SUBDATE(\"2017-06-15\", INTERVAL 10 DAY);");
+        checkValue("SELECT SUBTIME(\"2017-06-15 10:24:21.000004\", \"5.000001\");");
+        uncheckValue("SELECT SYSDATE();");
+        checkValue("SELECT TIME(\"19:30:10\");");
+        checkValue("SELECT TIME_FORMAT(\"19:30:10\", \"%H %i %s\");");
+        uncheckValue("SELECT TIME_TO_SEC(\"19:30:10\");");
+        checkValue("SELECT TIMEDIFF(\"13:10:11\", \"13:10:10\");");
+        checkValue("SELECT TIMESTAMP(\"2017-07-23\",  \"13:10:11\");");
+        checkValue("SELECT TO_DAYS(\"2017-06-20\");");
+        checkValue("SELECT WEEK(\"2017-06-15\");");
+        checkValue("SELECT WEEKDAY(\"2017-06-15\");");
+        checkValue("SELECT WEEKOFYEAR(\"2017-06-15\");");
+        checkValue("SELECT YEAR(\"2017-06-15\");");
+        checkValue("SELECT YEARWEEK(\"2017-06-15\");");
         //todo
+    }
+
+    @Test
+    public void testGUIFunction() throws Exception {
+        try (Connection mySQLConnection = getMySQLConnection(DB_MYCAT)) {
+            JdbcUtils.executeQuery(mySQLConnection, "SHOW STATUS", Collections.emptyList());
+            JdbcUtils.execute(mySQLConnection, "FLUSH TABLES");
+            JdbcUtils.execute(mySQLConnection, "FLUSH PRIVILEGES");
+//            JdbcUtils.executeQuery(mySQLConnection, "SELECT @@GLOBAL.lower_case_table_names", Collections.emptyList());
+//            JdbcUtils.executeQuery(mySQLConnection, "SHOW /*!50002 GLOBAL */ STATUS", Collections.emptyList());
+//            JdbcUtils.executeQuery(mySQLConnection, "SELECT STATE AS `状态`, ROUND(SUM(DURATION),7) AS `期间`, CONCAT(ROUND(SUM(DURATION)/*100,3), '%') AS `百分比` FROM INFORMATION_SCHEMA.PROFILING WHERE QUERY_ID= GROUP BY STATE ORDER BY SEQ",
+//                    Collections.emptyList());
+        }
     }
 
     @Test
@@ -279,23 +292,21 @@ public class SqlFunctionTest implements MycatTest {
 
 
     private void initShardingTable() throws Exception {
-        Connection mycatConnection = getMySQLConnection(8066);
-
-        Connection mysql3306 = getMySQLConnection(3306);
+        Connection mycatConnection = getMySQLConnection(DB_MYCAT);
+        execute(mycatConnection, RESET_CONFIG);
+        Connection mysql3306 = getMySQLConnection(DB1);
 
         execute(mycatConnection, "DROP DATABASE db1");
 
 
         execute(mycatConnection, "CREATE DATABASE db1");
-        execute(mycatConnection, "CREATE DATABASE db1");
-
 
         execute(mycatConnection, CreateDataSourceHint
                 .create("ds0",
-                        "jdbc:mysql://127.0.0.1:3306"));
+                        DB1));
         execute(mycatConnection, CreateDataSourceHint
                 .create("ds1",
-                        "jdbc:mysql://127.0.0.1:3306"));
+                        DB2));
 
         execute(mycatConnection,
                 CreateClusterHint.create("c0",
@@ -317,11 +328,12 @@ public class SqlFunctionTest implements MycatTest {
                 "  PRIMARY KEY (`id`),\n" +
                 "  KEY `id` (`id`)\n" +
                 ") ENGINE=InnoDB  DEFAULT CHARSET=utf8"
-                + " dbpartition by hash(id) tbpartition by hash(id) tbpartitions 2 dbpartitions 2;");
+                + " dbpartition by mod_hash(id) tbpartition by mod_hash(id) tbpartitions 2 dbpartitions 2;");
         execute(mycatConnection, "CREATE TABLE `company` ( `id` int(11) NOT NULL AUTO_INCREMENT,`companyname` varchar(20) DEFAULT NULL,`addressid` int(11) DEFAULT NULL,PRIMARY KEY (`id`))");
         execute(mysql3306, "CREATE TABLE if not exists db1.`travelrecord` (\n" +
                 "  `id` bigint NOT NULL AUTO_INCREMENT\n," +
                 "  `user_id` varchar(100) DEFAULT NULL" +
+                " , PRIMARY KEY (`id`) " +
                 ") ENGINE=InnoDB  DEFAULT CHARSET=utf8");
         execute(mysql3306, "CREATE TABLE if not exists `company` ( `id` int(11) NOT NULL AUTO_INCREMENT,`companyname` varchar(20) DEFAULT NULL,`addressid` int(11) DEFAULT NULL,PRIMARY KEY (`id`))");
 
@@ -353,6 +365,10 @@ public class SqlFunctionTest implements MycatTest {
     @Test
     public void testComplexQuery() throws Exception {
         initShardingTable();
+
+        checkValue("select t.* from db1.travelrecord t order by t.id");
+
+        checkValue("SELECT * FROM `travelrecord` WHERE (ISNULL(`id`)) AND (`user_id`='3') AND (`traveldate`='2020-12-25') AND (`fee`='333') AND (`days`='111') AND (`blob`='张三') LIMIT 1", "");
         checkValue("select * from db1.travelrecord as t,db1.company as c  where t.id = c.id order by  t.id", "(1,999,null,null,null,null,1,Intel,1)");
         checkValue("select * from db1.travelrecord as t INNER JOIN db1.company as c  on  t.id = c.id order by  t.id", "(1,999,null,null,null,null,1,Intel,1)");
         checkValue("select * from db1.travelrecord as t LEFT  JOIN db1.company as c  on  t.id = c.id order by  t.id", "(999999999,999,null,null,null,null,null,null,null)(1,999,null,null,null,null,1,Intel,1)");
@@ -363,7 +379,7 @@ public class SqlFunctionTest implements MycatTest {
                 "select * from (db1.travelrecord as t LEFT  JOIN db1.company as c  on  t.id = c.id )  LEFT  JOIN db1.company as c2 on t.id = c2.id order by t.id");
 
 
-       // checkValue("select (select c.id from db1.company as c  where c.id = t.id) from db1.travelrecord as t where t.id = 1 order by t.id", "(1)"); todo
+        // checkValue("select (select c.id from db1.company as c  where c.id = t.id) from db1.travelrecord as t where t.id = 1 order by t.id", "(1)"); todo
         checkValue("select * from db1.travelrecord as t where  EXISTS (select id from db1.company as c where t.id =c.id ) order by t.id", "(1,999,null,null,null,null)");
         checkValue("select * from db1.travelrecord as t where not EXISTS (select id from db1.company as c where t.id =c.id ) order by t.id", "(999999999,999,null,null,null,null)");
 
@@ -400,7 +416,7 @@ public class SqlFunctionTest implements MycatTest {
         checkValue("select id,user_id from db1.travelrecord where id = " + max, "(" + max + ",999)");
 
         //or表达式
-        checkValue("select id,user_id from db1.travelrecord where id = " + min + " or " + " id = " + max+" order by id", "(" + min + ",999)" + "(" + max + ",999)");
+        checkValue("select id,user_id from db1.travelrecord where id = " + min + " or " + " id = " + max + " order by id", "(" + min + ",999)" + "(" + max + ",999)");
 
         //and表达式
         checkValue("select id,user_id from db1.travelrecord where id = " + min + " and " + " user_id = 999 order by id", "(" + min + ",999)");
@@ -414,7 +430,145 @@ public class SqlFunctionTest implements MycatTest {
         //like
         checkValue("select id,user_id from db1.travelrecord where user_id LIKE '99%' order by id");
 
+        checkValue(" SELECT *,\n" +
+                "   rank() over (PARTITION BY id\n" +
+                "                 ORDER BY user_id DESC) AS ranking\n" +
+                "FROM db1.`travelrecord`");
+
         checkValue("select 1");
+
+        checkValue("SELECT\n" +
+                "    user_id,\n" +
+                "    SUM(id) over (PARTITION BY id) sum_user_id\n" +
+                "FROM db1.travelrecord ORDER BY sum_user_id;");
+
+//        checkValue("select\n" +
+//                "    rank() over (partition by user_id order by id) as rank\n" +
+//                "from db1.travelrecord;");
+    }
+
+
+    @Test
+    public void testInsertFunction() throws Exception {
+        Connection mycatConnection = getMySQLConnection(DB_MYCAT);
+        execute(mycatConnection, RESET_CONFIG);
+        Connection mysql3306 = getMySQLConnection(DB1);
+
+        execute(mycatConnection, "DROP DATABASE db1");
+
+
+        execute(mycatConnection, "CREATE DATABASE db1");
+        execute(mycatConnection, "CREATE DATABASE db1");
+
+
+        execute(mycatConnection, CreateDataSourceHint
+                .create("ds0",
+                        DB1));
+        execute(mycatConnection, CreateDataSourceHint
+                .create("ds1",
+                        DB2));
+
+        execute(mycatConnection,
+                CreateClusterHint.create("c0",
+                        Arrays.asList("ds0"), Collections.emptyList()));
+        execute(mycatConnection,
+                CreateClusterHint.create("c1",
+                        Arrays.asList("ds1"), Collections.emptyList()));
+
+        execute(mycatConnection, "USE `db1`;");
+        execute(mysql3306, "USE `db1`;");
+
+        execute(mycatConnection, "CREATE TABLE `travelrecord2` (\n" +
+                "  `id` bigint(20) NOT NULL KEY,\n" +
+                "  `user_id` varchar(100) CHARACTER SET utf8 DEFAULT NULL,\n" +
+                "  `traveldate` datetime DEFAULT NULL,\n" +
+                "  `fee` decimal(10,0) DEFAULT NULL,\n" +
+                "  `days` int(11) DEFAULT NULL,\n" +
+                "  `blob` longblob DEFAULT NULL\n" +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\n" +
+                "tbpartition by YYYYMM(traveldate) tbpartitions 12;");
+        deleteData(mycatConnection, "db1", "travelrecord2");
+        execute(mycatConnection, "INSERT INTO `travelrecord2`(`id`,`user_id`,`traveldate`,`fee`,`days`,`blob`)\n" +
+                "VALUES (1,2,timestamp('2021-02-22 18:34:05.983692'),3,4,NULL)");
+
+    }
+
+    @Test
+    public void testOptimizationProcedure() throws Exception {
+        initShardingTable();
+        try (Connection mySQLConnection = getMySQLConnection(DB_MYCAT);) {
+            List<Map<String, Object>> step0 = executeQuery(mySQLConnection,
+                    BaselineAddHint.create("select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+
+            System.out.println(step0);
+
+            List<Map<String, Object>> explainStep0 = executeQuery(mySQLConnection,
+                    ("explain select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+
+            System.out.println(explainStep0);
+
+            List<Map<String, Object>> step1 = executeQuery(mySQLConnection,
+                    BaselineAddHint.create(true,
+                            "/*+MYCAT:use_nl_join(n,s) */select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+
+            System.out.println(step1);
+
+            List<Map<String, Object>> explainStep1 = executeQuery(mySQLConnection,
+                    ("explain select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+
+            System.out.println(explainStep1);
+
+
+            List<Map<String, Object>> step2 = executeQuery(mySQLConnection,
+                    BaselineAddHint.create(true,
+                            "/*+MYCAT:use_hash_join(n,s) */select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+
+            System.out.println(step2);
+
+            List<Map<String, Object>> explainStep2 = JdbcUtils.executeQuery(mySQLConnection,
+                    ("explain /*+MYCAT:use_hash_join(n,s) */ select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"),
+                    Collections.emptyList());
+
+            System.out.println(explainStep2);
+
+            List<Map<String, Object>> step3 = executeQuery(mySQLConnection,
+                    BaselineAddHint.create(true,
+                            "/*+MYCAT:use_merge_join(n,s) */select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+
+            System.out.println(step3);
+
+            List<Map<String, Object>> explainStep3 = executeQuery(mySQLConnection,
+                    ("explain /*+MYCAT:use_merge_join(n,s) */ select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+
+            System.out.println(explainStep3);
+
+
+//            Assert.assertTrue(explainStep1.toString().contains("NestedLoopJoin"));
+            Assert.assertTrue(explainStep2.toString().contains("MycatHashJoin"));
+            Assert.assertTrue(explainStep3.toString().contains("MycatSortMergeJoin"));
+
+            //PERSIST
+            long baseline_id = Long.parseLong(step0.get(0).get("BASELINE_ID").toString());
+            JdbcUtils.execute(mySQLConnection, BaselineUpdateHint.create("PERSIST", baseline_id));
+            JdbcUtils.execute(mySQLConnection, BaselineUpdateHint.create("CLEAR", baseline_id));
+            JdbcUtils.execute(mySQLConnection, BaselineUpdateHint.create("LOAD", baseline_id));
+
+
+            List<Map<String, Object>> explainStep4 = executeQuery(mySQLConnection,
+                    ("explain select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+
+            System.out.println(explainStep4);
+
+            Assert.assertTrue(explainStep3.toString().contains("MycatSortMergeJoin"));
+
+
+            execute(mySQLConnection, BaselineUpdateHint.create("UNFIX", baseline_id));
+
+            List<Map<String, Object>> explainStep5 = executeQuery(mySQLConnection,
+                    ("explain select * from db1.travelrecord n join db1.company s on n.id = s.id and n.id = 1"));
+            System.out.println(explainStep5);
+//            Assert.assertTrue(explainStep5.toString().contains("NestedLoopJoin"));
+        }
     }
 }
 

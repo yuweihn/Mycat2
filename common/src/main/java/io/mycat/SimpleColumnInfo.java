@@ -1,15 +1,29 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat;
 
 import io.mycat.router.CustomRuleFunction;
 import lombok.*;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.sql.JDBCType;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.Temporal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -17,9 +31,8 @@ import java.util.Objects;
  * @author Weiqing Xu
  * @author Junwen Chen
  **/
-
-@Getter
 @EqualsAndHashCode
+@Getter
 @ToString
 public class SimpleColumnInfo {
     @NonNull
@@ -32,51 +45,105 @@ public class SimpleColumnInfo {
     final boolean autoIncrement;
     final boolean primaryKey;
     final boolean index;
+    /**
+     * 是否是分片键
+     */
+    @Setter
+    private boolean shardingKey;
+    /**
+     * 索引列
+     */
+    private final List<IndexInfo> indexKeyList = new ArrayList<>();
+    /**
+     * 覆盖列
+     */
+    private final List<IndexInfo> indexCoveringList = new ArrayList<>();
+    /**
+     * 在当前表中的下标 table(name,pwd,phone) 对应ID (0,1,2)
+     */
+    final int id;
 
 
-    public SimpleColumnInfo(@NonNull String columnName, int precision, int scale, @NonNull JDBCType jdbcType, boolean nullable, boolean autoIncrement, boolean primaryKey, boolean index) {
+    public SimpleColumnInfo(@NonNull String columnName, int precision, int scale, @NonNull JDBCType jdbcType, boolean nullable, boolean autoIncrement, boolean primaryKey, boolean index, int id) {
         this.columnName = columnName;
         this.precision = precision;
         this.scale = scale;
+
+        switch (jdbcType) {
+            case BIT:
+            case TINYINT:
+            case SMALLINT:
+            case INTEGER:
+            case BIGINT:
+                jdbcType = JDBCType.BIGINT;
+                break;
+            case NUMERIC:
+                jdbcType = JDBCType.DECIMAL;
+                break;
+            case FLOAT:
+            case REAL:
+            case DOUBLE:
+                jdbcType = JDBCType.DOUBLE;
+                break;
+            default:
+                break;
+        }
         this.jdbcType = jdbcType;
         this.nullable = nullable;
         this.autoIncrement = autoIncrement;
         this.primaryKey = primaryKey;
         this.index = index || primaryKey;
+        this.id = id;
     }
 
     /**
-     * jamie 2019-12-11
+     * 是否是索引列
+     *
+     * @return true =是索引列
      */
-    public enum ShardingType {
-        MAP_TARGET,
-        MAP_SCHEMA,
-        MAP_TABLE,
-        NATURE_DATABASE_TABLE;
-
-        public static ShardingType parse(String name) {
-            if (name == null) {
-                return NATURE_DATABASE_TABLE;
+    public boolean isIndexKey() {
+        for (IndexInfo indexInfo : indexKeyList) {
+            for (SimpleColumnInfo indexInfoIndex : indexInfo.getIndexes()) {
+                if (indexInfoIndex == this) {
+                    return true;
+                }
             }
-            return valueOf(name);
         }
+        return false;
     }
 
     /**
-     * jamie 2019-12-11
+     * 是否是覆盖列
+     *
+     * @return true =是覆盖列
      */
-    @Data
-    @AllArgsConstructor
-    @ToString
-    public static class ShardingInfo {
-        @NonNull
-        final SimpleColumnInfo columnInfo;
-        @NonNull
-        final ShardingType shardingType;
-        @NonNull
-        final List<String> map;
-        @NonNull
-        final CustomRuleFunction function;
+    public boolean isIndexCovering() {
+        for (IndexInfo indexInfo : indexCoveringList) {
+            for (SimpleColumnInfo indexInfoIndex : indexInfo.getCovering()) {
+                if (indexInfoIndex == this) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 是否是主键
+     *
+     * @return
+     */
+    public boolean isPrimaryKey() {
+        return primaryKey;
+    }
+
+    /**
+     * 是否是分片键
+     *
+     * @return
+     */
+    public boolean isShardingKey() {
+        return shardingKey;
     }
 
     public Type getType() {
@@ -132,16 +199,10 @@ public class SimpleColumnInfo {
 
     }
 
-    public enum Type {
-        NUMBER,
-        STRING,
-        BLOB,
-        TIME,
-        DATE,
-        TIMESTAMP
-    }
-
     public Object normalizeValue(Object o) {
+        if (o == null) {
+            return o;
+        }
         switch (getType()) {
             case NUMBER:
                 if (o instanceof String) {
@@ -183,7 +244,8 @@ public class SimpleColumnInfo {
                 throw new IllegalArgumentException();
             case TIMESTAMP:
                 if (o instanceof String) {
-                    return MycatTimeUtil.timestampStringToTimestamp((String) o);
+                    Temporal toTimestamp = MycatTimeUtil.timestampStringToTimestamp((String) o);
+                    return toTimestamp;
                 }
                 if (o instanceof LocalDateTime) {
                     return o;
@@ -194,5 +256,48 @@ public class SimpleColumnInfo {
                 throw new IllegalArgumentException();
         }
         throw new IllegalArgumentException();
+    }
+
+    /**
+     * jamie 2019-12-11
+     */
+    public enum ShardingType {
+        MAP_TARGET,
+        MAP_SCHEMA,
+        MAP_TABLE,
+        NATURE_DATABASE_TABLE;
+
+        public static ShardingType parse(String name) {
+            if (name == null) {
+                return NATURE_DATABASE_TABLE;
+            }
+            return valueOf(name);
+        }
+    }
+
+    public enum Type {
+        NUMBER,
+        STRING,
+        BLOB,
+        TIME,
+        DATE,
+        TIMESTAMP
+    }
+
+    /**
+     * jamie 2019-12-11
+     */
+    @Data
+    @AllArgsConstructor
+    @ToString
+    public static class ShardingInfo {
+        @NonNull
+        final SimpleColumnInfo columnInfo;
+        @NonNull
+        final ShardingType shardingType;
+        @NonNull
+        final List<String> map;
+        @NonNull
+        final CustomRuleFunction function;
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <mycat>
+ * Copyright (C) <2021>  <mycat>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -15,6 +15,7 @@
 package io.mycat.router;
 
 import io.mycat.util.NumberParseUtil;
+import lombok.EqualsAndHashCode;
 import lombok.Value;
 
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  * @author cjw
  */
 @Value
+@EqualsAndHashCode
 public final class NodeIndexRange {
     public final int nodeIndex;
     public final long valueStart;
@@ -41,7 +43,7 @@ public final class NodeIndexRange {
     }
 
     public static int getPartitionCount(List<NodeIndexRange> ranges) {
-        return (int)ranges.stream().mapToInt(i -> i.getNodeIndex()).distinct().count();
+        return (int) ranges.stream().mapToInt(i -> i.getNodeIndex()).distinct().count();
     }
 
     public static List<NodeIndexRange> getLongRanges(Map<String, Object> ranges) {
@@ -57,14 +59,13 @@ public final class NodeIndexRange {
         return longRangeList;
     }
 
-    public static Map<String, String>  from(List<List<NodeIndexRange>> lists){
-        lists = lists.stream().sorted(Comparator.comparing(x->x.get(0).valueStart)).sorted().collect(Collectors.toList());
-    return lists.stream().flatMap(k -> k.stream())
+    public static Map<String, String> from(List<List<NodeIndexRange>> lists) {
+        lists = lists.stream().sorted(Comparator.comparing(x -> x.get(0).valueStart)).sorted().collect(Collectors.toList());
+        return lists.stream().flatMap(k -> k.stream())
                 .collect(Collectors.groupingBy(i -> String.valueOf(i.nodeIndex), Collectors.mapping(x -> x.valueStart + "-" + x.valueEnd, Collectors.joining(","))));/**/
     }
 
     /**
-     *
      * @param ranges
      * @return
      */
@@ -74,7 +75,7 @@ public final class NodeIndexRange {
             String[] split = entry.getKey().split(",");
             ArrayList<NodeIndexRange> longRangeList = new ArrayList<>();
             for (String s : split) {
-                String[] pair =s.split("-");
+                String[] pair = s.split("-");
                 long longStart = NumberParseUtil.parseLong(pair[0].trim());
                 long longEnd = NumberParseUtil.parseLong(pair[1].trim());
                 int nodeId = Integer.parseInt(entry.getValue().toString().trim());
@@ -83,8 +84,9 @@ public final class NodeIndexRange {
             }
             lists.add(longRangeList);
         }
-        return lists.stream().sorted(Comparator.comparing(x->x.get(0).valueStart)).sorted().collect(Collectors.toList());
+        return lists.stream().sorted(Comparator.comparing(x -> x.get(0).valueStart)).sorted().collect(Collectors.toList());
     }
+
     public long getSize() {
         return this.valueEnd - this.valueStart + 1;
     }

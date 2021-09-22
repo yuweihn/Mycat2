@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <yannan>
+ * Copyright (C) <2021>  <yannan>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -15,6 +15,7 @@
 package io.mycat.beans.mysql;
 
 import java.sql.Connection;
+import java.util.Optional;
 
 public enum MySQLIsolation {
     READ_UNCOMMITTED("READ UNCOMMITTED", "SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;",
@@ -27,6 +28,12 @@ public enum MySQLIsolation {
             Connection.TRANSACTION_SERIALIZABLE),
 
     ;
+    public static MySQLIsolation DEFAULT = REPEATED_READ;
+
+    static {
+
+    }
+
     private final String text;
     private final String cmd;
     private final int jdbcValue;
@@ -37,20 +44,6 @@ public enum MySQLIsolation {
         this.jdbcValue = jdbcValue;
     }
 
-    public String getText() {
-        return text;
-    }
-
-    public String getCmd() {
-        return cmd;
-    }
-
-    public int getJdbcValue() {
-        return jdbcValue;
-    }
-
-    public static MySQLIsolation DEFAULT = REPEATED_READ;
-
     public static MySQLIsolation parse(String name) {
         for (MySQLIsolation value : values()) {
             if (value.getText().equalsIgnoreCase(name)) {
@@ -58,10 +51,6 @@ public enum MySQLIsolation {
             }
         }
         return null;
-    }
-
-    static {
-
     }
 
     public static MySQLIsolation parseJdbcValue(int name) {
@@ -80,5 +69,26 @@ public enum MySQLIsolation {
             }
         }
         throw new UnsupportedOperationException();
+    }
+
+    public String getText() {
+        return text;
+    }
+
+    public String getCmd() {
+        return cmd;
+    }
+
+    public int getJdbcValue() {
+        return jdbcValue;
+    }
+
+    public static Optional<MySQLIsolation> toMySQLIsolationFrom(String sql) {
+        for (MySQLIsolation value : values()) {
+            if (value.getCmd() == sql) {
+                return Optional.of(value);
+            }
+        }
+        return Optional.empty();
     }
 }

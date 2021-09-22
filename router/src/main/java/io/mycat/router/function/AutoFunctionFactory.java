@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -15,38 +15,32 @@
 
 package io.mycat.router.function;
 
-import com.alibaba.fastsql.sql.SQLUtils;
-import com.alibaba.fastsql.sql.ast.SQLExpr;
-import com.alibaba.fastsql.sql.ast.expr.SQLMethodInvokeExpr;
-import com.alibaba.fastsql.sql.parser.SQLExprParser;
+import com.alibaba.druid.sql.SQLUtils;
+import com.alibaba.druid.sql.ast.SQLExpr;
+import com.alibaba.druid.sql.ast.expr.SQLMethodInvokeExpr;
+import com.alibaba.druid.sql.parser.SQLExprParser;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import groovy.text.SimpleTemplateEngine;
 import groovy.text.Template;
-import io.mycat.BackendTableInfo;
-import io.mycat.DataNode;
-import io.mycat.RangeVariable;
+import io.mycat.Partition;
 import io.mycat.SimpleColumnInfo;
-import io.mycat.config.ShardingFuntion;
+import io.mycat.config.ShardingFunction;
 import io.mycat.router.CustomRuleFunction;
 import io.mycat.router.ShardingTableHandler;
 import io.mycat.util.SplitUtil;
-import lombok.AllArgsConstructor;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.SneakyThrows;
+import lombok.*;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.StringWriter;
-import java.math.BigInteger;
-import java.text.MessageFormat;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.WeekFields;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 import java.util.function.ToIntFunction;
+import java.util.stream.Collectors;
 
 public class AutoFunctionFactory {
 
@@ -58,57 +52,29 @@ public class AutoFunctionFactory {
         int tableIndex;
     }
 
+    public static final ImmutableSet<String> FLATTEN_MAPPING = ImmutableSet.of("MOD_HASH", "UNI_HASH", "RIGHT_SHIFT", "YYYYMM", "YYYYDD", "YYYYWEEK");
+
     @SneakyThrows
     public static final CustomRuleFunction
-    getTableFunction(ShardingTableHandler tableHandler, ShardingFuntion config) {
+    getTableFunction(ShardingTableHandler tableHandler, ShardingFunction shardingFunction) {
 
-        Map<String, Object> properties = config.getProperties();
+        Map<String, Object> properties = shardingFunction.getProperties();
 
         int dbNum = Integer.parseInt(properties.getOrDefault("dbNum", 1).toString());
         int tableNum = Integer.parseInt(properties.getOrDefault("tableNum", 1).toString());
 
-        Integer groupNum = Optional.ofNullable(properties.get("storeNum"))
+        Integer storeNum = Optional.ofNullable(properties.get("storeNum"))
                 .map(i -> Integer.parseInt(i.toString()))
-                .orElseGet(() -> Optional.ofNullable(tableHandler.dataNodes()).filter(i -> !i.isEmpty()).map(i -> i.size())
-                        .orElseThrow(() -> new IllegalArgumentException("can not get storeNum")));
-        if (groupNum == 0){
-            throw new UnsupportedOperationException("groupNum is zero");
-        }
+                .filter(n -> n > 0)
+                .orElseThrow(() -> new IllegalArgumentException("can not get storeNum"));
+        Integer storeDbNum = Optional.ofNullable(properties.get("storeDbNum"))
+                .map(i -> Integer.parseInt(i.toString())).orElse(dbNum * tableNum / storeNum);
         SQLMethodInvokeExpr tableMethod = converyToMethodExpr((String) properties.get("tableMethod"));
         SQLMethodInvokeExpr dbMethod = converyToMethodExpr((String) properties.get("dbMethod"));
         String sep = "/";
-        String mappingFormat = (String) properties.getOrDefault("mappingFormat",
-                String.join(sep, "c${targetIndex}",
-                        tableHandler.getSchemaName() + "_${dbIndex}",
-                        tableHandler.getTableName() + "_${tableIndex}"));
-        List<IndexDataNode> datanodes = new ArrayList<>();
-        List<int[]> seq = new ArrayList<>();
-        for (int dbIndex = 0; dbIndex < dbNum; dbIndex++) {
-            for (int tableIndex = 0; tableIndex < tableNum; tableIndex++) {
-                seq.add(new int[]{dbIndex, tableIndex});
-            }
-        }
-        SimpleTemplateEngine templateEngine = new SimpleTemplateEngine();
-        Template template = templateEngine.createTemplate(mappingFormat);
-        HashMap<String, Object> context = new HashMap<>(properties);
-
-        Map<Key, DataNode> cache = new ConcurrentHashMap<>();
-        for (int i = 0; i < seq.size(); i++) {
-            int seqIndex = i % groupNum;
-            int[] ints = seq.get(i);
-            int dbIndex = ints[0];
-            int tableIndex = ints[1];
-            context.put("targetIndex", String.valueOf(seqIndex));
-            context.put("dbIndex", String.valueOf(dbIndex));
-            context.put("tableIndex", String.valueOf(tableIndex));
-            StringWriter stringWriter = new StringWriter();
-            template.make(context).writeTo(stringWriter);
-            String[] strings = SplitUtil.split(stringWriter.getBuffer().toString(), sep);
-
-            IndexDataNode backendTableInfo = new IndexDataNode(strings[0], strings[1], strings[2], dbIndex, tableIndex);
-            cache.put(new Key(ints[0], ints[1]), backendTableInfo);
-            datanodes.add(backendTableInfo);
-        }
+        String erUniqueName = Optional.ofNullable(dbMethod).map(i -> i.getMethodName()).orElse("")
+                + Optional.ofNullable(tableMethod).map(i -> i.getMethodName()).orElse("")
+                + " storeNum:" + storeNum + " storeDbNum:" + storeDbNum + " dbNum:" + dbNum + " tableNum:" + tableNum;
 
 
         ToIntFunction<Object> tableFunction = (o) -> 0;
@@ -117,17 +83,20 @@ public class AutoFunctionFactory {
         ToIntFunction<Object> dbFunction = (o) -> 0;
         Set<String> tableShardingKeys = new HashSet<>();
 
+        String mappingFormat = (String) properties.computeIfAbsent("mappingFormat", (unused) ->
+                String.join(sep, "c${targetIndex}",
+                        tableHandler.getSchemaName() + "_${dbIndex}",
+                        tableHandler.getTableName() + ((!supportFlattenMapping(tableMethod, dbMethod)) ? "_${tableIndex}" : "_${index}")));
+        final boolean flattenMapping = mappingFormat.contains("${index}");
+
         if (dbMethod != null) {
             int num = dbNum;
             SQLMethodInvokeExpr methodInvokeExpr = dbMethod;
 
             if (SQLUtils.nameEquals("HASH", methodInvokeExpr.getMethodName())) {
-                String shardingKey = getShardingKey(methodInvokeExpr);
-                dbShardingKeys.add(shardingKey);
-                SimpleColumnInfo columnInfo = tableHandler.getColumnByName(shardingKey);
-                dbFunction = specilizeSingleModHash(num, columnInfo);
+                methodInvokeExpr.setMethodName("MOD_HASH");
             }
-            if (SQLUtils.nameEquals("MODE_HASH", methodInvokeExpr.getMethodName())) {
+            if (SQLUtils.nameEquals("MOD_HASH", methodInvokeExpr.getMethodName())) {
                 String shardingKey = getShardingKey(methodInvokeExpr);
                 dbShardingKeys.add(shardingKey);
                 SimpleColumnInfo columnInfo = tableHandler.getColumnByName(shardingKey);
@@ -162,8 +131,8 @@ public class AutoFunctionFactory {
                         tableHandler.getColumnByName(shardingKey2)
                 );
 
-                if (column1.getType() == column2.getType()) {
-                    throw new IllegalArgumentException();
+                if (!column1.getType().equals(column2.getType())) {
+                    throw new IllegalArgumentException(column1 + " and " + column2 + " type is different");
                 }
                 int n;
                 if (methodInvokeExpr.getArguments().size() > 2) {
@@ -173,6 +142,14 @@ public class AutoFunctionFactory {
                 }
                 dbFunction = specilizeSingleRangeHash(num, n, column1);
             }
+            if (SQLUtils.nameEquals("YYYYMM", methodInvokeExpr.getMethodName())) {
+                String shardingKey = getShardingKey(methodInvokeExpr);
+                dbShardingKeys.add(shardingKey);
+                SimpleColumnInfo column1 = Objects.requireNonNull(
+                        tableHandler.getColumnByName(shardingKey)
+                );
+                dbFunction = specilizeyyyymm(num, column1);
+            }
             if (SQLUtils.nameEquals("YYYYDD", methodInvokeExpr.getMethodName())) {
                 String shardingKey = getShardingKey(methodInvokeExpr);
                 dbShardingKeys.add(shardingKey);
@@ -180,7 +157,6 @@ public class AutoFunctionFactory {
                 SimpleColumnInfo column1 = Objects.requireNonNull(
                         tableHandler.getColumnByName(shardingKey)
                 );
-
                 dbFunction = specilizeyyyydd(num, column1);
             }
             if (SQLUtils.nameEquals("YYYYWEEK", methodInvokeExpr.getMethodName())) {
@@ -228,12 +204,7 @@ public class AutoFunctionFactory {
             int num = tableNum;
             SQLMethodInvokeExpr methodInvokeExpr = tableMethod;
             if (SQLUtils.nameEquals("HASH", methodInvokeExpr.getMethodName())) {
-                String shardingKey = getShardingKey(methodInvokeExpr);
-                tableShardingKeys.add(shardingKey);
-                SimpleColumnInfo column1 = Objects.requireNonNull(
-                        tableHandler.getColumnByName(shardingKey)
-                );
-                tableFunction = specilizeSingleModHash(num, column1);
+                methodInvokeExpr.setMethodName("MOD_HASH");
             }
             if (SQLUtils.nameEquals("MOD_HASH", methodInvokeExpr.getMethodName())) {
                 String shardingKey = getShardingKey(methodInvokeExpr);
@@ -362,231 +333,152 @@ public class AutoFunctionFactory {
                 tableFunction = specilizeStrHash(num, startIndex, endIndex, valType, randSeed, column1);
             }
         }
-        if (dbMethod != null && tableMethod != null) {
-            if (SQLUtils.nameEquals("MOD_HASH", dbMethod.getMethodName())) {
-                if (SQLUtils.nameEquals("MOD_HASH", tableMethod.getMethodName())) {
-                    String tableShardingKey = Objects.requireNonNull(getShardingKey(tableMethod));
-                    String dbShardingKey = getShardingKey(dbMethod);
+        if (flattenMapping) {
+            String needMethodName = SQLUtils.normalize(dbMethod.getMethodName().toUpperCase());
 
-                    SimpleColumnInfo tableColumn = tableHandler.getColumnByName(tableShardingKey);
-                    SimpleColumnInfo dbColumn = tableHandler.getColumnByName(dbShardingKey);
-
-                    tableShardingKeys.add(tableShardingKey);
-                    dbShardingKeys.add(dbShardingKey);
-
-                    if (tableShardingKey.equalsIgnoreCase(dbShardingKey)) {
-                        int total = dbNum * tableNum;
-                        final ToIntFunction<Object> function = (o) -> {
-                            o = dbColumn.normalizeValue(o);
-                            if (o == null) return 0;
-                            if (o instanceof Number) {
-                                long l = ((Number) o).longValue();
-                                long i = l % total / tableNum;
-                                if (i < 0) {
-                                    throw new IllegalArgumentException();
-                                }
-                                return (int) i;
-                            }
-                            if (o instanceof String) {
-                                return hashCode((String) o) % total / tableNum;
-                            }
-                            throw new UnsupportedOperationException();
-                        };
-                        Set<String> shardingKeys = new HashSet<>();
-                        shardingKeys.addAll(tableShardingKeys);
-                        shardingKeys.addAll(dbShardingKeys);
-                        return createDoubleFunction(datanodes, dbShardingKey, shardingKeys, function);
-                    } else {
-                        tableFunction = specilizeSingleModHash(tableNum, tableColumn);
-                        dbFunction = specilizeSingleModHash(dbNum, dbColumn);
-                    }
-
-                }
-            }
-            if (SQLUtils.nameEquals("UNI_HASH", dbMethod.getMethodName())) {
-                if (SQLUtils.nameEquals("UNI_HASH", tableMethod.getMethodName())) {
-                    String tableShardingKey = Objects.requireNonNull(getShardingKey(tableMethod));
-                    String dbShardingKey = getShardingKey(dbMethod);
-                    SimpleColumnInfo tableColumn = tableHandler.getColumnByName(tableShardingKey);
-                    SimpleColumnInfo dbColumn = tableHandler.getColumnByName(dbShardingKey);
-                    if (tableShardingKey.equalsIgnoreCase(dbShardingKey)) {
-                        Set<String> shardingKeys = new HashSet<>();
-                        shardingKeys.addAll(tableShardingKeys);
-                        shardingKeys.addAll(dbShardingKeys);
-
-                        ToIntFunction<Object> function = (o) -> {
-                            o = tableColumn.normalizeValue(o);
-                            int total = dbNum * tableNum;
-                            if (o instanceof Number) {
-                                long intValue = ((Number) o).longValue();
-
-                                long l = (intValue) % dbNum * tableNum
-                                        +
-                                        (intValue / dbNum) % tableNum;
-                                return (int) l;
-                            }
-                            if (o instanceof String) {
-                                return hashCode((String) o) % total / tableNum;
-                            }
-                            throw new UnsupportedOperationException();
-                        };
-                        return createDoubleFunction((List<IndexDataNode>) datanodes, dbShardingKey, shardingKeys, function);
-                    } else {
-                        tableFunction = specilizeSingleModHash(tableNum, tableColumn);
-                        dbFunction = specilizeSingleModHash(dbNum, dbColumn);
-                    }
-                }
-
+            String tableShardingKey = Objects.requireNonNull(getShardingKey(tableMethod));
+            SimpleColumnInfo tableColumn = tableHandler.getColumnByName(tableShardingKey);
+            int total = dbNum * tableNum;
+            if (SQLUtils.nameEquals("MOD_HASH", needMethodName)) {
+                ToIntFunction<Object> core = specilizeSingleModHash(total, tableColumn);
+                tableFunction = core;
+                dbFunction = value -> core.applyAsInt(value) / tableNum;
+            } else if (SQLUtils.nameEquals("UNI_HASH", needMethodName)) {
+                ToIntFunction<Object> core = specilizeSingleModHash(dbNum, tableColumn);
+                dbFunction = core;
+                tableFunction = value -> {
+                    int coreIndex = core.applyAsInt(value);
+                    return coreIndex * tableNum + coreIndex % tableNum;
+                };
+            } else if (SQLUtils.nameEquals("RIGHT_SHIFT", needMethodName)) {
+                int shift = Integer.parseInt(getShardingKey(dbMethod, 1));
+                ToIntFunction<Object> core = specilizeSingleRightShift(dbNum, shift, tableColumn);
+                dbFunction = core;
+                tableFunction = value -> {
+                    int coreIndex = core.applyAsInt(value);
+                    return coreIndex * tableNum + coreIndex % tableNum;
+                };
+            } else if (SQLUtils.nameEquals("YYYYMM", needMethodName)) {
+                ToIntFunction<Object> core = specilizeyyyymm(total, tableColumn);
+                tableFunction = core;
+                dbFunction = value -> core.applyAsInt(value) / tableNum;
+            } else if (SQLUtils.nameEquals("YYYYDD", needMethodName)) {
+                ToIntFunction<Object> core = specilizeyyyydd(total, tableColumn);
+                tableFunction = core;
+                dbFunction = value -> core.applyAsInt(value) / tableNum;
+            } else if (SQLUtils.nameEquals("YYYYWEEK", needMethodName)) {
+                ToIntFunction<Object> core = specilizeyyyyWeek(total, tableColumn);
+                tableFunction = core;
+                dbFunction = value -> core.applyAsInt(value) / tableNum;
             }
         }
+        final boolean finalFlattenMapping = flattenMapping;
         final ToIntFunction<Object> finalDbFunction = dbFunction;
         final ToIntFunction<Object> finalTableFunction = tableFunction;
+        List<Partition> indexDataNodes =  Optional
+                .ofNullable(tableHandler.dataNodes())
+                .map(i -> new ArrayList<>(i))
+                .orElse(new ArrayList<>());
 
-
-        Function<Map<String, Collection<RangeVariable>>, List<DataNode>> function = new Function<Map<String, Collection<RangeVariable>>, List<DataNode>>() {
-            @Override
-            public List<DataNode> apply(Map<String, Collection<RangeVariable>> stringCollectionMap) {
-                boolean getDbIndex = false;
-                int dIndex = 0;
-
-                boolean getTIndex = false;
-                int tIndex = 0;
-
-                for (String dbShardingKey : dbShardingKeys) {
-                    Collection<RangeVariable> rangeVariables = stringCollectionMap.get(dbShardingKey);
-                    if (rangeVariables != null && !rangeVariables.isEmpty()) {
-                        for (RangeVariable rangeVariable : rangeVariables) {
-                            switch (rangeVariable.getOperator()) {
-                                case EQUAL:
-                                    Object value = rangeVariable.getValue();
-                                    dIndex = finalDbFunction.applyAsInt(value);
-                                    getDbIndex = true;
-                                    if (dIndex < 0) {
-                                        finalDbFunction.applyAsInt(value);
-                                        throw new IllegalArgumentException();
-                                    }
-                                    break;
-                                case RANGE:
-                                default:
-                                    continue;
-                            }
-                        }
-                    }
+        if (indexDataNodes.isEmpty()){
+            List<int[]> seq = new ArrayList<>();
+            int tableCount = 0;
+            for (int dbIndex = 0; dbIndex < dbNum; dbIndex++) {
+                for (int tableIndex = 0; tableIndex < tableNum; tableCount++, tableIndex++) {
+                    seq.add(new int[]{dbIndex, tableIndex, tableCount});
                 }
-                for (String tableShardingKey : tableShardingKeys) {
-                    Collection<RangeVariable> rangeVariables = stringCollectionMap.get(tableShardingKey);
-                    if (rangeVariables != null && !rangeVariables.isEmpty()) {
-                        for (RangeVariable rangeVariable : rangeVariables) {
-                            switch (rangeVariable.getOperator()) {
-                                case EQUAL:
-                                    Object value = rangeVariable.getValue();
-                                    tIndex = finalTableFunction.applyAsInt(value);
-                                    getTIndex = true;
-                                    break;
-                                case RANGE:
-                                default:
-                                    continue;
-                            }
-                        }
-                    }
-                }
-                if (getDbIndex && getTIndex) {
-                    for (IndexDataNode datanode : datanodes) {
-                        if (tIndex == datanode.getTableIndex()
-                                &&
-                                dIndex == datanode.getDbIndex()) {
-                            return Collections.singletonList(datanode);
-                        }
-                    }
-                    return (List) datanodes;
-                }
-                if (getDbIndex) {
-                    List<DataNode> list = new ArrayList<>();
-                    for (IndexDataNode i : datanodes) {
-                        if (i.getDbIndex() == dIndex) {
-                            list.add(i);
-                        }
-                    }
-                    return list;
-                }
-                if (getTIndex) {
-                    List<DataNode> list = new ArrayList<>();
-                    for (IndexDataNode i : datanodes) {
-                        if (i.getTableIndex() == tIndex) {
-                            list.add(i);
-                        }
-                    }
-                    return list;
-                }
-                return Collections.unmodifiableList(datanodes);
-            }
-        };
-        Set<String> keys = new HashSet<>(dbShardingKeys);
-        keys.addAll(tableShardingKeys);
-
-        return new CustomRuleFunction() {
-            @Override
-            public String name() {
-                return MessageFormat.format("dbNum:{0} tableNum:{1} dbMethod:{2} tableMethod:{3}",
-                        dbNum, tableNum, dbMethod, tableMethod);
             }
 
-            @Override
-            public List<DataNode> calculate(Map<String, Collection<RangeVariable>> values) {
-                return Objects.requireNonNull(function.apply(values));
-            }
+            SimpleTemplateEngine templateEngine = new SimpleTemplateEngine();
+            Template template = templateEngine.createTemplate(mappingFormat);
+            HashMap<String, Object> context = new HashMap<>(properties);
 
-            @Override
-            protected void init(ShardingTableHandler tableHandler, Map<String, Object> properties, Map<String, Object> ranges) {
 
-            }
+            for (int i = 0; i < seq.size(); i++) {
+                int seqIndex = i / storeDbNum;
+                int[] ints = seq.get(i);
+                int currentDbIndex = ints[0];
+                int currentTableIndex = ints[1];
+                int currentTableCount = ints[2];
+                context.put("targetIndex", String.valueOf(seqIndex));
+                context.put("dbIndex", String.valueOf(currentDbIndex));
+                context.put("tableIndex", String.valueOf(currentTableIndex));
+                context.put("index", String.valueOf(currentTableCount));
+                StringWriter stringWriter = new StringWriter();
+                template.make(context).writeTo(stringWriter);
+                String[] strings = SplitUtil.split(stringWriter.getBuffer().toString(), sep);
 
-            @Override
-            public boolean isShardingKey(String name) {
-                return keys.contains(SQLUtils.normalize(name));
+                IndexDataNode backendTableInfo = new IndexDataNode(strings[0], strings[1], strings[2], currentDbIndex, currentTableIndex, currentTableCount);
+                indexDataNodes.add(backendTableInfo);
             }
-        };
+        }
+
+        if (flattenMapping) {
+            Map<Integer, List<Partition>> dbIndexToNode = indexDataNodes.stream().collect(Collectors.groupingBy(k -> k.getDbIndex()));
+            return new AutoFunction(dbNum, tableNum, dbMethod, tableMethod, dbShardingKeys, tableShardingKeys, finalDbFunction, finalTableFunction, storeNum) {
+                @Override
+                public List<Partition> scanAll() {
+                    return ImmutableList.copyOf(indexDataNodes);
+                }
+
+                @Override
+                public List<Partition> scanOnlyTableIndex(int index) {
+                    return ImmutableList.of(indexDataNodes.get(index));
+                }
+
+                @Override
+                public List<Partition> scanOnlyDbIndex(int index) {
+                    return dbIndexToNode.get(index);
+                }
+
+                @Override
+                public List<Partition> scanOnlyDbTableIndex(int dbIndex, int tableIndex) {
+                    return scanOnlyTableIndex(tableIndex);
+                }
+            };
+        } else {
+            Map<Integer, List<Partition>> dbIndexToNode = indexDataNodes.stream().collect(Collectors.groupingBy(k -> k.getDbIndex()));
+            Map<Integer, List<Partition>> tableIndexToNode = indexDataNodes.stream().collect(Collectors.groupingBy(k -> k.getTableIndex()));
+            return new AutoFunction(dbNum, tableNum, dbMethod, tableMethod, dbShardingKeys, tableShardingKeys, finalDbFunction, finalTableFunction, storeNum) {
+                @Override
+                public List<Partition> scanAll() {
+                    return ImmutableList.copyOf(indexDataNodes);
+                }
+
+                @Override
+                public List<Partition> scanOnlyTableIndex(int index) {
+                    return ImmutableList.copyOf(tableIndexToNode.get(index));
+                }
+
+                @Override
+                public List<Partition> scanOnlyDbIndex(int index) {
+                    return ImmutableList.copyOf(dbIndexToNode.get(index));
+                }
+
+                @Override
+                public List<Partition> scanOnlyDbTableIndex(int dbIndex, int tableIndex) {
+                    List<Partition> dataNodes = Objects.requireNonNull(dbIndexToNode.get(dbIndex));
+                    for (Partition dataNode : dataNodes) {
+                        if (dataNode.getTableIndex() == tableIndex) {
+                            return ImmutableList.of(dataNode);
+                        }
+                    }
+                    return dataNodes;
+                }
+            };
+        }
     }
 
-    @NotNull
-    private static CustomRuleFunction createDoubleFunction(List<IndexDataNode> datanodes, String dbShardingKey, Set<String> shardingKeys, ToIntFunction<Object> function) {
-        return new CustomRuleFunction() {
-            @Override
-            public String name() {
-                return null;
-            }
-
-            @Override
-            public List<DataNode> calculate(Map<String, Collection<RangeVariable>> values) {
-                Collection<RangeVariable> rangeVariables = values.get(dbShardingKey);
-                if (rangeVariables != null && !rangeVariables.isEmpty()) {
-                    for (RangeVariable rangeVariable : rangeVariables) {
-                        switch (rangeVariable.getOperator()) {
-                            case EQUAL:
-                                Object value = rangeVariable.getValue();
-                                int i = function.applyAsInt(value);
-                                return Collections.singletonList(datanodes.get(i));
-                        }
-                    }
+    private static boolean supportFlattenMapping(SQLMethodInvokeExpr tableMethod, SQLMethodInvokeExpr dbMethod) {
+        if (dbMethod != null && tableMethod != null) {
+            if ((dbMethod.equals(tableMethod))) {
+                String needMethodName = SQLUtils.normalize(dbMethod.getMethodName().toUpperCase());
+                if (FLATTEN_MAPPING.contains(needMethodName)) {
+                    return true;
                 }
-                return (List) datanodes;
             }
-
-            @Override
-            protected void init(ShardingTableHandler tableHandler, Map<String, Object> properties, Map<String, Object> ranges) {
-
-            }
-
-            @Override
-            public boolean isShardingKey(String name) {
-                for (String shardingKey : shardingKeys) {
-                    if (shardingKey.equalsIgnoreCase(name)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-        };
+        }
+        return false;
     }
 
     @NotNull
@@ -706,27 +598,55 @@ public class AutoFunctionFactory {
         ToIntFunction<Object> tableFunction;
         switch (column1.getType()) {
             case NUMBER:
-                tableFunction = o -> yyyymm(num, (Number) column1.normalizeValue(o));
+                tableFunction = o -> yyyymm(num, column1.normalizeValue(o));
                 break;
             case STRING:
-                tableFunction = o -> yyyymm(num, (String) column1.normalizeValue(o));
+                tableFunction = o -> yyyymm(num, column1.normalizeValue(o));
                 break;
             case BLOB:
-                tableFunction = o -> yyyymm(num, (byte[]) column1.normalizeValue(o));
+                tableFunction = o -> yyyymm(num, column1.normalizeValue(o));
                 break;
             case TIME:
-                tableFunction = o -> yyyymm(num, (Duration) column1.normalizeValue(o));
+                tableFunction = o -> yyyymm(num, column1.normalizeValue(o));
                 break;
             case DATE:
-                tableFunction = o -> yyyymm(num, (LocalDate) column1.normalizeValue(o));
+                tableFunction = o -> yyyymm(num, column1.normalizeValue(o));
                 break;
             case TIMESTAMP:
-                tableFunction = o -> yyyymm(num, (LocalDateTime) column1.normalizeValue(o));
+                tableFunction = o -> yyyymm(num, column1.normalizeValue(o));
                 break;
             default:
                 throw new IllegalStateException("Unexpected value: " + column1.getType());
         }
         return tableFunction;
+    }
+
+    @NotNull
+    public static ToIntFunction<Object> specilizeSingleDivHash(int num, SimpleColumnInfo columnInfo) {
+        ToIntFunction<Object> dbFunction;
+        switch (columnInfo.getType()) {
+            case NUMBER:
+                dbFunction = o -> singleDivHash(num, (Number) columnInfo.normalizeValue(o));
+                break;
+            case STRING:
+                dbFunction = o -> singleDivHash(num, (String) columnInfo.normalizeValue(o));
+                break;
+            case BLOB:
+                dbFunction = o -> singleDivHash(num, (byte[]) columnInfo.normalizeValue(o));
+                break;
+            case TIME:
+                dbFunction = o -> singleDivHash(num, (Duration) columnInfo.normalizeValue(o));
+                break;
+            case DATE:
+                dbFunction = o -> singleDivHash(num, (LocalDate) columnInfo.normalizeValue(o));
+                break;
+            case TIMESTAMP:
+                dbFunction = o -> singleDivHash(num, (LocalDateTime) columnInfo.normalizeValue(o));
+                break;
+            default:
+                throw new IllegalStateException("Unexpected value: " + columnInfo.getType());
+        }
+        return dbFunction;
     }
 
     @NotNull
@@ -818,22 +738,22 @@ public class AutoFunctionFactory {
         ToIntFunction<Object> dbFunction;
         switch (column1.getType()) {
             case NUMBER:
-                dbFunction = o -> yyyydd(num, (Number) column1.normalizeValue(o));
+                dbFunction = o -> yyyydd(num, column1.normalizeValue(o));
                 break;
             case STRING:
-                dbFunction = o -> yyyydd(num, (String) column1.normalizeValue(o));
+                dbFunction = o -> yyyydd(num, column1.normalizeValue(o));
                 break;
             case BLOB:
-                dbFunction = o -> yyyydd(num, (byte[]) column1.normalizeValue(o));
+                dbFunction = o -> yyyydd(num, column1.normalizeValue(o));
                 break;
             case TIME:
-                dbFunction = o -> yyyydd(num, (Duration) column1.normalizeValue(o));
+                dbFunction = o -> yyyydd(num, column1.normalizeValue(o));
                 break;
             case DATE:
-                dbFunction = o -> yyyydd(num, (LocalDate) column1.normalizeValue(o));
+                dbFunction = o -> yyyydd(num, column1.normalizeValue(o));
                 break;
             case TIMESTAMP:
-                dbFunction = o -> yyyydd(num, (LocalDateTime) column1.normalizeValue(o));
+                dbFunction = o -> yyyydd(num, column1.normalizeValue(o));
                 break;
             default:
                 throw new IllegalStateException("Unexpected value: " + column1.getType());
@@ -846,22 +766,22 @@ public class AutoFunctionFactory {
         ToIntFunction<Object> dbFunction;
         switch (column1.getType()) {
             case NUMBER:
-                dbFunction = o -> yyyyWeek(num, (Number) column1.normalizeValue(o));
+                dbFunction = o -> yyyyWeek(num, column1.normalizeValue(o));
                 break;
             case STRING:
-                dbFunction = o -> yyyyWeek(num, (String) column1.normalizeValue(o));
+                dbFunction = o -> yyyyWeek(num, column1.normalizeValue(o));
                 break;
             case BLOB:
-                dbFunction = o -> yyyyWeek(num, (byte[]) column1.normalizeValue(o));
+                dbFunction = o -> yyyyWeek(num, column1.normalizeValue(o));
                 break;
             case TIME:
-                dbFunction = o -> yyyyWeek(num, (Duration) column1.normalizeValue(o));
+                dbFunction = o -> yyyyWeek(num, column1.normalizeValue(o));
                 break;
             case DATE:
-                dbFunction = o -> yyyyWeek(num, (LocalDate) column1.normalizeValue(o));
+                dbFunction = o -> yyyyWeek(num, column1.normalizeValue(o));
                 break;
             case TIMESTAMP:
-                dbFunction = o -> yyyyWeek(num, (LocalDateTime) column1.normalizeValue(o));
+                dbFunction = o -> yyyyWeek(num, column1.normalizeValue(o));
                 break;
             default:
                 throw new IllegalStateException("Unexpected value: " + column1.getType());
@@ -933,38 +853,38 @@ public class AutoFunctionFactory {
 
     public static int mm(int num, Object o) {
         if (o == null) return 0;
-        long mm ;
+        long mm;
         if (o instanceof String) {
             o = LocalDate.parse((String) o);
         }
         if (o instanceof LocalDate) {
             LocalDate localDate = (LocalDate) o;
             mm = localDate.getMonthValue();
-        }else if (o instanceof LocalDateTime) {
+        } else if (o instanceof LocalDateTime) {
             LocalDateTime localDateTime = (LocalDateTime) o;
             mm = localDateTime.getMonthValue();
-        }else {
+        } else {
             throw new UnsupportedOperationException();
         }
-        return (int) (mm % num);
+        return (int) Math.abs(mm % num);
     }
 
     public static int dd(int num, Object o) {
         if (o == null) return 0;
-        long day ;
+        long day;
         if (o instanceof String) {
             o = LocalDate.parse((String) o);
         }
         if (o instanceof LocalDate) {
             LocalDate localDate = (LocalDate) o;
             day = localDate.getDayOfMonth();
-        }else if (o instanceof LocalDateTime) {
+        } else if (o instanceof LocalDateTime) {
             LocalDateTime localDateTime = (LocalDateTime) o;
             day = localDateTime.getDayOfMonth();
-        }else {
+        } else {
             throw new UnsupportedOperationException();
         }
-        return (int) (day% num);
+        return (int) Math.abs(day % num);
     }
 
     public static int mmdd(int num, Object o) {
@@ -976,13 +896,13 @@ public class AutoFunctionFactory {
         if (o instanceof LocalDate) {
             LocalDate localDate = (LocalDate) o;
             day = localDate.getDayOfYear();
-        }else if (o instanceof LocalDateTime) {
+        } else if (o instanceof LocalDateTime) {
             LocalDateTime localDateTime = (LocalDateTime) o;
             day = localDateTime.getDayOfYear();
-        }else {
+        } else {
             throw new UnsupportedOperationException();
         }
-        return (int)((day) % num);
+        return (int) Math.abs(day % num);
     }
 
     public static int strHash(int num, int startIndex, int endIndex, int valType, int randSeed, Object value) {
@@ -992,7 +912,7 @@ public class AutoFunctionFactory {
             return hashCode(s, randSeed) % num;
         }
         if (valType == 1) {
-            return (int)(Long.parseLong(s) % num);
+            return (int) Math.abs((Long.parseLong(s)) % num);
         }
         throw new UnsupportedOperationException();
     }
@@ -1015,7 +935,7 @@ public class AutoFunctionFactory {
         } else {
             throw new UnsupportedOperationException();
         }
-        return (int) ((YYYY * 54 + WEEK) % num);
+        return (int) Math.abs((YYYY * 54 + WEEK) % num);
     }
 
     public static int week(int num, Object o) {
@@ -1033,7 +953,7 @@ public class AutoFunctionFactory {
         } else {
             throw new UnsupportedOperationException();
         }
-        return (int) ((day) % num);
+        return (int) Math.abs(day % num);
     }
 
     public static int yyyydd(int num, Object o) {
@@ -1054,7 +974,7 @@ public class AutoFunctionFactory {
         } else {
             throw new UnsupportedOperationException();
         }
-        return (int) ((YYYY * 366 + DD) % num);
+        return (int) Math.abs(((YYYY * 366 + DD)) % num);
     }
 
     public static int yyyymm(int num, Object o) {
@@ -1077,7 +997,7 @@ public class AutoFunctionFactory {
         if (YYYY == null && MM == null) {
             throw new UnsupportedOperationException();
         }
-        return (YYYY * 12 + MM) % num;
+        return Math.abs((YYYY * 12 + MM) % num);
     }
 
     public static int singleRangeHash(int num, int n, Object o) {
@@ -1093,12 +1013,12 @@ public class AutoFunctionFactory {
 
     public static int singleRangeHash(int num, int n, String o) {
         if (o == null) o = "null";
-        return hashCode(o.substring(n)) % num;
+        return Math.abs(hashCode(o.substring(n)) % num);
     }
 
     public static int singleRangeHash(int num, Number o) {
         if (o == null) o = 0;
-        return (int) (o.longValue() % num);
+        return (int) Math.abs((o.longValue()) % num);
     }
 
     public static int singleRightShift(int num, int shift, Object o) {
@@ -1113,11 +1033,11 @@ public class AutoFunctionFactory {
 
     public static int singleRightShift(int num, int shift, String o) {
         if (o == null) o = "null";
-        return hashCode(o) >> shift % num;
+        return (int) Math.abs((Long.parseLong(o) >> shift) % num);
     }
 
     public static int singleRightShift(int num, int shift, Number o) {
-        return (int) (o.longValue() >> shift % num);
+        return (int) Math.abs((o.longValue() >> shift) % num);
     }
 
     public static int singleModHash(int num, Object o) {
@@ -1132,16 +1052,39 @@ public class AutoFunctionFactory {
 
     public static int singleModHash(int num, String o) {
         if (o == null) o = "null";
-        return singleModHash(hashCode(o), num);
+        return singleModHash(num, hashCode(o));
     }
 
     public static int singleModHash(int num, Number o) {
         if (o == null) {
             o = 0;
         }
-        return (int) (o.longValue() % num);
+        return (int) Math.abs(o.longValue() % num);
     }
 
+    public static int singleDivHash(int num, Number o) {
+        if (o == null) {
+            o = 0;
+        }
+        return (int) Math.abs(o.longValue() / num);
+    }
+
+    public static int singleDivHash(int num, String o) {
+        if (o == null) {
+            o = "null";
+        }
+        return (int) Math.abs(hashCode(o) / num);
+    }
+
+    public static int singleDivHash(int num, Object o) {
+        if (o instanceof Number) {
+            return singleDivHash(num, (Number) o);
+        }
+        if (o instanceof String) {
+            return singleDivHash(num, (String) o);
+        }
+        throw new UnsupportedOperationException();
+    }
 //    public static int singleRemainderHash(int num, Object o) {
 //        if (o instanceof Number) {
 //            return singleRemainderHash(num, (Number) o);
@@ -1155,7 +1098,7 @@ public class AutoFunctionFactory {
 
     public static int singleRemainderHash(int num, String o) {
         if (o == null) o = "null";
-        return hashCode(o) % num;
+        return Math.abs(hashCode(o) % num);
     }
 
     public static int singleRemainderHash(int num, Number o) {
@@ -1163,8 +1106,7 @@ public class AutoFunctionFactory {
             o = 1;
         }
         long l = o.longValue();
-        long l1 = l % num;
-        return (int) l1;
+        return (int) Math.abs(l % num);
     }
 
     @Nullable
@@ -1219,17 +1161,4 @@ public class AutoFunctionFactory {
 
     }
 
-    @Getter
-    static class IndexDataNode extends BackendTableInfo {
-
-        private final int dbIndex;
-        private final int tableIndex;
-
-        public IndexDataNode(String targetName, String targetSchema, String targetTable,
-                             int dbIndex, int tableIndex) {
-            super(targetName, targetSchema, targetTable);
-            this.dbIndex = dbIndex;
-            this.tableIndex = tableIndex;
-        }
-    }
 }

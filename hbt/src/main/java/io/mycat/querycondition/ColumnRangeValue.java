@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -14,8 +14,8 @@
  */
 package io.mycat.querycondition;
 
-import com.alibaba.fastsql.sql.ast.statement.SQLColumnDefinition;
-import com.alibaba.fastsql.sql.ast.statement.SQLTableSource;
+import com.alibaba.druid.sql.ast.statement.SQLColumnDefinition;
+import com.alibaba.druid.sql.ast.statement.SQLTableSource;
 /**
  * @author Junwen Chen
  **/

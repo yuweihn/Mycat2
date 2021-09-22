@@ -1,10 +1,12 @@
 package io.mycat;
 
-public interface ConfigOps extends AutoCloseable{
+import io.vertx.core.Future;
 
-    Object  currentConfig();
+public interface ConfigOps extends AutoCloseable {
 
-    void commit(Object ops)throws Exception ;
+    Object currentConfig();
+
+    void commit(Object ops) throws Exception;
 
     void close();
 }

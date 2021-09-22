@@ -21,12 +21,12 @@ public class AddSequenceTest implements MycatTest {
     @Test
     public void testAddSequence() throws Exception {
 
-        try (Connection connection = getMySQLConnection(8066)) {
+        try (Connection connection = getMySQLConnection(DB_MYCAT);) {
             execute(connection,RESET_CONFIG);
             execute(connection, "CREATE DATABASE db1");
 
 
-            try (Connection mySQLConnection = getMySQLConnection(3306)) {
+            try (Connection mySQLConnection = getMySQLConnection(DB1)) {
                 try (Statement statement = mySQLConnection.createStatement()) {
                     statement.execute("use db1");
                     statement.execute("DROP TABLE IF EXISTS MYCAT_SEQUENCE;");
@@ -68,7 +68,7 @@ public class AddSequenceTest implements MycatTest {
                     "  PRIMARY KEY (`id`),\n" +
                     "  KEY `id` (`id`)\n" +
                     ") ENGINE=InnoDB  DEFAULT CHARSET=utf8"
-                    + " dbpartition by hash(id) tbpartition by hash(id) tbpartitions 2 dbpartitions 2;");
+                    + " dbpartition by mod_hash(id) tbpartition by mod_hash(id) tbpartitions 2 dbpartitions 2;");
             execute(connection, "delete from  db1.travelrecord");
             execute(connection, "INSERT INTO `db1`.`travelrecord` (`user_id`) VALUES ('9999999999');");
             List<Map<String, Object>> maps1 = executeQuery(connection, "select LAST_INSERT_ID()");
@@ -77,7 +77,7 @@ public class AddSequenceTest implements MycatTest {
                     "\t\"name\":\"db1_travelrecord\",\n" +
                     "\t\"clazz\":\"io.mycat.plug.sequence.SequenceMySQLGenerator\",\n" +
                     "} */");
-            try (Connection mySQLConnection = getMySQLConnection(3306)) {
+            try (Connection mySQLConnection = getMySQLConnection(DB1)) {
                 try (Statement statement = mySQLConnection.createStatement()) {
                     statement.execute("use db1");
                     statement.execute("update `db1`.`MYCAT_SEQUENCE` set `current_value` = '0' where name = 'db1_travelrecord';");

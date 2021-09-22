@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <mycat>
+ * Copyright (C) <2021>  <mycat>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -14,7 +14,7 @@
  */
 package io.mycat.router.mycat1xfunction;
 
-import io.mycat.config.ShardingFuntion;
+import io.mycat.config.ShardingFunction;
 import io.mycat.router.CustomRuleFunction;
 import io.mycat.router.ShardingTableHandler;
 import io.mycat.router.function.AutoFunctionFactory;
@@ -37,7 +37,7 @@ public enum PartitionRuleFunctionManager {
     }
 
     public static CustomRuleFunction getRuleAlgorithm(ShardingTableHandler tableHandler,
-                                                      ShardingFuntion funtion)
+                                                      ShardingFunction funtion)
             throws Exception {
         boolean auto = funtion.getName() == null && funtion.getClazz() == null;
         if (!auto) {
@@ -50,4 +50,5 @@ public enum PartitionRuleFunctionManager {
         }
         return AutoFunctionFactory.getTableFunction(tableHandler,funtion);
     }
+
 }

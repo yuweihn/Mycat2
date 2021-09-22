@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -111,16 +111,6 @@ public abstract class MySQLDatasource implements MycatDataSource {
             }
         }) < this.datasourceConfig.getMaxCon();
     }
-//
-//    public int decrementUsedCounter() {
-//        LOGGER.info("decrementUsedCounter");
-//        return usedCounter.decrementAndGet();
-//    }
-//
-//    public int tryIncrementUsedCounter() {
-//        LOGGER.info("tryIncrementUsedCounter");
-//        return usedCounter.incrementAndGet();
-//    }
 
     public String getInitSqlForProxy() {
         List<String> initSqls = datasourceConfig.getInitSqls();
@@ -144,12 +134,8 @@ public abstract class MySQLDatasource implements MycatDataSource {
         return this.datasourceConfig.getIdleTimeout();
     }
 
-
     public int getConnectionCounter() {
         return connectionCounter.get();
     }
 
-//    public int getUsedCounter() {
-//        return usedCounter.get();
-//    }
 }

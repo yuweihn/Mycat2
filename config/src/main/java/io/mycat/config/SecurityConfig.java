@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <gaozhiwen>
+ * Copyright (C) <2021>  <gaozhiwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,7 +27,8 @@ import java.util.Map;
 @Data
 public class SecurityConfig {
     private boolean isIgnorePassword;
-    private Map<String,UserConfig> users = new HashMap<>();
+    private Map<String, UserConfig> users = new HashMap<>();
+
     @Data
     public static class UserConfig {
         private String password;

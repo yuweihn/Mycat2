@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,8 +22,8 @@ import java.util.Map;
 
 /**
  * @author jamie12221
- *  date 2019-05-05 16:22
- *
+ * date 2019-05-05 16:22
+ * <p>
  * mysql 状态 字符集 INDEX_TO_CHARSET
  **/
 public class MySQLCollationIndex {

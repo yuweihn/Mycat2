@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -27,21 +27,20 @@ public enum TransactionType {
     JDBC_TRANSACTION_TYPE("xa"),
     ;
 
+    public static final TransactionType DEFAULT = TransactionType.PROXY_TRANSACTION_TYPE;
     private String name;
 
     TransactionType(String name) {
         this.name = name;
     }
 
-    public static final TransactionType DEFAULT = TransactionType.JDBC_TRANSACTION_TYPE;
-
     public static TransactionType parse(String name) {
-        if(TransactionType.JDBC_TRANSACTION_TYPE.name.equalsIgnoreCase(name)){
+        if (TransactionType.JDBC_TRANSACTION_TYPE.name.equalsIgnoreCase(name)) {
             return TransactionType.JDBC_TRANSACTION_TYPE;
         }
-        if(TransactionType.PROXY_TRANSACTION_TYPE.name.equalsIgnoreCase(name)){
+        if (TransactionType.PROXY_TRANSACTION_TYPE.name.equalsIgnoreCase(name)) {
             return TransactionType.PROXY_TRANSACTION_TYPE;
         }
-        throw new IllegalArgumentException("unsupported:"+name);
+        throw new IllegalArgumentException("unsupported:" + name);
     }
 }

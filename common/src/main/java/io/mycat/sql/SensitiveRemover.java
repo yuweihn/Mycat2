@@ -1,13 +1,27 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.sql;
 
-import com.alibaba.fastsql.sql.SQLUtils;
-import com.alibaba.fastsql.sql.ast.SQLStatement;
-import com.alibaba.fastsql.sql.ast.expr.SQLIdentifierExpr;
-import com.alibaba.fastsql.sql.ast.expr.SQLPropertyExpr;
-import com.alibaba.fastsql.sql.ast.statement.SQLExprTableSource;
-import com.alibaba.fastsql.sql.ast.statement.SQLJoinTableSource;
-import com.alibaba.fastsql.sql.ast.statement.SQLSelectItem;
-import com.alibaba.fastsql.sql.dialect.mysql.visitor.MySqlASTVisitorAdapter;
+import com.alibaba.druid.sql.SQLUtils;
+import com.alibaba.druid.sql.ast.SQLStatement;
+import com.alibaba.druid.sql.ast.expr.SQLIdentifierExpr;
+import com.alibaba.druid.sql.ast.expr.SQLPropertyExpr;
+import com.alibaba.druid.sql.ast.statement.SQLExprTableSource;
+import com.alibaba.druid.sql.ast.statement.SQLJoinTableSource;
+import com.alibaba.druid.sql.ast.statement.SQLSelectItem;
+import com.alibaba.druid.sql.dialect.mysql.visitor.MySqlASTVisitorAdapter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -141,28 +155,32 @@ public class SensitiveRemover {
                 }
                 return super.visit(x);
             }
+
             @Override
             public boolean visit(SQLJoinTableSource x) {
                 String alias = x.getAlias();
-                if (alias!=null){
-                    x.setAlias( "a_" + aliasAcc.getAndIncrement());
+                if (alias != null) {
+                    x.setAlias("a_" + aliasAcc.getAndIncrement());
                 }
                 return super.visit(x);
             }
+
             @Override
             public boolean visit(SQLPropertyExpr x) {
                 String newColumnName = "p_" + propertyAcc.getAndIncrement();
                 x.setName(newColumnName);
                 return super.visit(x);
             }
+
             @Override
             public boolean visit(SQLSelectItem x) {
                 String alias = x.getAlias();
-                if (alias!=null){
-                    x.setAlias( "a_" + aliasAcc.getAndIncrement());
+                if (alias != null) {
+                    x.setAlias("a_" + aliasAcc.getAndIncrement());
                 }
                 return super.visit(x);
             }
+
             @Override
             public boolean visit(SQLIdentifierExpr x) {
                 String newColumnName = "i_" + columnAcc.getAndIncrement();

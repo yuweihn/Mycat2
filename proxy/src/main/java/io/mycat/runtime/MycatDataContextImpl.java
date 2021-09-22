@@ -1,9 +1,28 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.runtime;
 
-import com.alibaba.fastsql.sql.SQLUtils;
+import cn.mycat.vertx.xa.MySQLManager;
+import cn.mycat.vertx.xa.XaLog;
+import com.alibaba.druid.sql.SQLUtils;
 import io.mycat.*;
 import io.mycat.beans.mycat.TransactionType;
 import io.mycat.beans.mysql.MySQLIsolation;
+import io.mycat.util.packet.AbstractWritePacket;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.ObservableEmitter;
 import lombok.Getter;
 import lombok.Setter;
 import org.slf4j.Logger;
@@ -12,6 +31,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -20,11 +40,9 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MycatDataContextImpl implements MycatDataContext {
     final static Logger log = LoggerFactory.getLogger(MycatDataContextImpl.class);
     private final long id;
-    private TransactionType transactionType;
     private String defaultSchema;
     private String lastMessage;
     private long affectedRows;
-    private int serverStatus;
     private int warningCount;
     private long lastInsertId;
     private int serverCapabilities;
@@ -36,9 +54,6 @@ public class MycatDataContextImpl implements MycatDataContext {
     private Charset charset;
     private int charsetIndex;
 
-
-    private int autoCommit = 1;
-    private MySQLIsolation isolation = MySQLIsolation.REPEATED_READ;
     protected int localInFileRequestState = 0;
     private long selectLimit = -1;
     private long netWriteTimeout = -1;
@@ -49,15 +64,18 @@ public class MycatDataContextImpl implements MycatDataContext {
     private volatile boolean inTransaction = false;
 
     private MycatUser user;
-    private TransactionSession transactionSession = new ProxyTransactionSession(this);
-    private TransactionSessionRunner runner;
+    private TransactionSession transactionSession;
     private final AtomicBoolean cancelFlag = new AtomicBoolean(false);
     private final Map<Long, PreparedStatement> preparedStatementMap = new HashMap<>();
 
-    private static final AtomicLong IDS = new AtomicLong();
+    public static final AtomicLong IDS = new AtomicLong();
 
-    public MycatDataContextImpl(TransactionSessionRunner runner) {
-        this.runner = runner;
+    private final AtomicLong prepareStatementIds = new AtomicLong(0);
+    private ObservableEmitter<AbstractWritePacket> emitter;
+    private volatile Observable<AbstractWritePacket> observable;
+    private Map<String, Object> processStateMap;
+
+    public MycatDataContextImpl() {
         this.id = IDS.getAndIncrement();
         switchTransaction(TransactionType.DEFAULT);
     }
@@ -70,7 +88,7 @@ public class MycatDataContextImpl implements MycatDataContext {
 
     @Override
     public TransactionType transactionType() {
-        return transactionType;
+        return transactionSession.transactionType();
     }
 
     @Override
@@ -86,19 +104,41 @@ public class MycatDataContextImpl implements MycatDataContext {
 
     @Override
     public void switchTransaction(TransactionType transactionSessionType) {
-        this.transactionType = transactionSessionType;
+        Objects.requireNonNull(transactionSessionType);
+        TransactionSession transactionSession = null;
+        switch (transactionSessionType) {
+            case PROXY_TRANSACTION_TYPE:
+                transactionSession = new ProxyTransactionSession(() -> MetaClusterCurrent.wrapper(MySQLManager.class), MetaClusterCurrent.wrapper(XaLog.class));
+                break;
+            case JDBC_TRANSACTION_TYPE:
+                transactionSession = new XaTransactionSession(() -> MetaClusterCurrent.wrapper(MySQLManager.class), MetaClusterCurrent.wrapper(XaLog.class));
+                break;
+            default:
+                throw new IllegalStateException("Unexpected transaction type: " + transactionSessionType);
+        }
+        if (this.transactionSession != null) {
+            this.transactionSession.deliverTo(transactionSession);
+
+        }
+        this.transactionSession = transactionSession;
+    }
+
+    public void setUser(MycatUser user) {
+        this.user = user;
+        String transactionType = user.getUserConfig().getTransactionType();
+        switchTransaction(TransactionType.parse(transactionType));
     }
 
     @Override
-    public Object getVariable(boolean global,String target) {
-        if (global){
+    public Object getVariable(boolean global, String target) {
+        if (global) {
             MysqlVariableService variableService = MetaClusterCurrent.wrapper(MysqlVariableService.class);
             return variableService.getGlobalVariable(target);
         }
         if (target.contains("autocommit")) {
-            return this.isAutocommit() ? "1" : "0" ;
+            return this.isAutocommit() ? "1" : "0";
         } else if (target.equalsIgnoreCase("xa")) {
-            return this.getTransactionType() == TransactionType.JDBC_TRANSACTION_TYPE?"1":"0";
+            return this.transactionType() == TransactionType.JDBC_TRANSACTION_TYPE ? "1" : "0";
         } else if (target.contains("net_write_timeout")) {
             return this.getVariable(MycatDataContextEnum.NET_WRITE_TIMEOUT);
         } else if ("sql_select_limit".equalsIgnoreCase(target)) {
@@ -109,8 +149,8 @@ public class MycatDataContextImpl implements MycatDataContext {
             return this.getVariable(MycatDataContextEnum.IS_READ_ONLY);
         } else if (target.contains("current_user")) {
             return this.getUser().getUserName();
-        }else if (target.contains("transaction_policy")){
-            return this.getTransactionType().getName();
+        } else if (target.contains("transaction_policy")) {
+            return this.transactionType().getName();
         }
         MysqlVariableService variableService = MetaClusterCurrent.wrapper(MysqlVariableService.class);
         return variableService.getVariable(target);
@@ -123,10 +163,10 @@ public class MycatDataContextImpl implements MycatDataContext {
                 setDefaultSchema((String) value);
                 break;
             case IS_MULTI_STATEMENT_SUPPORT:
-                setMultiStatementSupport(((Number)value).intValue());
+                setMultiStatementSupport(((Number) value).intValue());
                 break;
             case IS_LOCAL_IN_FILE_REQUEST_STATE:
-                setLocalInFileRequestState(((Number)value).intValue());
+                setLocalInFileRequestState(((Number) value).intValue());
                 break;
             case AFFECTED_ROWS:
                 setAffectedRows((Integer) value);
@@ -190,7 +230,7 @@ public class MycatDataContextImpl implements MycatDataContext {
             case IS_MULTI_STATEMENT_SUPPORT:
                 return multiStatementSupport;
             case IS_LOCAL_IN_FILE_REQUEST_STATE:
-                return  localInFileRequestState;
+                return localInFileRequestState;
             case AFFECTED_ROWS:
                 return getAffectedRows();
             case WARNING_COUNT:
@@ -222,7 +262,7 @@ public class MycatDataContextImpl implements MycatDataContext {
                 return isReadOnly()?1:0;
             }
             case IS_IN_TRANSCATION: {
-                return isInTransaction()?1:0;
+                return isInTransaction() ? 1 : 0;
             }
             case USER_INFO:
                 return user;
@@ -240,30 +280,37 @@ public class MycatDataContextImpl implements MycatDataContext {
         return false;
     }
 
+    @Override
     public boolean isAutocommit() {
-        return autoCommit==1;
+        return transactionSession.isAutocommit();
     }
 
+    @Override
     public void setAutoCommit(boolean autoCommit) {
-        this.autoCommit = autoCommit?1:0;
+        transactionSession.setAutocommit(autoCommit);
     }
 
+    @Override
     public MySQLIsolation getIsolation() {
-        return isolation;
+        return transactionSession.getTransactionIsolation();
     }
 
+    @Override
     public void setIsolation(MySQLIsolation isolation) {
-        this.isolation = isolation;
+        this.transactionSession.setTransactionIsolation(isolation);
     }
 
+    @Override
     public boolean isInTransaction() {
-        return inTransaction;
+        return transactionSession.isInTransaction();
     }
 
+    @Override
     public void setInTransaction(boolean inTransaction) {
         this.inTransaction = inTransaction;
     }
 
+    @Override
     public MycatUser getUser() {
         return user;
     }
@@ -290,11 +337,7 @@ public class MycatDataContextImpl implements MycatDataContext {
         return cancelFlag;
     }
 
-    @Override
-    public void run(Runnable runnable) {
-        runner.run(this, runnable);
-    }
-//
+    //
 //    @Override
 //    public UpdateRowIteratorResponse update(String targetName, String sql) {
 //        MycatConnection defaultConnection = TransactionSessionUtil.getDefaultConnection(targetName, true, null, transactionSession);
@@ -335,9 +378,18 @@ public class MycatDataContextImpl implements MycatDataContext {
 //        Objects.requireNonNull(connection);
 //        return connection.executeQuery(null,sql);
 //    }
-
+    @Override
     public String resolveDatasourceTargetName(String targetName) {
-        return transactionSession.resolveFinalTargetName(targetName);
+        return resolveDatasourceTargetName(targetName, false);
+    }
+
+    @Override
+    public String resolveDatasourceTargetName(String targetName, boolean master) {
+        ReplicaBalanceType balanceType = ReplicaBalanceType.NONE;
+        if (processStateMap != null) {
+            balanceType = (ReplicaBalanceType) processStateMap.getOrDefault("REP_BALANCE_TYPE", ReplicaBalanceType.NONE);
+        }
+        return transactionSession.resolveFinalTargetName(targetName, master, balanceType);
     }
 
     @Override
@@ -346,17 +398,17 @@ public class MycatDataContextImpl implements MycatDataContext {
     }
 
     @Override
-    public void close() {
-        if (transactionSession != null) {
-            transactionSession.clearJdbcConnection();
-            transactionSession.close();
-        }
-        cancelFlag.set(true);
+    public long nextPrepareStatementId() {
+        return prepareStatementIds.getAndIncrement();
     }
 
     @Override
-    public void block(Runnable runnable) {
-        runner.block(this, runnable);
+    public void close() {
+        if (transactionSession != null) {
+            transactionSession.closeStatementState();
+            transactionSession.close();
+        }
+        cancelFlag.set(true);
     }
 
     @Override
@@ -367,5 +419,20 @@ public class MycatDataContextImpl implements MycatDataContext {
     @Override
     public int hashCode() {
         return (int) id;
+    }
+
+    @Override
+    public void setLastInsertId(long lastInsertId) {
+        this.lastInsertId = lastInsertId;
+    }
+
+    @Override
+    public Map<String, Object> getProcessStateMap() {
+        return processStateMap;
+    }
+
+    @Override
+    public void putProcessStateMap(Map<String, Object> map) {
+        this.processStateMap = map;
     }
 }

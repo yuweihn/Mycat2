@@ -1,5 +1,4 @@
 {
-  "datasourceProvider":"io.mycat.datasource.jdbc.datasourceprovider.DruidDatasourceProvider",
   "loadBalance":{
     "defaultLoadBalance":"BalanceRandom",
     "loadBalances":[]
@@ -12,13 +11,13 @@
     },
     "idleTimer":{
       "initialDelay":3,
-      "period":15,
+      "period":60000,
       "timeUnit":"SECONDS"
     },
-    "ip":"127.0.0.1",
+    "ip":"0.0.0.0",
     "mycatId":1,
     "port":8066,
-    "reactorNumber":8,
+    "reactorNumber":1,
     "tempDirectory":null,
     "timeWorkerPool":{
       "corePoolSize":0,
@@ -29,12 +28,13 @@
       "timeUnit":"MINUTES"
     },
     "workerPool":{
-      "corePoolSize":8,
+      "corePoolSize":1,
       "keepAliveTime":1,
       "maxPendingLimit":65535,
       "maxPoolSize":1024,
       "taskTimeout":5,
       "timeUnit":"MINUTES"
-    }
+    },
+    "ignoreCast": true
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -28,7 +28,7 @@ import lombok.ToString;
 @EqualsAndHashCode
 @ToString
 @Builder
-public class BackendTableInfo implements DataNode {
+public class BackendTableInfo implements Partition {
     private String targetName;
     private SchemaInfo schemaInfo;
 
@@ -42,7 +42,7 @@ public class BackendTableInfo implements DataNode {
     }
 
     public String getUniqueName() {
-        return targetName + "." + schemaInfo.getTargetSchemaTable();
+        return targetName + "." + schemaInfo.targetSchemaTable();
     }
 
     @Override
@@ -56,8 +56,23 @@ public class BackendTableInfo implements DataNode {
     }
 
     @Override
+    public Integer getDbIndex() {
+        return null;
+    }
+
+    @Override
+    public Integer getTableIndex() {
+        return null;
+    }
+
+    @Override
+    public Integer getIndex() {
+        return null;
+    }
+
+    @Override
     public String getTargetSchemaTable() {
-        return schemaInfo.getTargetSchemaTable();
+        return schemaInfo.targetSchemaTable();
     }
 
     @Override

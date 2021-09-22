@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -15,20 +15,15 @@
 package io.mycat.calcite.table;
 
 import com.google.common.collect.ImmutableList;
-import io.mycat.DataNode;
+import io.mycat.Partition;
 import io.mycat.TableHandler;
-import io.mycat.hbt3.AbstractMycatTable;
-import io.mycat.hbt3.Distribution;
-import io.mycat.hbt4.ShardingInfo;
+import io.mycat.calcite.rewriter.Distribution;
 import lombok.Getter;
 import org.apache.calcite.plan.RelOptTable;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.logical.LogicalTableScan;
-import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.schema.Statistic;
 import org.apache.calcite.schema.TranslatableTable;
-
-import java.util.List;
 
 /**
  * @author Junwen Chen
@@ -36,13 +31,13 @@ import java.util.List;
 @Getter
 public class MycatPhysicalTable extends MycatTableBase implements AbstractMycatTable, TranslatableTable {
     final MycatLogicTable logicTable;
-    final DataNode dataNode;//真实表名
+    final Partition partition;//真实表名
     final Statistic statistic;//MycatLogicTable的构造函数没有statistic
 
-    public MycatPhysicalTable(MycatLogicTable logicTable, DataNode dataNode) {
+    public MycatPhysicalTable(MycatLogicTable logicTable, Partition partition) {
         this.logicTable = logicTable;
-        this.dataNode = dataNode;
-        this.statistic = Statistics.createStatistic(logicTable.getStatistic(), dataNode);
+        this.partition = partition;
+        this.statistic = Statistics.createStatistic(logicTable.getStatistic(), partition);
     }
 
     @Override
@@ -56,30 +51,9 @@ public class MycatPhysicalTable extends MycatTableBase implements AbstractMycatT
     }
 
     @Override
-    public Distribution computeDataNode(List<RexNode> conditions) {
-        return Distribution.of(ImmutableList.of(dataNode),false, Distribution.Type.PHY);
+    public Distribution createDistribution() {
+        throw new UnsupportedOperationException();
     }
-
-    @Override
-    public boolean isSingle(List<RexNode> conditions) {
-        return true;
-    }
-
-    @Override
-    public Distribution computeDataNode() {
-        return Distribution.of(ImmutableList.of(dataNode),false, Distribution.Type.PHY);
-    }
-
-    @Override
-    public ShardingInfo getShardingInfo() {
-        return null;
-    }
-
-    @Override
-    public boolean isPartial(List<RexNode> conditions) {
-        return false;
-    }
-
     @Override
     public RelNode toRel(RelOptTable.ToRelContext context, RelOptTable relOptTable) {
         return LogicalTableScan.create(context.getCluster(),relOptTable,ImmutableList.of());

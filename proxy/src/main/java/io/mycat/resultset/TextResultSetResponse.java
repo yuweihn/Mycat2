@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -14,19 +14,15 @@
  */
 package io.mycat.resultset;
 
+import io.mycat.MySQLPacketUtil;
 import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.beans.mycat.MycatRowMetaData;
-import io.mycat.MySQLPacketUtil;
 
 import java.math.BigDecimal;
-import java.sql.Time;
-import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.util.Date;
 import java.util.Iterator;
 
 /**
@@ -55,7 +51,7 @@ public class TextResultSetResponse extends AbstractMycatResultSetResponse {
             @Override
             public byte[] next() {
                 byte[][] row = new byte[columnCount][];
-                for (int columnIndex = 1, rowIndex = 0; rowIndex < columnCount; columnIndex++, rowIndex++) {
+                for (int columnIndex = 0, rowIndex = 0; rowIndex < columnCount; columnIndex++, rowIndex++) {
                     int columnType = mycatRowMetaData.getColumnType(columnIndex);
                     row[rowIndex] = getValue(rowBaseIterator, convertor, columnIndex, columnType);
                 }
@@ -103,15 +99,8 @@ public class TextResultSetResponse extends AbstractMycatResultSetResponse {
                 res = convertor.convertShort(value);
                 break;
             }
+            case Types.BIGINT:
             case Types.INTEGER: {
-                int value = rowBaseIterator.getInt(columnIndex);
-                if (rowBaseIterator.wasNull()) {
-                    return null;
-                }
-                res = convertor.convertInteger(value);
-                break;
-            }
-            case Types.BIGINT: {
                 long value = rowBaseIterator.getLong(columnIndex);
                 if (rowBaseIterator.wasNull()) {
                     return null;
@@ -163,13 +152,14 @@ public class TextResultSetResponse extends AbstractMycatResultSetResponse {
                 break;
             }
             case Types.TIMESTAMP: {
-                LocalDateTime  value = rowBaseIterator.getTimestamp(columnIndex);
+                LocalDateTime value = rowBaseIterator.getTimestamp(columnIndex);
                 if (rowBaseIterator.wasNull()) {
                     return null;
                 }
                 res = convertor.convertTimeStamp(value);
                 break;
             }
+            case Types.CLOB:
             case Types.CHAR: {
 
             }
@@ -187,10 +177,8 @@ public class TextResultSetResponse extends AbstractMycatResultSetResponse {
                 }
                 break;
             }
-            case Types.BLOB: {
-
-            }
-            case Types.CLOB: {
+            case Types.BLOB:
+         {
                 res = rowBaseIterator.getBytes(columnIndex);
                 if (rowBaseIterator.wasNull()) {
                     return null;

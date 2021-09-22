@@ -1,16 +1,16 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
- *
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+ * <p>
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
+ * <p>
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
@@ -18,6 +18,8 @@ package io.mycat.beans.mysql.packet;
 
 
 import io.mycat.config.MySQLServerCapabilityFlags;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * https://mariadb.com/kb/en/library/err_packet/
@@ -31,7 +33,8 @@ public class ErrorPacketImpl implements ErrorPacket {
     private int progress;
     private byte[] progress_info;
     private byte mark = ' ';
-    private byte[] sqlState = DEFAULT_SQLSTATE;
+    private byte[] sqlState = "".getBytes(StandardCharsets.UTF_8);
+    private String message;
 
     public int getErrorCode() {
         return errno;
@@ -41,9 +44,7 @@ public class ErrorPacketImpl implements ErrorPacket {
         this.errno = errno;
     }
 
-    private String message;
-
-  public void writePayload(MySQLPayloadWriteView buffer, int serverCapabilities) {
+    public void writePayload(MySQLPayloadWriteView buffer, int serverCapabilities) {
         buffer.writeByte((byte) 0xff);
         buffer.writeFixInt(2, errno);
         if (errno == 0xFFFF) { /* progress reporting */
@@ -52,10 +53,10 @@ public class ErrorPacketImpl implements ErrorPacket {
             buffer.writeFixInt(3, progress);
             buffer.writeLenencString(progress_info);
         } else if (MySQLServerCapabilityFlags.isClientProtocol41(serverCapabilities)) {
-            buffer.writeByte(mark);
-            buffer.writeFixString(sqlState);
+//            buffer.writeByte(mark);
+//            buffer.writeFixString(sqlState);
             buffer.writeEOFString(message);
-        }else {
+        } else {
             buffer.writeEOFString(message);
         }
     }

@@ -1,3 +1,17 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.api.collector;
 
 import io.mycat.MycatTimeUtil;
@@ -54,85 +68,85 @@ public abstract class AbstractStringRowIterator implements RowBaseIterator {
 
     @Override
     public String getString(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         return o;
     }
 
     @Override
     public boolean getBoolean(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return false;
         return Boolean.parseBoolean(o);
     }
 
     @Override
     public byte getByte(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return 0;
         return Byte.parseByte(o);
     }
 
     @Override
     public short getShort(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return 0;
         return Short.parseShort(o);
     }
 
     @Override
     public int getInt(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return 0;
         return Integer.parseInt(o);
     }
 
     @Override
     public long getLong(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return 0;
         return Long.parseLong(o);
     }
 
     @Override
     public float getFloat(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return 0;
         return Float.parseFloat(o);
     }
 
     @Override
     public double getDouble(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return 0;
         return Double.parseDouble(o);
     }
 
     @Override
     public byte[] getBytes(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return null;
         return o.getBytes();
     }
 
     @Override
     public LocalDate getDate(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return null;
         return LocalDate.parse(o);
     }
 
     @Override
     public Duration getTime(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return null;
         return MycatTimeUtil.timeStringToTimeDuration(o);
     }
 
     @Override
     public LocalDateTime getTimestamp(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return null;
-        return (LocalDateTime)MycatTimeUtil.timestampStringToTimestamp(o);
+        return (LocalDateTime) MycatTimeUtil.timestampStringToTimestamp(o);
     }
 
     @Override
@@ -142,7 +156,7 @@ public abstract class AbstractStringRowIterator implements RowBaseIterator {
 
     @Override
     public InputStream getBinaryStream(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return null;
         return new ByteArrayInputStream(o.getBytes());
     }
@@ -155,7 +169,7 @@ public abstract class AbstractStringRowIterator implements RowBaseIterator {
 
     @Override
     public BigDecimal getBigDecimal(int columnIndex) {
-        String o = getString(currentRow[columnIndex - 1]);
+        String o = getString(currentRow[columnIndex ]);
         if (wasNull) return null;
         return new BigDecimal(o);
     }
@@ -212,6 +226,7 @@ public abstract class AbstractStringRowIterator implements RowBaseIterator {
             case Types.TIMESTAMP: {
                 return this.getTimestamp(columnIndex);
             }
+            case Types.CLOB:
             case Types.CHAR: {
 
             }
@@ -221,10 +236,8 @@ public abstract class AbstractStringRowIterator implements RowBaseIterator {
             case Types.LONGVARCHAR: {
                 return this.getString(columnIndex);
             }
-            case Types.BLOB: {
-
-            }
-            case Types.CLOB: {
+            case Types.BLOB:
+          {
                 return this.getBytes(columnIndex);
             }
             case Types.NULL: {

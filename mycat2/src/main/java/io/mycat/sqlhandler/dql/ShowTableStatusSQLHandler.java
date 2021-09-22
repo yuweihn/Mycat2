@@ -1,25 +1,33 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.sqlhandler.dql;
 
-import com.alibaba.fastsql.sql.SQLUtils;
-import com.alibaba.fastsql.sql.ast.SQLName;
-import com.alibaba.fastsql.sql.ast.expr.SQLIdentifierExpr;
-import com.alibaba.fastsql.sql.dialect.mysql.ast.statement.MySqlShowTableStatusStatement;
-import io.mycat.MetaClusterCurrent;
+import com.alibaba.druid.sql.ast.SQLName;
+import com.alibaba.druid.sql.ast.expr.SQLIdentifierExpr;
+import com.alibaba.druid.sql.dialect.mysql.ast.statement.MySqlShowTableStatusStatement;
 import io.mycat.MycatDataContext;
 import io.mycat.MycatException;
+import io.mycat.Response;
 import io.mycat.beans.mycat.ResultSetBuilder;
-import io.mycat.metadata.MetadataManager;
-import io.mycat.metadata.SchemaHandler;
-import io.mycat.replica.ReplicaSelectorRuntime;
 import io.mycat.sqlhandler.AbstractSQLHandler;
-import io.mycat.sqlhandler.ExecuteCode;
 import io.mycat.sqlhandler.SQLRequest;
-import io.mycat.util.Response;
+import io.vertx.core.Future;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.JDBCType;
-import java.util.Optional;
 
 /**
  * chenjunwen
@@ -29,64 +37,18 @@ public class ShowTableStatusSQLHandler extends AbstractSQLHandler<MySqlShowTable
     private static final Logger LOGGER = LoggerFactory.getLogger(ShowTableStatusSQLHandler.class);
 
     @Override
-    protected void onExecute(SQLRequest<MySqlShowTableStatusStatement> request, MycatDataContext dataContext, Response response) throws Exception {
+    protected Future<Void> onExecute(SQLRequest<MySqlShowTableStatusStatement> request, MycatDataContext dataContext, Response response) {
 
         MySqlShowTableStatusStatement ast = request.getAst();
         if (ast.getDatabase() == null && dataContext.getDefaultSchema() != null) {
             ast.setDatabase(new SQLIdentifierExpr(dataContext.getDefaultSchema()));
         }
         SQLName database = ast.getDatabase();
-        if (database == null){
-            response.sendError(new MycatException("NO DATABASES SELECTED"));
-            return ;
-        }
-        MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
-        ReplicaSelectorRuntime selectorRuntime = MetaClusterCurrent.wrapper(ReplicaSelectorRuntime.class);
-        Optional<SchemaHandler> schemaHandler = Optional.ofNullable(metadataManager.getSchemaMap()).map(i -> i.get(SQLUtils.normalize(ast.getDatabase().toString())));
-        String targetName = schemaHandler.map(i -> i.defaultTargetName()).map(name -> selectorRuntime.getDatasourceNameByReplicaName(name, true, null)).orElse(null);
-        if (targetName != null) {
-            response.proxySelect(targetName, ast.toString());
-        } else {
-            response.tryBroadcastShow(ast.toString());
-        }
-        return ;
-//        MySqlShowTableStatusStatement ast = request.getAst();
-//        if (ast.getDatabase() == null && dataContext.getDefaultSchema() != null) {
-//            ast.setDatabase(new SQLIdentifierExpr(dataContext.getDefaultSchema()));
-//        }
-//        SQLName database = ast.getDatabase();
-//        if (database == null){
-//            response.sendError(new MycatException("NO DATABASES SELECTED"));
-//            return ExecuteCode.PERFORMED;
-//        }
-//        Optional<SchemaHandler> schemaHandler = Optional.ofNullable(MetadataManager.INSTANCE.getSchemaMap()).map(i -> i.get(SQLUtils.normalize(ast.getDatabase().toString())));
-//        String targetName = schemaHandler.map(i -> i.defaultTargetName()).map(name -> ReplicaSelectorRuntime.INSTANCE.getDatasourceNameByReplicaName(name, true, null)).orElse(null);
-//        if (targetName != null) {
-//            response.proxySelect(targetName, ast.toString());
-//        } else {
-//            response.proxyShow(ast);
-//        }
 
-//        try {
-//            DDLManager.INSTANCE.updateTables();
-//            String databaseName = ast.getDatabase() == null ? dataContext.getDefaultSchema() :
-//                    SQLUtils.normalize(ast.getDatabase().getSimpleName());
-//
-//            String tableName = ast.getTableGroup() == null ? null
-//                    : SQLUtils.normalize(ast.getTableGroup().getSimpleName());
-//
-//            String sql = ShowStatementRewriter.showTableStatus(ast, databaseName, tableName);
-//
-//            try (RowBaseIterator query = MycatDBs.createClient(dataContext).query(sql)) {
-//                response.sendResultSet(() -> query, () -> {
-//                    throw new UnsupportedOperationException();
-//                });
-//            }
-//        }catch (Exception e){
-//            LOGGER.error("",e);
-//            response.sendError(e);
-//        }
-//        return ExecuteCode.PERFORMED;
+        if (database == null) {
+          return  response.sendError(new MycatException("NO DATABASES SELECTED"));
+        }
+       return response.proxySelectToPrototype(ast.toString());
     }
 
     private void addColumns(ResultSetBuilder resultSetBuilder) {

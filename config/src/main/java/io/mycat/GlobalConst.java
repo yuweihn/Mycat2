@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <gaozhiwen>
+ * Copyright (C) <2021>  <gaozhiwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,14 +20,16 @@ import io.mycat.config.MySQLServerCapabilityFlags;
 
 /**
  * Desc:
- *
+ * <p>
  * date: 24/09/2017,10/4/2019
+ *
  * @author: gaozhiwen
  */
 public class GlobalConst {
 
 
     public static final String SINGLE_NODE_HEARTBEAT_SQL = "select 1";
+    public static final String MASTER_SLAVE_HEARTBEAT_MASTER_SQL = "show master status";
     public static final String MASTER_SLAVE_HEARTBEAT_SQL = "show slave status";
     public static final String GARELA_CLUSTER_HEARTBEAT_SQL = "show status like 'wsrep%'";
     public static final String GROUP_REPLICATION_HEARTBEAT_SQL = "show slave status";

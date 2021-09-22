@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@ import io.mycat.beans.mysql.packet.MySQLPacket;
  * 结果集收集接口 int startIndex的含义应该是根据实际情况而定的
  *
  * @author jamie12221
- *  date 2019-05-10 13:21
+ * date 2019-05-10 13:21
  */
 
 public interface ResultSetTransfor {

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -16,7 +16,10 @@ package io.mycat.replica;
 
 import io.mycat.plug.loadBalance.LoadBalanceElement;
 import io.mycat.plug.loadBalance.SessionCounter;
+import io.mycat.replica.heartbeat.HeartbeatFlow;
 import lombok.ToString;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CopyOnWriteArraySet;
 
@@ -25,22 +28,26 @@ import java.util.concurrent.CopyOnWriteArraySet;
  */
 @ToString
 public class PhysicsInstanceImpl implements LoadBalanceElement, PhysicsInstance {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PhysicsInstanceImpl.class);
     final InstanceType type;
     final String name;
+    final SessionCounter sessionCounter;
     final ReplicaDataSourceSelector selector;
     final int weight;
-    final CopyOnWriteArraySet<SessionCounter> sessionCounters = new CopyOnWriteArraySet<>();
     volatile boolean alive;
     volatile boolean selectRead;
 
     public PhysicsInstanceImpl(String name, InstanceType type, boolean alive,
                                boolean selectRead,
-                               int weight, ReplicaDataSourceSelector selector) {
+                               int weight,
+                               SessionCounter sessionCounter,
+                               ReplicaDataSourceSelector selector) {
         this.type = type;
         this.name = name;
         this.alive = alive;
         this.selectRead = selectRead;
         this.weight = weight;
+        this.sessionCounter = sessionCounter;
         this.selector = selector;
     }
 
@@ -58,7 +65,40 @@ public class PhysicsInstanceImpl implements LoadBalanceElement, PhysicsInstance 
 
     @Override
     public boolean isMaster() {
-        return selector.writeDataSourceList.contains(this);
+        switch (selector.getType()) {
+            case SINGLE_NODE:
+            case MHA:
+            case MASTER_SLAVE:
+                if (selector.writeDataSourceList.contains(this)) {
+                    return selector.writeDataSourceList.size() == 1 || selector.writeDataSourceList.get(0) == this;
+                }
+                return false;
+            case MGR:
+            case GARELA_CLUSTER:
+            case NONE:
+            default:
+                return selector.writeDataSourceList.contains(this);
+        }
+    }
+
+    @Override
+    public boolean isBackup() {
+        switch (selector.getType()) {
+            case SINGLE_NODE:
+                return false;
+            case MHA:
+            case MASTER_SLAVE:
+                if (selector.writeDataSourceList.contains(this)) {
+                    return selector.writeDataSourceList.get(0) != this;
+                }
+                return false;
+            case MGR:
+                return false;
+            case GARELA_CLUSTER:
+            case NONE:
+            default:
+                return false;
+        }
     }
 
     @Override
@@ -68,17 +108,14 @@ public class PhysicsInstanceImpl implements LoadBalanceElement, PhysicsInstance 
 
     @Override
     public int getSessionCounter() {
-        int count = 0;
-        for (SessionCounter sessionCounter : sessionCounters) {
-            count += sessionCounter.getSessionCounter();
-        }
-        return count;
-    }
-    public void addSessionCounter(SessionCounter sessionCounter){
-        if (sessionCounter!=null){
-            sessionCounters.add(sessionCounter);
+        try {
+            return sessionCounter.getSessionCounter();
+        }catch (Exception e){
+            LOGGER.error("",e);
+            return 0;
         }
     }
+
 
     @Override
     public int getWeight() {

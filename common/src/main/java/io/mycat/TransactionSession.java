@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -14,12 +14,12 @@
  */
 package io.mycat;
 
-import com.google.common.collect.ImmutableList;
 import io.mycat.beans.mycat.TransactionType;
+import io.mycat.beans.mysql.MySQLIsolation;
+import io.vertx.core.Future;
+import lombok.SneakyThrows;
 
-import java.util.Deque;
-import java.util.List;
-import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author Junwen Chen
@@ -32,50 +32,45 @@ public interface TransactionSession extends Dumpable {
 
     String name();
 
-    void setTransactionIsolation(int transactionIsolation);
+    Future<Void> begin();
 
-    void begin();
+    Future<Void> commit();
 
-    void commit();
-
-    void rollback();
+    Future<Void> rollback();
 
     boolean isInTransaction();
 
-    void setAutocommit(boolean autocommit);
-
     boolean isAutocommit();
 
-    default MycatConnection getConnection(String targetName) {
-        return getConnection(ImmutableList.of(targetName)).get(targetName).getFirst();
-    }
+    void setAutocommit(boolean autocommit);
 
-    Map<String, Deque<MycatConnection>> getConnection(List<String> targetNames);
+    MySQLIsolation getTransactionIsolation();
 
-    void reset();
+    void setTransactionIsolation(MySQLIsolation transactionIsolation);
 
-    public int getServerStatus();
+    Future<Void> closeStatementState();
 
-    boolean isReadOnly();
-
-    public void setReadOnly(boolean readOnly);
-
-    int getTransactionIsolation();
-
-    ThreadUsageEnum getThreadUsageEnum();
-
-    void clearJdbcConnection();
-
-    void close();
-
-    String resolveFinalTargetName(String targetName);
-
-    TransactionType transactionType();
+    Future<Void> close();
+    String resolveFinalTargetName(String targetName, boolean master,ReplicaBalanceType replicaBalanceType);
 
     /**
      * 模拟autocommit = 0 时候自动开启事务
      */
-    public void doAction();
+    public Future<Void> openStatementState();
 
-    public void addCloseResource(AutoCloseable closeable);
+
+    String getXid();
+
+    @SneakyThrows
+    default void deliverTo(TransactionSession newTransactionSession) {
+        boolean inTransaction = isInTransaction();
+        if (inTransaction) {
+            throw new IllegalArgumentException("can not deliver transcation in transcation ");
+        }
+        closeStatementState().toCompletionStage().toCompletableFuture().get(1, TimeUnit.MINUTES);
+        newTransactionSession.setTransactionIsolation(getTransactionIsolation());
+        newTransactionSession.setAutocommit(isAutocommit());
+    }
+
+    TransactionType transactionType();
 }

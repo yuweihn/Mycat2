@@ -1,3 +1,17 @@
+/**
+ * Copyright (C) <2021>  <chen junwen>
+ * <p>
+ * This program is free software: you can redistribute it and/or modify it under the terms of the
+ * GNU General Public License as published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ * <p>
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+ * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ * <p>
+ * You should have received a copy of the GNU General Public License along with this program.  If
+ * not, see <http://www.gnu.org/licenses/>.
+ */
 package io.mycat.buffer;
 
 import io.mycat.util.Dumper;
@@ -23,8 +37,8 @@ public class DefaultReactorBufferPool extends HeapBufferPool implements ReactorB
                 Objects.requireNonNull(sessionConfig.get("pageCount"), "pageCount must not be null").toString());
         setChunkSize(chunkSize);
 
-        this. directByteBufferPool =
-                new MycatDirectByteBufferPool(pageSize,chunkSize,pageCount);
+        this.directByteBufferPool =
+                new MycatDirectByteBufferPool(pageSize, chunkSize, pageCount);
     }
 
     @Override
@@ -32,22 +46,22 @@ public class DefaultReactorBufferPool extends HeapBufferPool implements ReactorB
         return new BufferPool() {
             @Override
             public ByteBuffer allocate() {
-                return      directByteBufferPool.allocate();
+                return directByteBufferPool.allocate();
             }
 
             @Override
             public ByteBuffer allocate(int size) {
-                return      directByteBufferPool.allocate(size);
+                return directByteBufferPool.allocate(size);
             }
 
             @Override
             public ByteBuffer allocate(byte[] bytes) {
-                return      directByteBufferPool.allocate(bytes);
+                return directByteBufferPool.allocate(bytes);
             }
 
             @Override
             public int trace() {
-                return     (int) directByteBufferPool.usage();
+                return (int) directByteBufferPool.usage();
             }
 
             @Override
@@ -67,7 +81,7 @@ public class DefaultReactorBufferPool extends HeapBufferPool implements ReactorB
 
             @Override
             public Dumper snapshot() {
-                return Dumper.create(Collections.singletonMap("trace",trace()));
+                return Dumper.create(Collections.singletonMap("trace", trace()));
             }
         };
     }

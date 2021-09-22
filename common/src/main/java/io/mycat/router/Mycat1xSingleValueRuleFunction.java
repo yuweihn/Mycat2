@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -14,7 +14,8 @@
  */
 package io.mycat.router;
 
-import io.mycat.DataNode;
+import com.alibaba.druid.sql.SQLUtils;
+import io.mycat.Partition;
 import io.mycat.MycatException;
 import io.mycat.RangeVariable;
 import io.mycat.util.CollectionUtil;
@@ -30,53 +31,7 @@ import java.util.stream.Collectors;
  */
 public abstract class Mycat1xSingleValueRuleFunction extends CustomRuleFunction {
 
-    public abstract String name();
-
     private String columnName;
-
-    @Override
-    public synchronized void callInit(ShardingTableHandler tableHandler, Map<String, Object> properties, Map<String, Object> ranges) {
-        super.callInit(tableHandler, properties, ranges);
-        this.columnName =Objects.requireNonNull(
-                properties.get("columnName"),"need columnName").toString();
-    }
-
-    @Override
-    public List<DataNode> calculate(Map<String, Collection<RangeVariable>> values) {
-        ArrayList<DataNode> res = new ArrayList<>();
-        for (RangeVariable rangeVariable : values.values().stream().flatMap(i->i.stream()).collect(Collectors.toList())) {
-            //匹配字段名
-            if (getColumnName().equalsIgnoreCase(rangeVariable.getColumnName())) {
-                ///////////////////////////////////////////////////////////////
-                String begin = Objects.toString(rangeVariable.getBegin());
-                String end = Objects.toString(rangeVariable.getEnd());
-                switch (rangeVariable.getOperator()) {
-                    case EQUAL: {
-                        DataNode dataNode = this.calculate(begin);
-                        if (dataNode != null) {
-                            CollectionUtil.setOpAdd(res, dataNode);
-                        } else {
-                            return getTable().dataNodes();
-                        }
-                        break;
-                    }
-                    case RANGE: {
-                        List<DataNode> dataNodes = this.calculateRange(begin, end);
-                        if (dataNodes == null || dataNodes.size() == 0) {
-                            return getTable().dataNodes();
-                        }
-                        CollectionUtil.setOpAdd(res, dataNodes);
-                        break;
-                    }
-                }
-            }
-        }
-        return res.isEmpty()?getTable().dataNodes():res;
-    }
-
-    public String getColumnName(){
-        return columnName;
-    }
 
     public static int[] toIntArray(String string) {
         String[] strs = io.mycat.util.SplitUtil.split(string, ',', true);
@@ -86,16 +41,6 @@ public abstract class Mycat1xSingleValueRuleFunction extends CustomRuleFunction 
         }
         return ints;
     }
-
-    /**
-     * return matadata nodes's id columnValue is column's value
-     *
-     * @return never null
-     */
-    public abstract int calculateIndex(String columnValue);
-
-    public abstract int[] calculateIndexRange(String beginValue, String endValue);
-
 
     /**
      * 对于存储数据按顺序存放的字段做范围路由，可以使用这个函数
@@ -133,34 +78,88 @@ public abstract class Mycat1xSingleValueRuleFunction extends CustomRuleFunction 
         return ints;
     }
 
+    public abstract String name();
 
-    public DataNode calculate(String columnValue) {
+    @Override
+    public synchronized void callInit(ShardingTableHandler tableHandler, Map<String, Object> properties, Map<String, Object> ranges) {
+        super.callInit(tableHandler, properties, ranges);
+        this.columnName = Objects.requireNonNull(
+                properties.get("columnName"), "need columnName").toString();
+    }
+
+    @Override
+    public List<Partition> calculate(Map<String, RangeVariable> values) {
+        ArrayList<Partition> res = new ArrayList<>();
+        for (RangeVariable rangeVariable : values.values()) {
+            //匹配字段名
+            if (getColumnName().equalsIgnoreCase(rangeVariable.getColumnName())) {
+                ///////////////////////////////////////////////////////////////
+                String begin = Objects.toString(rangeVariable.getBegin());
+                String end = Objects.toString(rangeVariable.getEnd());
+                switch (rangeVariable.getOperator()) {
+                    case EQUAL: {
+                        Partition partition = this.calculate(begin);
+                        if (partition != null) {
+                            CollectionUtil.setOpAdd(res, partition);
+                        } else {
+                            return getTable().dataNodes();
+                        }
+                        break;
+                    }
+                    case RANGE: {
+                        List<Partition> partitions = this.calculateRange(begin, end);
+                        if (partitions == null || partitions.size() == 0) {
+                            return getTable().dataNodes();
+                        }
+                        CollectionUtil.setOpAdd(res, partitions);
+                        break;
+                    }
+                }
+            }
+        }
+        return res.isEmpty() ? getTable().dataNodes() : res;
+    }
+
+    public String getColumnName() {
+        return columnName;
+    }
+
+    /**
+     * return matadata nodes's id columnValue is column's value
+     *
+     * @return never null
+     */
+    public abstract int calculateIndex(String columnValue);
+
+    public abstract int[] calculateIndexRange(String beginValue, String endValue);
+
+    public Partition calculate(String columnValue) {
         int i = calculateIndex(columnValue);
         if (i == -1) {
             return null;
         }
         ShardingTableHandler table = getTable();
-        List<DataNode> shardingBackends = table.dataNodes();
+        List<Partition> shardingBackends = table.dataNodes();
         int size = shardingBackends.size();
         if (0 <= i && i < size) {
             return shardingBackends.get(i);
         } else {
-            String message = MessageFormat.format("{0}.{1} 分片算法越界 {3} 分片值:{4}",
+            String message = MessageFormat.format("{0}.{1} 分片算法越界 分片值:{4}",
                     table.getSchemaName(), table.getTableName(), columnValue);
             throw new MycatException(message);
         }
     }
 
 
-    public List<DataNode> calculateRange(String beginValue, String endValue) {
+    public List<Partition> calculateRange(String beginValue, String endValue) {
         int[] ints = calculateIndexRange(beginValue, endValue);
         ShardingTableHandler table = getTable();
-        List<DataNode> shardingBackends = (List) table.dataNodes();
+        List<Partition> shardingBackends = (List) table.dataNodes();
         int size = shardingBackends.size();
         if (ints == null) {
             return shardingBackends;
         }
-        ArrayList<DataNode> res = new ArrayList<>();
+        ArrayList<Partition> res = new ArrayList<>();
         for (int i : ints) {
             if (0 <= i && i < size) {
                 res.add(shardingBackends.get(i));
@@ -172,7 +171,17 @@ public abstract class Mycat1xSingleValueRuleFunction extends CustomRuleFunction 
     }
 
     @Override
-   public boolean isShardingKey(String name) {
+    public boolean isShardingKey(String name) {
+        return isShardingTableKey(SQLUtils.normalize(name));
+    }
+
+    @Override
+    public boolean isShardingDbKey(String name) {
+        return false;
+    }
+
+    @Override
+    public boolean isShardingTableKey(String name) {
         return this.columnName.equalsIgnoreCase(name);
     }
 }

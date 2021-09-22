@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -379,7 +379,7 @@ public class ExplainVisitor implements NodeVisitor {
     @Override
     public void visit(ModifyFromSql modifyTable) {
         String targetName = modifyTable.getTargetName();
-        String sql = modifyTable.getSql().replaceAll("\n", "");
+        String sql = modifyTable.getSql().replaceAll("\n", " ");
         append(modifyTable.getOp().getFun());
         append("(");
         append(targetName);

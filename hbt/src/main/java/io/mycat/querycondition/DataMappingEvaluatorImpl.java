@@ -1,5 +1,5 @@
 ///**
-// * Copyright (C) <2020>  <chen junwen>
+// * Copyright (C) <2021>  <chen junwen>
 // * <p>
 // * This program is free software: you can redistribute it and/or modify it under the terms of the
 // * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -16,7 +16,7 @@
 //
 //import io.mycat.BackendTableInfo;
 //import io.mycat.SchemaInfo;
-//import io.mycat.metadata.ShardingTable;
+//import io.mycat.calcite.table.ShardingTable;
 //import io.mycat.router.RuleFunction;
 //import lombok.NonNull;
 //

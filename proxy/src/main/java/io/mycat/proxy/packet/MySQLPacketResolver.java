@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Optional;
 
 import static io.mycat.proxy.packet.MySQLPayloadType.*;
 
@@ -789,8 +790,8 @@ public interface MySQLPacketResolver extends OkPacket, EOFPacket, PreparedOKPack
     assert (0x00 == header) || (0xfe == header);
     int serverStatus = 0;
 
-    setOkAffectedRows(buffer.readLenencInt());//affectedRows
-    setOkLastInsertId(buffer.readLenencInt());//getLastInsertId
+    setOkAffectedRows(Optional.ofNullable(buffer.readLenencInt()).map(i -> i.intValue()).orElse(0));//affectedRows
+    setOkLastInsertId(Optional.ofNullable(buffer.readLenencInt()).map(i -> i.intValue()).orElse(0));//getLastInsertId
     int capabilityFlags = capabilityFlags();
     if (MySQLServerCapabilityFlags.isClientProtocol41(capabilityFlags) || MySQLServerCapabilityFlags
         .isKnowsAboutTransactions(
@@ -810,13 +811,13 @@ public interface MySQLPacketResolver extends OkPacket, EOFPacket, PreparedOKPack
     if (!isPacketFinished) {
       throw new RuntimeException("unknown state!");
     }
-    if (clientDeprecateEof()) {
+//    if (clientDeprecateEof()) {
       setServerStatus(okPacketReadServerStatus(mySQLPacket));
       setMySQLPayloadType(ROW_OK);
-    } else {
-      setServerStatus(eofPacketReadStatus(mySQLPacket));
-      setMySQLPayloadType(ROW_EOF);
-    }
+//    } else {
+//      setServerStatus(eofPacketReadStatus(mySQLPacket));
+//      setMySQLPayloadType(ROW_EOF);
+//    }
     int startPos = getStartPos();
     int endPos = getEndPos();
     if (hasMoreResult(getServerStatus())) {

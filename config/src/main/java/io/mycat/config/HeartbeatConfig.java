@@ -8,10 +8,10 @@ import lombok.Data;
 @Builder
 @AllArgsConstructor
 public class HeartbeatConfig {
-    private int maxRetry;
+    private int maxRetryCount;
     private long minSwitchTimeInterval;
     private long heartbeatTimeout;
-    private long slaveThreshold;
+    private double slaveThreshold;
 
     public HeartbeatConfig() {
     }

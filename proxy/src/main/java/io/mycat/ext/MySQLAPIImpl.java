@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2020>  <chenjunwen>
+ * Copyright (C) <2021>  <chenjunwen>
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -67,9 +67,7 @@ public class MySQLAPIImpl implements MySQLAPI {
 
   @Override
   public synchronized void close() {
-    if (!mySQLClientSession.hasClosed()) {
-      mySQLClientSession.getSessionManager().addIdleSession(mySQLClientSession);
-    }
+      mySQLClientSession.close(true,"close");
   }
 
 }

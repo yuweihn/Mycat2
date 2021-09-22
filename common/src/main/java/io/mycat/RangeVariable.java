@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2019>  <chen junwen>
+ * Copyright (C) <2021>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -16,8 +16,6 @@ package io.mycat;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-
-import javax.swing.*;
 
 /**
  * @author Junwen Chen
@@ -37,7 +35,7 @@ public class RangeVariable {
         this.value = value;
     }
 
-    public RangeVariable(String columnName, RangeVariableType range, String begin, String end) {
+    public RangeVariable(String columnName, RangeVariableType range, Object begin, Object end) {
         this.columnName = columnName;
         this.operator = range;
         assert operator == RangeVariableType.RANGE;
