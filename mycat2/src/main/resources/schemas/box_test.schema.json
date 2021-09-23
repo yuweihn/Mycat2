@@ -2,7 +2,7 @@
 	"customTables":{},
 	"globalTables":{},
 	"normalTables":{},
-	"schemaName":"alarm_script_test",
+	"schemaName":"box_test",
 	"shadingTables":{},
 	"targetName":"prototype"
 }
