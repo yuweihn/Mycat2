@@ -1062,4 +1062,27 @@ public class UserCaseTest implements MycatTest {
         }
 
     }
+
+    @Test
+    public void case18() throws Exception {
+        try (Connection mycatConnection = getMySQLConnection(DB_MYCAT);
+             Connection mysqlConnection = getMySQLConnection(DB1)) {
+            execute(mycatConnection, "CREATE DATABASE db1");
+            JdbcUtils.execute(mycatConnection, "use db1");
+            JdbcUtils.execute(mycatConnection,"create table if not exists char_test(c char(1));");
+
+            Statement mycatStatement = mycatConnection.createStatement();
+            Statement mysqlStatement = mysqlConnection.createStatement();
+
+            ResultSet mycatResultSet = mycatStatement.executeQuery("select * from db1.char_test");
+            ResultSetMetaData mycatMetaData = mycatResultSet.getMetaData();
+            int mycatColumnType = mycatMetaData.getColumnType(1);
+
+            ResultSet mysqlResultSet = mysqlStatement.executeQuery("select * from db1.char_test");
+            ResultSetMetaData mysqlMetaData = mysqlResultSet.getMetaData();
+            int mysqlColumnType = mysqlMetaData.getColumnType(1);
+            Assert.assertEquals(mysqlColumnType,mycatColumnType);
+        }
+
+    }
 }
