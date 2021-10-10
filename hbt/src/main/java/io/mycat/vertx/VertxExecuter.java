@@ -34,9 +34,8 @@ import io.mycat.Process;
 import io.mycat.*;
 import io.mycat.api.collector.MySQLColumnDef;
 import io.mycat.api.collector.MysqlPayloadObject;
-import io.mycat.api.collector.MysqlRow;
+import io.mycat.api.collector.MysqlObjectArrayRow;
 import io.mycat.beans.mycat.MycatRowMetaData;
-import io.mycat.beans.mycat.TransactionType;
 import io.mycat.calcite.CodeExecuterContext;
 import io.mycat.calcite.DrdsRunnerHelper;
 import io.mycat.calcite.logical.MycatView;
@@ -67,8 +66,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 public class VertxExecuter {
     private static final Logger LOGGER = LoggerFactory.getLogger(VertxExecuter.class);
@@ -546,6 +543,9 @@ public class VertxExecuter {
                                 int index = ((SQLVariantRefExpr) sqlExpr1).getIndex();
                                 o = params.get(index);
                                 success = true;
+                            } else if (sqlExpr1 instanceof SQLCharExpr) { // 兼容 compress 等函数，放的是字符串
+                                o = ((SQLCharExpr) sqlExpr1).getText();
+                                success = true;
                             }
                         }
                     }
@@ -646,7 +646,7 @@ public class VertxExecuter {
 
                     @Override
                     public void onRow(Object[] row) {
-                        emitter.onNext(new MysqlRow(BaseRowObservable.getObjects(row, this.mycatRowMetaData)));
+                        emitter.onNext(new MysqlObjectArrayRow(BaseRowObservable.getObjects(row, this.mycatRowMetaData)));
                     }
 
                     @Override

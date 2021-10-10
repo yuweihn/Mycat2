@@ -12,15 +12,13 @@
  * You should have received a copy of the GNU General Public License along with this program.  If
  * not, see <http://www.gnu.org/licenses/>.
  */
-package io.mycat.api.collector;
+package io.mycat.beans.resultset;
 
-import lombok.Getter;
+import io.mycat.MySQLPacketUtil;
 
-@Getter
-public class MysqlRow implements MysqlPayloadObject {
-    private Object[] row;
-
-    public MysqlRow(Object[] row) {
-        this.row = row;
+public class SimpleBinaryWriterImpl extends SimpleTextWriterImpl{
+    @Override
+    public byte[] build() {
+        return MySQLPacketUtil.generateBinaryRow(row);
     }
 }
