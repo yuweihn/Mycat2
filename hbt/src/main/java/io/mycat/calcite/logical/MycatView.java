@@ -481,6 +481,11 @@ public class MycatView extends AbstractRelNode implements MycatRel {
     }
 
     @Override
+    public double estimateRowCount(RelMetadataQuery mq) {
+        return relNode.estimateRowCount(mq);
+    }
+
+    @Override
     public RelOptCost computeSelfCost(RelOptPlanner planner, RelMetadataQuery mq) {
         Optional<IndexCondition> conditionOptional = getPredicateIndexCondition();
         RelOptCost plannerCost = planner.getCost(relNode, mq);
@@ -488,9 +493,6 @@ public class MycatView extends AbstractRelNode implements MycatRel {
         if (conditionOptional.isPresent()) {
             IndexCondition indexCondition = conditionOptional.get();
             factor = indexCondition.getQueryType().factor();
-            if (distribution.getShardingTables().get(0).getTableName().equals("travelrecord_g_i_user_id")) {
-                return planner.getCostFactory().makeZeroCost();
-            }
         }
 
         return plannerCost.multiplyBy(factor);
