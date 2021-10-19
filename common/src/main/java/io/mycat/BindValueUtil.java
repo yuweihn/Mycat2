@@ -65,19 +65,20 @@ public class BindValueUtil {
             case MysqlDefs.FIELD_TYPE_TIMESTAMP:
                 bv.value = mm.readDate();
                 break;
-            case MysqlDefs.FIELD_TYPE_VAR_STRING:
             case MysqlDefs.FIELD_TYPE_STRING:
+            case MysqlDefs.FIELD_TYPE_VAR_STRING:
             case MysqlDefs.FIELD_TYPE_VARCHAR:
             case MysqlDefs.FIELD_TYPE_DECIMAL:
             case MysqlDefs.FIELD_TYPE_NEW_DECIMAL:
             case MysqlDefs.FIELD_TYPE_BLOB:
-            default:
+            default: {
                 byte[] vv = mm.readLenencBytes();
                 if (vv == null) {
                     bv.isNull = true;
                 } else {
                     bv.value = vv;
                 }
+            }
         }
         bv.isSet = true;
     }
