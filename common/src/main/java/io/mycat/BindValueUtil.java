@@ -27,14 +27,18 @@ import io.mycat.beans.mysql.packet.MySQLPayloadReadView;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 
 /**
  * @author mycat
  */
 public class BindValueUtil {
 
-    public static final void read(MySQLPayloadReadView mm, BindValue bv, Charset charset) {
+    public static final void read(MySQLPayloadReadView mm, BindValue bv, Charset charset, boolean hasBlob) {
         switch (bv.type & 0xff) {
             case MysqlDefs.FIELD_TYPE_BIT:
                 bv.value = mm.readLenencBytes();
@@ -72,11 +76,27 @@ public class BindValueUtil {
             case MysqlDefs.FIELD_TYPE_NEW_DECIMAL:
             case MysqlDefs.FIELD_TYPE_BLOB:
             default: {
-                byte[] vv = mm.readLenencBytes();
-                if (vv == null) {
-                    bv.isNull = true;
+                if (hasBlob) {
+                    byte[] vv = mm.readLenencBytes();
+                    if (vv == null) {
+                        bv.isNull = true;
+                    } else {
+                        if (charset == null) {
+                            charset = StandardCharsets.UTF_8;
+                        }
+                        try {
+                            bv.value = charset.newDecoder().onMalformedInput(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(vv));
+                        } catch (CharacterCodingException e) {
+                            bv.value = vv;
+                        }
+                    }
                 } else {
-                    bv.value = vv;
+                    String vv = mm.readLenencString();
+                    if (vv == null) {
+                        bv.isNull = true;
+                    } else {
+                        bv.value = vv;
+                    }
                 }
             }
         }
