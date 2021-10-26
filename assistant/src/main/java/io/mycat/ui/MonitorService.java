@@ -50,8 +50,16 @@ public class MonitorService {
                         T instanceEntry = Json.decodeValue(s, tClass);
                         promise.tryComplete(instanceEntry);
                     });
+                }else{
+                    promise.tryComplete();
                 }
             }).end());
+            request1.onFailure(new Handler<Throwable>() {
+                @Override
+                public void handle(Throwable throwable) {
+                    promise.fail(throwable);
+                }
+            });
         });
     }
 
