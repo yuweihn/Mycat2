@@ -4,10 +4,12 @@ import com.alibaba.druid.sql.SQLUtils;
 import com.alibaba.druid.sql.ast.SQLExpr;
 import com.alibaba.druid.sql.ast.expr.SQLLiteralExpr;
 import com.alibaba.druid.sql.ast.expr.SQLPropertyExpr;
+import com.alibaba.druid.sql.ast.expr.SQLTextLiteralExpr;
 import com.alibaba.druid.sql.ast.statement.*;
 import com.alibaba.druid.sql.dialect.mysql.ast.statement.*;
 import io.mycat.MetaClusterCurrent;
 import io.mycat.MetadataManager;
+import io.mycat.MysqlVariableService;
 import io.mycat.TableHandler;
 import io.mycat.calcite.table.SchemaHandler;
 import io.mycat.config.DatasourceConfig;
@@ -16,9 +18,7 @@ import io.mycat.datasource.jdbc.datasource.JdbcConnectionManager;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
 import io.mycat.replica.ReplicaSelectorManager;
 import io.mycat.util.NameMap;
-import io.vertx.core.json.Json;
-import org.apache.hadoop.yarn.webapp.hamlet2.Hamlet;
-import org.jetbrains.annotations.Nullable;
+import org.apache.doris.common.PatternMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,40 +34,65 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(PrototypeHandlerImpl.class);
 
     @Override
-    public List<Object[]> showDataBase(MySqlShowDatabaseStatusStatement mySqlShowDatabaseStatusStatement) {
+    public List<Object[]> showDataBase(com.alibaba.druid.sql.ast.statement.SQLShowDatabasesStatement sqlShowDatabasesStatement) {
         MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
-        List<String> strings = metadataManager.showDatabases();
-        return strings.stream().map(i -> new Object[]{i}).collect(Collectors.toList());
+
+        SQLExpr like = sqlShowDatabasesStatement.getLike();
+        List<String> collect = metadataManager.showDatabases();
+        if (like != null) {
+            PatternMatcher matcher = PatternMatcher.createMysqlPattern(SQLUtils.normalize(like.toString()),
+                    false);
+            collect = collect.stream().filter(i -> matcher.match(i)).collect(Collectors.toList());
+        }
+        return collect.stream().map(i -> new Object[]{i}).collect(Collectors.toList());
     }
 
     @Override
     public List<Object[]> showTables(SQLShowTablesStatement statement) {
         String schemaName = SQLUtils.normalize(statement.getDatabase().getSimpleName());
-
         MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
         NameMap<SchemaHandler> schemaMap = metadataManager.getSchemaMap();
-        Collection<String> strings;
+        SchemaHandler schemaHandler = schemaMap.get(schemaName);
+        if (schemaHandler == null) return Collections.emptyList();
+        Collection<String> strings = schemaHandler.logicTables().values().stream().map(i -> i.getTableName()).collect(Collectors.toList());
+        ;
         SQLExpr like = statement.getLike();
         if (like == null) {
-            SchemaHandler schemaHandler = schemaMap.get(schemaName);
-            if (schemaHandler == null) return Collections.emptyList();
             NameMap<TableHandler> tables = schemaHandler.logicTables();
             strings = tables.keySet();
-        } else {
-            TableHandler table = metadataManager.getTable(schemaName, SQLUtils.normalize(like.toString()));
-            if (table == null) return Collections.emptyList();
-            strings = Collections.singleton(table.getTableName());
+        } else if (like instanceof SQLTextLiteralExpr) {
+            PatternMatcher matcher = PatternMatcher.createMysqlPattern(((SQLTextLiteralExpr) like).getText(),
+                    false);
+            strings = strings.stream().filter(i -> matcher.match(i)).collect(Collectors.toList());
         }
-        strings = strings.stream().sorted().collect(Collectors.toList());
-
-        return strings.stream().map(i -> new Object[]{i, "BASE TABLE"}).collect(Collectors.toList());
+        if (statement.isFull()) {
+            return strings.stream().sorted().map(i -> new Object[]{i, "BASE TABLE"}).collect(Collectors.toList());
+        } else {
+            return strings.stream().sorted().map(i -> new Object[]{i}).collect(Collectors.toList());
+        }
     }
 
     @Override
     public List<Object[]> showColumns(SQLShowColumnsStatement statement) {
         ArrayList<Object[]> objects = new ArrayList<>();
         String schemaName = SQLUtils.normalize(statement.getDatabase().getSimpleName());
-        String tableName = Optional.ofNullable((SQLExpr) statement.getTable()).orElse(statement.getLike()).toString();
+
+
+        String tableName = Optional.ofNullable((SQLExpr) statement.getTable()).map(i -> SQLUtils.normalize(i.toString())).orElse(null);
+
+        if (tableName == null && statement.getLike() != null) {
+            String pattern = SQLUtils.normalize(statement.getLike().toString());
+            PatternMatcher mysqlPattern = PatternMatcher.createMysqlPattern(pattern, false);
+            MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
+            SchemaHandler schemaHandler = metadataManager.getSchemaMap().get(schemaName);
+            if (schemaHandler == null) return Collections.emptyList();
+            List<String> tables = schemaHandler.logicTables().values().stream().map(i -> i.getTableName()).collect(Collectors.toList());
+            tableName = tables.stream().filter(i -> mysqlPattern.match(i)).findFirst().orElse(null);
+        }
+        if (tableName == null) {
+            return Collections.emptyList();
+        }
+
         MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
         TableHandler table = metadataManager.getTable(schemaName, tableName);
         if (table == null) return Collections.emptyList();
@@ -136,7 +161,7 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
 
             String Field = name;
             String Type = dataTypes.get(i);
-            String Collation = SQLUtils.normalize(column.getCollateExpr().toString());
+            String Collation = Optional.ofNullable(column.getCollateExpr()).map(s -> SQLUtils.normalize(s.toString())).orElse(null);
             String Null = column.containsNotNullConstaint() ? "NO" : "YES";
             String Key = sqlStatement.isPrimaryColumn(name) ?
                     "PRI" : sqlStatement.isUNI(name) ? "UNI" : sqlStatement.isMUL(name) ? "MUL" : "";
@@ -144,21 +169,28 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
             String Default = Optional.ofNullable(defaultValues.get(i)).orElse("NULL");
             String Extra = "";
             String Privileges = "select,insert,update,references";
-            String Comment = column.getComment().toString();
+            String Comment = Optional.ofNullable(column.getComment()).map(s->s.toString()).orElse("");
 
-            objects.add(new Object[]{Field, Type, Collation, Null, Key, Default, Extra, Privileges, Comment});
+            if (statement.isFull()){
+                objects.add(new Object[]{Field, Type, Collation, Null, Key, Default, Extra, Privileges, Comment});
+            }else {
+                objects.add(new Object[]{Field, Type, Null, Key, Default, Extra});
+            }
+
         }
         return objects;
     }
 
     @Override
     public List<Object[]> showTableStatus(MySqlShowTableStatusStatement statement) {
-        ArrayList<Object[]> objects = new ArrayList<>();
         String database = SQLUtils.normalize(statement.getDatabase().getSimpleName());
         SQLExpr like = statement.getLike();
-        if (like instanceof SQLLiteralExpr) {
-            String tableName = SQLUtils.normalize(like.toString());
-
+        PatternMatcher matcher = PatternMatcher.createMysqlPattern(SQLUtils.normalize(like.toString()),
+                false);
+        MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
+        SchemaHandler schemaHandler = metadataManager.getSchemaMap().get(database);
+        if (schemaHandler == null) return Collections.emptyList();
+        return schemaHandler.logicTables().values().stream().map(i -> i.getTableName()).filter(i -> matcher.match(i)).map(tableName -> {
             String Name = tableName;
             String Engine = "InnoDB";
             String Version = "10";
@@ -177,7 +209,7 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
             String Checksum = null;
             String Create_options = null;
             String Comment = "";
-            objects.add(new Object[]{tableName,
+            return new Object[]{tableName,
                     Name,
                     Engine,
                     Version,
@@ -196,10 +228,8 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
                     Checksum,
                     Create_options,
                     Comment
-            });
-            return objects;
-        }
-        return objects;
+            };
+        }).collect(Collectors.toList());
     }
 
     @Override
@@ -216,7 +246,7 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
     public List<Object[]> showCreateTable(SQLShowCreateTableStatement statement) {
         SQLPropertyExpr sqlPropertyExpr = (SQLPropertyExpr) statement.getName();
         String schemaName = SQLUtils.normalize(sqlPropertyExpr.getOwnerName());
-        String tableName = SQLUtils.normalize(sqlPropertyExpr.getOwnerName());
+        String tableName = SQLUtils.normalize(sqlPropertyExpr.getSimpleName());
         MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
         TableHandler tableHandler = metadataManager.getTable(schemaName, tableName);
         String createTableSQL = tableHandler.getCreateTableSQL();
@@ -239,6 +269,7 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
         return onJdbc(statement.toString()).orElseGet(() -> {
             List<Object[]> res = new ArrayList<>();
             res.add(new Object[]{"utf8_unicode_ci", "utf8", "192", "", "yes", "8", "PAD SPACE"});
+            res.add(new Object[]{"utf8_general_ci", "utf8", "33", "Yes", "yes", "1", "PAD SPACE"});
             return res;
         });
     }
@@ -250,7 +281,7 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
 
     @Override
     public List<Object[]> showCreateFunction(MySqlShowCreateFunctionStatement statement) {
-        return Collections.emptyList();
+        return onJdbc(statement.toString()).orElseGet(() -> Collections.emptyList());
     }
 
     @Override
@@ -275,26 +306,48 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
 
     @Override
     public List<Object[]> showIndexesColumns(SQLShowIndexesStatement statement) {
-        return Collections.emptyList();
+        return onJdbc(statement.toString()).orElseGet(() -> Collections.emptyList());
     }
 
     @Override
     public List<Object[]> showProcedureStatus(MySqlShowProcedureStatusStatement statement) {
-        return Collections.emptyList();
+        return onJdbc(statement.toString()).orElseGet(() -> Collections.emptyList());
     }
 
     @Override
     public List<Object[]> showVariants(MySqlShowVariantsStatement statement) {
-        Optional<List<Object[]>> objects = onJdbc(statement.toString());
-        List<Object[]> objects1 = objects.get();
-        String encode = Json.encode(objects1);
-        List list = Json.decodeValue(encode, List.class);
-        return objects1;
+        return onJdbc(statement.toString()).orElseGet(() -> {
+            if (MetaClusterCurrent.exist(MysqlVariableService.class)) {
+                MysqlVariableService mysqlVariableService = MetaClusterCurrent.wrapper(MysqlVariableService.class);
+                List<Object[]> globalVariables = Collections.emptyList();
+                List<Object[]> sessionVariables = Collections.emptyList();
+                if (statement.isGlobal()) {
+                    globalVariables = mysqlVariableService.getGlobalVariables();
+                }
+                if (statement.isSession()) {
+                    sessionVariables = mysqlVariableService.getSessionVariables();
+                }
+                Set<String> variableKeys = new HashSet<>();
+                List<Object[]> resVariables = new ArrayList<>(globalVariables.size() + sessionVariables.size());
+                resVariables.addAll(globalVariables);
+                for (Object[] globalVariable : globalVariables) {
+                    variableKeys.add(Objects.toString(globalVariable[0]));
+                }
+                for (Object[] sessionVariable : sessionVariables) {
+                    String key = Objects.toString(sessionVariable[0]);
+                    if (variableKeys.add(key)) {
+                        resVariables.add(sessionVariable);
+                    }
+                }
+                return resVariables;
+            }
+            return Collections.emptyList();
+        });
     }
 
     @Override
     public List<Object[]> showWarnings(MySqlShowWarningsStatement statement) {
-        return null;
+        return Collections.emptyList();
     }
 
 
@@ -323,7 +376,7 @@ public class PrototypeHandlerImpl implements PrototypeHandler {
         if (datasourceDs == null) {
             datasourceDs = datasourceInfo.values().stream().filter(i -> i.isMySQLType()).map(i -> i.getName()).findFirst().orElse(null);
         }
-        if (datasourceDs == null){
+        if (datasourceDs == null) {
             return Optional.empty();
         }
         try (DefaultConnection connection = jdbcConnectionManager.getConnection(datasourceDs)) {

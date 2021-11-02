@@ -6,7 +6,9 @@ import io.mycat.beans.mycat.ResultSetBuilder;
 import io.mycat.beans.mysql.packet.ColumnDefPacket;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 public class MySQLResultSet {
     List<ColumnDefPacket> columnDefPackets = new ArrayList<>();
@@ -26,7 +28,7 @@ public class MySQLResultSet {
 
     public static MySQLResultSet create(List<ColumnDefPacket> columnDefPackets) {
         MySQLResultSet mySQLResultSet = new MySQLResultSet();
-        mySQLResultSet.columnDefPackets = columnDefPackets;
+        mySQLResultSet.columnDefPackets = Objects.requireNonNull(columnDefPackets);
         return mySQLResultSet;
     }
 
@@ -52,7 +54,10 @@ public class MySQLResultSet {
     }
 
     public RowBaseIterator build() {
-        MycatMySQLRowMetaData mycatMySQLRowMetaData = new MycatMySQLRowMetaData(columnDefPackets);
+        MycatMySQLRowMetaData mycatMySQLRowMetaData = new MycatMySQLRowMetaData(Objects.requireNonNull(columnDefPackets));
+        if (rows == null) {
+            rows = Collections.emptyList();
+        }
         return new ResultSetBuilder.DefObjectRowIteratorImpl(mycatMySQLRowMetaData, rows.iterator());
     }
 }
