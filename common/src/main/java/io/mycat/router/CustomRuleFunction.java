@@ -17,6 +17,7 @@ package io.mycat.router;
 import com.alibaba.druid.sql.SQLUtils;
 import io.mycat.Partition;
 import io.mycat.RangeVariable;
+import io.mycat.ShardingTableType;
 
 import java.util.Collection;
 import java.util.List;
@@ -82,9 +83,26 @@ public abstract class CustomRuleFunction {
 
     public abstract boolean isShardingTableKey(String name);
 
+    public abstract boolean isShardingTargetKey(String name);
+
+    public boolean isShardingPartitionKey(String name) {
+        switch (getShardingTableType()) {
+            case SHARDING_INSTANCE_SINGLE_TABLE:
+                return isShardingTargetKey(name);
+            case SINGLE_INSTANCE_SHARDING_TABLE:
+                return isShardingTableKey(name);
+            case SHARDING_INSTANCE_SHARDING_TABLE:
+                return isShardingTargetKey(name) && isShardingTableKey(name);
+            default:
+                throw new IllegalStateException("Unexpected value: " + getShardingTableType());
+        }
+    }
+
     public boolean isSameDistribution(CustomRuleFunction customRuleFunction) {
         return false;
     }
 
     public abstract String getErUniqueID();
+
+    public abstract ShardingTableType getShardingTableType();
 }

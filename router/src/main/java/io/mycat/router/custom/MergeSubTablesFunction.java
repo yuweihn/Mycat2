@@ -18,6 +18,7 @@ import com.alibaba.druid.sql.SQLUtils;
 import com.google.common.collect.ImmutableList;
 import io.mycat.Partition;
 import io.mycat.RangeVariable;
+import io.mycat.ShardingTableType;
 import io.mycat.router.CustomRuleFunction;
 import io.mycat.router.ShardingTableHandler;
 import io.mycat.util.CollectionUtil;
@@ -164,7 +165,7 @@ public class MergeSubTablesFunction extends CustomRuleFunction {
 
     @Override
     public boolean isShardingKey(String name) {
-        return this.columnName.equals(name);
+        return isShardingTableKey(name);
     }
 
     @Override
@@ -174,12 +175,22 @@ public class MergeSubTablesFunction extends CustomRuleFunction {
 
     @Override
     public boolean isShardingTableKey(String name) {
-        return columnName.equals(SQLUtils.normalize(name));
+        return columnName.equalsIgnoreCase(SQLUtils.normalize(name));
+    }
+
+    @Override
+    public boolean isShardingTargetKey(String name) {
+        return isShardingTableKey(name);
     }
 
     @Override
     public String getErUniqueID() {
         return  getClass().getName()+":"+defaultPartition + tablePrefix + beginIndex + endIndex + segmentQuery;
+    }
+
+    @Override
+    public ShardingTableType getShardingTableType() {
+        return ShardingTableType.SINGLE_INSTANCE_SHARDING_TABLE;
     }
 
     private Partition getDataNode(String tableName) {
