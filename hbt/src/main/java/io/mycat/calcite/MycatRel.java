@@ -105,7 +105,7 @@ public interface MycatRel extends RelNode, EnumerableRel, Serializable {
 //        }
 //    }
 
-   default Result implementStream(StreamMycatEnumerableRelImplementor implementor, Prefer pref) {
+    default Result implementStream(StreamMycatEnumerableRelImplementor implementor, Prefer pref) {
         throw new UnsupportedOperationException();
     }
 
@@ -125,16 +125,18 @@ public interface MycatRel extends RelNode, EnumerableRel, Serializable {
             return input;
         }
     }
+
     public default Expression toObservable(Expression input) {
-            Type type = input.getType();
-            if ((type instanceof Enumerable)) {
-              return Expressions.call(RxBuiltInMethod.TO_OBSERVABLE.method, input);
-            }else {
-                return input;
-            }
+        Type type = input.getType();
+        if ((type instanceof Enumerable)) {
+            return Expressions.call(RxBuiltInMethod.TO_OBSERVABLE.method, input);
+        } else {
+            return input;
+        }
     }
+
     public default Expression toObservableCache(Expression input) {
-            return Expressions.call(RxBuiltInMethod.TO_OBSERVABLE_CACHE.method, input);
+        return Expressions.call(RxBuiltInMethod.TO_OBSERVABLE_CACHE.method, input);
 
     }
 }
