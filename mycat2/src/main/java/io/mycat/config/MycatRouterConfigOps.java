@@ -477,6 +477,10 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
         if (!newConfig.containsPrototypeTargetName()) {
             throw new UnsupportedOperationException();
         }
+        if (!init && Objects.equals(this.original, newConfig)) {
+            LOGGER.info("=======================================config no changed===========================================");
+            return;
+        }
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug(JsonUtil.toJson(this.original));
             LOGGER.debug("===========================================change to ===========================================");
@@ -541,8 +545,8 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
 
             Resource<SequenceGenerator> sequenceGenerator = getSequenceGenerator(sequenceConfigUpdateSet);
             resourceList.add(sequenceGenerator);
-            PrototypeService prototypeService ;
-            context.put(PrototypeService.class,  prototypeService =  new PrototypeService());
+            PrototypeService prototypeService;
+            context.put(PrototypeService.class, prototypeService = new PrototypeService());
 
             Resource<MetadataManager> metadataManager = getMetadataManager(schemaConfigUpdateSet, prototypeService);
             resourceList.add(metadataManager);
@@ -664,6 +668,7 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
         ServerConfig serverConfig = MetaClusterCurrent.wrapper(ServerConfig.class);
         DrdsSqlCompiler.RBO_BKA_JOIN = serverConfig.isBkaJoin();
         DrdsSqlCompiler.RBO_MERGE_JOIN = serverConfig.isSortMergeJoin();
+        DrdsSqlCompiler.RBO_PARTITION_KEY_JOIN = serverConfig.isPartitionKeyJoin();
         DrdsSqlCompiler.BKA_JOIN_LEFT_ROW_COUNT_LIMIT = serverConfig.getBkaJoinLeftRowCountLimit();
         return Resource.of(new DrdsSqlCompiler(new DrdsConfig() {
             @Override
@@ -678,7 +683,7 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
         if (MetaClusterCurrent.exist(MetadataManager.class)) {
             if (schemaConfigUpdateSet.isEmpty()) {
                 return Resource.of(MetaClusterCurrent.wrapper(MetadataManager.class), true);
-            } else if (schemaConfigUpdateSet.getDelete().isEmpty()&&!schemaConfigUpdateSet.getCreate().isEmpty()){
+            } else if (schemaConfigUpdateSet.getDelete().isEmpty() && !schemaConfigUpdateSet.getCreate().isEmpty()) {
                 MetadataManager metadataManager = MetaClusterCurrent.wrapper(MetadataManager.class);
                 for (LogicSchemaConfig logicSchemaConfig : schemaConfigUpdateSet.getCreate()) {
                     metadataManager.addSchema(logicSchemaConfig);
@@ -870,13 +875,21 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
             routerConfig.getDatasources().add(datasourceConfig);
 
             if (routerConfig.getClusters().isEmpty()) {
-                ClusterConfig clusterConfig = new ClusterConfig();
-                clusterConfig.setName("prototype");
-                clusterConfig.setMasters(Collections.singletonList("prototypeDs"));
-                clusterConfig.setMaxCon(200);
-                clusterConfig.setClusterType(ReplicaType.MASTER_SLAVE.name());
-                clusterConfig.setSwitchType(ReplicaSwitchType.SWITCH.name());
-                routerConfig.getClusters().add(clusterConfig);
+                ClusterConfig prototypeClusterConfig = new ClusterConfig();
+                prototypeClusterConfig.setName("prototype");
+                prototypeClusterConfig.setMasters(Collections.singletonList("prototypeDs"));
+                prototypeClusterConfig.setMaxCon(200);
+                prototypeClusterConfig.setClusterType(ReplicaType.MASTER_SLAVE.name());
+                prototypeClusterConfig.setSwitchType(ReplicaSwitchType.SWITCH.name());
+                routerConfig.getClusters().add(prototypeClusterConfig);
+
+                ClusterConfig c0ClusterConfig = new ClusterConfig();
+                c0ClusterConfig.setName("c0");
+                c0ClusterConfig.setMasters(Collections.singletonList("prototypeDs"));
+                c0ClusterConfig.setMaxCon(200);
+                c0ClusterConfig.setClusterType(ReplicaType.MASTER_SLAVE.name());
+                c0ClusterConfig.setSwitchType(ReplicaSwitchType.SWITCH.name());
+                routerConfig.getClusters().add(c0ClusterConfig);
             }
         }
         routerConfig.fixPrototypeTargetName();
@@ -933,7 +946,7 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
         }
 
         LogicSchemaConfig mysql = orginal.get("mysql");
-        Map<String, NormalTableConfig> normalTables =mysql.getNormalTables();
+        Map<String, NormalTableConfig> normalTables = mysql.getNormalTables();
         normalTables.putIfAbsent("proc", NormalTableConfig.create("mysql", "proc",
                 "CREATE TABLE `mysql`.`proc` (\n" +
                         "  `db` varchar(64) DEFAULT NULL,\n" +
@@ -1028,7 +1041,7 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
         if (first.isPresent()) {
             LogicSchemaConfig logicSchemaConfig = first.get();
             Map<String, NormalProcedureConfig> normalProcedures = logicSchemaConfig.getNormalProcedures();
-            normalProcedures.put(pName,normalProcedureConfig);
+            normalProcedures.put(pName, normalProcedureConfig);
         }
     }
 

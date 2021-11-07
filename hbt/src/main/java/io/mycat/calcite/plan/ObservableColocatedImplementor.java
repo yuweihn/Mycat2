@@ -12,62 +12,118 @@ import io.mycat.calcite.MycatRel;
 import io.mycat.calcite.MycatRelDatasourceSourceInfo;
 import io.mycat.calcite.executor.MycatPreparedStatementUtil;
 import io.mycat.calcite.logical.MycatView;
+import io.mycat.calcite.rewriter.Distribution;
 import io.mycat.calcite.spm.Plan;
+import io.mycat.calcite.table.ShardingIndexTable;
+import io.mycat.calcite.table.ShardingTable;
 import io.mycat.util.MycatSQLExprTableSourceUtil;
 import io.mycat.util.NameMap;
 import io.vertx.core.Future;
 import org.apache.calcite.sql.util.SqlString;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class ObservableColocatedImplementor extends ObservablePlanImplementorImpl {
     public ObservableColocatedImplementor(XaSqlConnection xaSqlConnection, MycatDataContext context, DrdsSqlWithParams drdsSqlWithParams, Response response) {
         super(xaSqlConnection, context, drdsSqlWithParams, response);
     }
 
+
+     class Replacer extends MySqlASTVisitorAdapter {
+        NameMap<Partition> partition;
+        boolean success = true;
+
+        public Replacer(NameMap<Partition> partition) {
+            this.partition = partition;
+        }
+
+        @Override
+        public boolean visit(SQLExprTableSource x) {
+            if (!success) return false;
+            String schema = SQLUtils.normalize(x.getSchema());
+            String table = SQLUtils.normalize(x.getTableName());
+            String s = schema + "_" + table;
+            Partition tableInfo = partition.get(s, false);
+            if (tableInfo != null) {
+                MycatSQLExprTableSourceUtil.setSqlExprTableSource(tableInfo.getSchema(), tableInfo.getTable(), x);
+            } else {
+                success = false;
+            }
+            return false;
+        }
+    }
+
     @Override
     public Future<Void> executeQuery(Plan plan) {
-        MycatRel mycatRel = plan.getMycatRel();
-        CodeExecuterContext codeExecuterContext = plan.getCodeExecuterContext();
-        AsyncMycatDataContextImpl.SqlMycatDataContextImpl sqlMycatDataContext = new AsyncMycatDataContextImpl.SqlMycatDataContextImpl(context, codeExecuterContext, drdsSqlWithParams);
-
-        if (mycatRel instanceof MycatView && !drdsSqlWithParams.getAliasList().isEmpty()) {//case 1
-            MycatView mycatView = (MycatView) mycatRel;
-            List<PartitionGroup> partitions = sqlMycatDataContext.getPartition(mycatRel.getDigest()).orElse(Collections.emptyList());
-            if (partitions.size() == 1) {
-                ImmutableMultimap<String, SqlString> sqlMap = mycatView
-                        .apply(context.getMergeUnionSize(),codeExecuterContext.getRelContext().get(mycatView.getDigest()).getSqlTemplate(), partitions, drdsSqlWithParams.getParams());
-                Map.Entry<String, SqlString> kv = sqlMap.entries().stream().iterator().next();
-                SqlString sqlString = kv.getValue();
-                ExplainDetail explainDetail = new ExplainDetail(ExecuteType.QUERY, Collections.singletonList(kv.getKey()), sqlString.getSql(), null,   MycatPreparedStatementUtil.extractParams(drdsSqlWithParams.getParams(),sqlString.getDynamicParameters()));
-                return response.execute(explainDetail);
-            }
-        }
-        Map<String, MycatRelDatasourceSourceInfo> relContext = codeExecuterContext.getRelContext();
-        if (relContext.size()==1){//Colocated Push Down
-            List<PartitionGroup> partitions = sqlMycatDataContext.getPartition(mycatRel.getDigest()).orElse(Collections.emptyList());
-            if (partitions.size()==1){
-                NameMap<Partition> partition = NameMap.immutableCopyOf((partitions.get(0).getMap()));
-                String targetName = partition.values().iterator().next().getTargetName();
-                SQLStatement parameterizedStatement = drdsSqlWithParams.getParameterizedStatement().clone();
-
-                parameterizedStatement.accept(new MySqlASTVisitorAdapter(){
-                    @Override
-                    public boolean visit(SQLExprTableSource x) {
-                        String schema = SQLUtils.normalize(x.getSchema());
-                        String table = SQLUtils.normalize(x.getTableName());
-                        String s = schema+ "_" +table ;
-                        Partition tableInfo = partition.get(s,false);
-                        MycatSQLExprTableSourceUtil.setSqlExprTableSource(tableInfo.getSchema(),tableInfo.getTable(),x);
-                        return false;
-                    }
-                });
+        Optional<PartitionGroup> colocatedPushDownOptional = checkColocatedPushDown(plan);
+        if (colocatedPushDownOptional.isPresent()) {
+            PartitionGroup partitionGroup = colocatedPushDownOptional.get();
+            NameMap<Partition> partition = NameMap.immutableCopyOf(partitionGroup.getMap());
+            String targetName = partitionGroup.getTargetName();
+            SQLStatement parameterizedStatement = drdsSqlWithParams.getParameterizedStatement().clone();
+            Replacer replacer = new Replacer(partition);
+            parameterizedStatement.accept(replacer);
+            if (replacer.success){
                 ExplainDetail explainDetail = new ExplainDetail(ExecuteType.QUERY, Collections.singletonList(targetName), parameterizedStatement.toString(), null, drdsSqlWithParams.getParams());
                 return response.execute(explainDetail);
             }
         }
         return super.executeQuery(plan);
+    }
+
+    private  Optional<PartitionGroup> checkColocatedPushDown(Plan plan) {
+        CodeExecuterContext codeExecuterContext = plan.getCodeExecuterContext();
+        AsyncMycatDataContextImpl.SqlMycatDataContextImpl sqlMycatDataContext = new AsyncMycatDataContextImpl.SqlMycatDataContextImpl(context, codeExecuterContext, drdsSqlWithParams);
+        Map<String, MycatRelDatasourceSourceInfo> relContext = codeExecuterContext.getRelContext();
+        List<List<PartitionGroup>> lists = new ArrayList<>();
+        for (MycatRelDatasourceSourceInfo mycatRelDatasourceSourceInfo : relContext.values()) {
+            if (mycatRelDatasourceSourceInfo.getRelNode() instanceof MycatView) {
+                MycatView mycatView = (MycatView) mycatRelDatasourceSourceInfo.getRelNode();
+                if (mycatView.getDistribution().type() == Distribution.Type.SHARDING) {
+                    for (ShardingTable shardingTable : mycatView.getDistribution().getShardingTables()) {
+                        if (shardingTable instanceof ShardingIndexTable) {
+                            return Optional.empty();
+                        }
+                    }
+                }
+                lists.add(sqlMycatDataContext.getPartition(mycatView.getDigest()).orElse(Collections.emptyList()));
+            } else {
+                return Optional.empty();
+            }
+        }
+
+        PartitionGroup result = null;//Colocated Push Down
+        for (List<PartitionGroup> list : lists) {
+            if (list.size() == 1) {
+                PartitionGroup each = list.get(0);
+                if (result == null) {
+                    result = new PartitionGroup(each.getTargetName(), new HashMap<>(each.getMap()));
+                } else if (result.getTargetName().equals(each.getTargetName())) {
+                    Map<String, Partition> eachMap = each.getMap();
+                    Map<String, Partition> resMap = result.getMap();
+                    for (Map.Entry<String, Partition> entry : eachMap.entrySet()) {
+                        if (resMap.containsKey(entry.getKey())) {
+                            //已经存在的分区不一致,所以不匹配
+                            Partition existed = resMap.get(entry.getKey());
+                            if (!existed.getUniqueName().equals(entry.getValue().getUniqueName())) {
+                                return Optional.empty();
+                            }
+                        } else {
+                            resMap.put(entry.getKey(), entry.getValue());
+                        }
+                    }
+                } else {
+                    return Optional.empty();
+                }
+            } else {
+                return Optional.empty();
+            }
+        }
+        return Optional.ofNullable(result);
     }
 }
