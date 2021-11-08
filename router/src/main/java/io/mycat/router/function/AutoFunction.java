@@ -21,8 +21,6 @@ import io.mycat.Partition;
 import io.mycat.RangeVariable;
 import io.mycat.router.CustomRuleFunction;
 import io.mycat.router.ShardingTableHandler;
-import io.mycat.router.range.IntEnumerator;
-import org.apache.spark.sql.sources.In;
 
 import java.text.MessageFormat;
 import java.util.*;
@@ -136,7 +134,11 @@ public abstract class AutoFunction extends CustomRuleFunction {
                             }
                             break;
                         case RANGE:
-                            dbRange = getRange(rangeVariable, dbNum, finalDbFunction);
+                            if (isShardingDbEnum()){
+                                dbRange = getRange(rangeVariable, dbNum,dbMethod.getMethodName(), finalDbFunction);
+
+                            }
+                            break;
                         default:
                             continue;
                     }
@@ -151,7 +153,11 @@ public abstract class AutoFunction extends CustomRuleFunction {
                             getTIndex = true;
                             break;
                         case RANGE:
-                            tableRange = getRange(rangeVariable, tableNum, finalTableFunction);
+                            if (isShardingTableEnum()){
+                                tableRange = getRange(rangeVariable, tableNum,tableMethod.getMethodName(), finalTableFunction);
+
+                            }
+                            break;
                         default:
                             continue;
                     }
@@ -185,13 +191,12 @@ public abstract class AutoFunction extends CustomRuleFunction {
         return list;
     }
 
-    private Optional<Iterable<Integer>> getRange(RangeVariable rangeVariable, int size, ToIntFunction<Object> intFunction) {
+    public Optional<Iterable<Integer>> getRange(RangeVariable rangeVariable, int size, String name,ToIntFunction<Object> intFunction) {
         Optional<Iterable<Integer>> dbRange = Optional.empty();
         Object begin = rangeVariable.getBegin();
         Object end = rangeVariable.getEnd();
         if (begin != null && end != null) {
-            dbRange = IntEnumerator.ofInt(0, size, 1, true, size)
-                    .rangeClosed(intFunction.applyAsInt(begin), intFunction.applyAsInt(end));
+            dbRange = Optional.empty();
         }
         return dbRange;
     }
@@ -322,6 +327,17 @@ public abstract class AutoFunction extends CustomRuleFunction {
             AutoFunction left = this;
             AutoFunction right = (AutoFunction) customRuleFunction;
             return left.dbNum == right.dbNum && extractMethodText(left.dbMethod).equalsIgnoreCase(extractMethodText(right.dbMethod));
+        }
+        return false;
+    }
+
+    @Override
+    public boolean isShardingTargetEnum() {
+        switch (getShardingTableType()) {
+            case SHARDING_INSTANCE_SINGLE_TABLE:
+                return isShardingDbEnum();
+            case SINGLE_INSTANCE_SHARDING_TABLE:
+            case SHARDING_INSTANCE_SHARDING_TABLE:
         }
         return false;
     }
