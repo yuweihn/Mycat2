@@ -72,7 +72,7 @@ public class LocalSqlConnection extends AbstractXaSqlConnection {
                     map.put(targetName, connection);
                     return connection.update(getTransactionIsolation().getCmd())
                             .flatMap(rows -> connection.update("begin")
-                            .mapEmpty()).map(r -> connection);
+                                    .mapEmpty()).map(r -> connection);
                 });
             }
         }
@@ -126,17 +126,36 @@ public class LocalSqlConnection extends AbstractXaSqlConnection {
 
     @Override
     public Future<Void> close() {
+        Function<NewMycatConnection, Future<Void>> consumer = newMycatConnection -> {
+            return newMycatConnection.close();
+        };
+        return close(consumer);
+    }
+
+    private Future close(Function<NewMycatConnection, Future<Void>> consumer) {
         Future future = CompositeFuture.join((List) closeList);
+        if (isInTransaction()) {
+            future = CompositeFuture.join(future, rollback());
+        }
         closeList.clear();
         for (NewMycatConnection extraConnection : extraConnections) {
-            future = future.compose(unused -> extraConnection.close());
+            future = future.compose(unused -> consumer.apply(extraConnection));
         }
         future = future.onComplete(event -> extraConnections.clear());
         for (NewMycatConnection connection : map.values()) {
-            future = future.compose(unused -> connection.close());
+            future = future.compose(unused -> consumer.apply(connection));
         }
         future = future.onComplete(event -> map.clear());
         return future.onComplete(event -> inTranscation = false).mapEmpty();
+    }
+
+    @Override
+    public Future<Void> kill() {
+        Function<NewMycatConnection, Future<Void>> consumer = newMycatConnection -> {
+            newMycatConnection.abandonConnection();
+            return Future.succeededFuture();
+        };
+        return close(consumer);
     }
 
 
@@ -151,8 +170,18 @@ public class LocalSqlConnection extends AbstractXaSqlConnection {
     }
 
     @Override
+    public List<NewMycatConnection> getAllConnections() {
+        ArrayList<NewMycatConnection> resList = new ArrayList<>();
+        resList.addAll(map.values());
+        resList.addAll(extraConnections);
+        return resList;
+    }
+
+    @Override
     public Future<Void> closeStatementState() {
-        Future<Void> future = CompositeFuture.join((List) closeList).mapEmpty();
+        List<Future> stopResultSet = getAllConnections().stream().map(i -> i.abandonQuery()).collect(Collectors.toList());
+        Future<Void> future = CompositeFuture.join(stopResultSet).mapEmpty();
+        future = future.flatMap(unused -> CompositeFuture.join((List) closeList).mapEmpty());
         closeList.clear();
         for (NewMycatConnection extraConnection : extraConnections) {
             future = future.compose(unused -> extraConnection.close());

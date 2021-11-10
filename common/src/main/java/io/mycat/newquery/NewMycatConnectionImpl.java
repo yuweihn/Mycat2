@@ -2,6 +2,8 @@ package io.mycat.newquery;
 
 import com.alibaba.druid.pool.DruidPooledConnection;
 import com.alibaba.druid.util.JdbcUtils;
+import com.mysql.cj.jdbc.StatementImpl;
+import com.mysql.cj.protocol.Resultset;
 import com.mysql.cj.result.Field;
 import io.mycat.beans.mycat.CopyMycatRowMetaData;
 import io.mycat.beans.mycat.JdbcRowMetaData;
@@ -16,6 +18,7 @@ import io.reactivex.rxjava3.core.ObservableOnSubscribe;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Promise;
+import lombok.SneakyThrows;
 import org.apache.arrow.adapter.jdbc.ArrowVectorIterator;
 import org.apache.arrow.adapter.jdbc.JdbcToArrowConfig;
 import org.apache.arrow.adapter.jdbc.JdbcToArrowConfigBuilder;
@@ -87,15 +90,15 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
     public synchronized void prepareQuery(String sql, List<Object> params, MysqlCollector collector) {
         try {
             if (params.isEmpty()) {
-                try (Statement statement = connection.createStatement();) {
-                    onSend();
+                try (Statement statement = connection.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)) {
+                    setStreamFlag(statement);
                     resultSet = statement.executeQuery(sql);
                     onRev();
                     MycatRowMetaData mycatRowMetaData = getJdbcRowMetaData(resultSet.getMetaData());
                     int columnCount = mycatRowMetaData.getColumnCount();
                     collector.onColumnDef(mycatRowMetaData);
                     int columnLimit = columnCount + 1;
-                    while (!resultSet.isClosed() && resultSet.next()) {
+                    while (!isResultSetClosed() && resultSet.next()) {
                         Object[] objects = new Object[columnCount];
                         for (int i = 1, j = 0; i < columnLimit; i++, j++) {
                             objects[j] = resultSet.getObject(i);
@@ -104,7 +107,8 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                     }
                 }
             } else {
-                try (PreparedStatement statement = connection.prepareStatement(sql);) {
+                try (PreparedStatement statement = connection.prepareStatement(sql,ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);) {
+                    setStreamFlag(statement);
                     int limit = params.size() + 1;
                     for (int i = 1; i < limit; i++) {
                         statement.setObject(i, params.get(i - 1));
@@ -116,7 +120,7 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                     int columnCount = mycatRowMetaData.getColumnCount();
                     collector.onColumnDef(mycatRowMetaData);
                     int columnLimit = columnCount + 1;
-                    while (!resultSet.isClosed() && resultSet.next()) {
+                    while (!isResultSetClosed() && resultSet.next()) {
                         Object[] objects = new Object[columnCount];
                         for (int i = 1, j = 0; i < columnLimit; i++, j++) {
                             objects[j] = resultSet.getObject(i);
@@ -134,6 +138,26 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
         }
     }
 
+    @SneakyThrows
+    private void setStreamFlag(Statement statement) {
+        if (statement.toString().contains("mysql")||statement.getClass().getName().contains("mysql")) {
+            statement.setFetchSize(Integer.MIN_VALUE);
+        }
+//        protected boolean createStreamingResultSet() {
+//            return ((this.query.getResultType() == Resultset.Type.FORWARD_ONLY) && (this.resultSetConcurrency == java.sql.ResultSet.CONCUR_READ_ONLY)
+//                    && (this.query.getResultFetchSize() == Integer.MIN_VALUE));
+//        }
+    }
+
+    private boolean isResultSetClosed() {
+        try {
+            return resultSet == null || resultSet.isClosed();
+        } catch (Exception ignored) {
+            LOGGER.error("", ignored);
+            return true;
+        }
+    }
+
     @Override
     public Observable<VectorSchemaRoot> prepareQuery(String sql, List<Object> params) {
         return Observable.create(new ObservableOnSubscribe<VectorSchemaRoot>() {
@@ -148,7 +172,8 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                     JdbcToArrowConfig jdbcToArrowConfig = jdbcToArrowConfigBuilder.build();
                     try {
                         if (params.isEmpty()) {
-                            try (Statement statement = connection.createStatement();) {
+                            try (Statement statement = connection.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)) {
+                                setStreamFlag(statement);
                                 onSend();
                                 resultSet = statement.executeQuery(sql);
                                 onRev();
@@ -160,7 +185,8 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                                 }
                             }
                         } else {
-                            try (PreparedStatement statement = connection.prepareStatement(sql);) {
+                            try (PreparedStatement statement = connection.prepareStatement(sql,ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)) {
+                                setStreamFlag(statement);
                                 int limit = params.size() + 1;
                                 for (int i = 1; i < limit; i++) {
                                     statement.setObject(i, params.get(i - 1));
@@ -311,7 +337,6 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
         if (this.connection instanceof DruidPooledConnection) {
             DruidPooledConnection connection = (DruidPooledConnection) this.connection;
             JdbcUtils.close(connection.getConnection());
-            connection.abandond();
             JdbcUtils.close(connection);
         } else {
             JdbcUtils.close(this.connection);

@@ -16,6 +16,7 @@
 package cn.mycat.vertx.xa.impl;
 
 import cn.mycat.vertx.xa.*;
+import com.alibaba.druid.util.JdbcUtils;
 import io.mycat.newquery.NewMycatConnection;
 import io.mycat.newquery.SqlResult;
 import io.vertx.core.CompositeFuture;
@@ -25,9 +26,11 @@ import io.vertx.core.Promise;
 import io.vertx.core.impl.logging.Logger;
 import io.vertx.core.impl.logging.LoggerFactory;
 
+import java.sql.Connection;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -66,7 +69,7 @@ public class BaseXaSqlConnection extends AbstractXaSqlConnection {
     @Override
     public Future<Void> begin() {
         if (inTranscation) {
-            LOGGER.warn("xa transaction occur nested transaction,xid:"+xid);
+            LOGGER.warn("xa transaction occur nested transaction,xid:" + xid);
             return Future.succeededFuture();
         }
         inTranscation = true;
@@ -155,10 +158,50 @@ public class BaseXaSqlConnection extends AbstractXaSqlConnection {
                     inTranscation = false;
                     clearConnections().onComplete(promise);
                 } else {
-                    retryRollback(function).onComplete(promise);
+                    Set<String> targets = new HashSet<>(map.keySet());
+                    Future<Void> killFuture = kill();
+                    killFuture.flatMap((Function<Void, Future<Void>>) unused -> {
+                        try {
+                            if (tryRecovery(targets)) {
+                                return Future.succeededFuture();
+                            }
+                            String message = "xid:" + getXid() + " recovery fail";
+                            LOGGER.info(message);
+                            LOGGER.error(message);
+                            //@todo 注册调度中心,定时恢复
+                            return Future.failedFuture(message);
+                        } catch (Exception e) {
+                            LOGGER.error(e);
+                            return Future.failedFuture(e);
+                        }
+                    }).onComplete(promise);
                 }
             });
         });
+    }
+
+    private boolean tryRecovery(Set<String> targets) throws InterruptedException {
+        for (int tryCount = 0; tryCount < 3; tryCount++) {
+            HashMap<String, Connection> map = new HashMap<>();
+            try {
+                for (String target : targets) {
+                    Connection writeableConnection = mySQLManager().getWriteableConnection(target);
+                    map.put(target, writeableConnection);
+                }
+                log.readXARecoveryLog(map);
+                return true;
+            } catch (Exception e) {
+                LOGGER.error(e);
+            } finally {
+                map.values().forEach(c -> {
+                    if (c != null) {
+                        JdbcUtils.close(c);
+                    }
+                });
+            }
+            TimeUnit.SECONDS.sleep(1);
+        }
+        return false;
     }
 
     /**
@@ -355,19 +398,24 @@ public class BaseXaSqlConnection extends AbstractXaSqlConnection {
      *
      */
     public Future<Void> close() {
+        Function<NewMycatConnection, Future<Void>> consumer = newMycatConnection -> newMycatConnection.close();
+        return close(consumer);
+    }
+
+    private Future<Void> close(Function<NewMycatConnection, Future<Void>> consumer) {
         Future<Void> allFuture = CompositeFuture.join((List) closeList).mapEmpty();
         closeList.clear();
         if (inTranscation) {
-            allFuture = rollback();
+            allFuture = CompositeFuture.join(allFuture, rollback()).mapEmpty();
         }
         return allFuture.flatMap(unused -> {
             Future<Void> future = Future.succeededFuture();
             for (NewMycatConnection extraConnection : extraConnections) {
-                future = future.compose(unused2 -> extraConnection.close());
+                future = future.compose(unused2 -> consumer.apply(extraConnection));
             }
             future = future.onComplete(event -> extraConnections.clear());
             return future.onComplete(u -> executeTranscationConnection(c -> {
-                return c.close();
+                return consumer.apply(c);
             }).onComplete(c -> {
                 map.clear();
                 connectionState.clear();
@@ -375,10 +423,21 @@ public class BaseXaSqlConnection extends AbstractXaSqlConnection {
         });
     }
 
+    @Override
+    public Future<Void> kill() {
+        Function<NewMycatConnection, Future<Void>> consumer = newMycatConnection -> {
+            newMycatConnection.abandonConnection();
+            return Future.succeededFuture();
+        };
+        return close(consumer);
+    }
+
 
     @Override
     public Future<Void> closeStatementState() {
-        Future<Void> future = CompositeFuture.join((List) closeList).mapEmpty();
+        List<Future> stopResultSet = getAllConnections().stream().map(i -> i.abandonQuery()).collect(Collectors.toList());
+        Future<Void> future = CompositeFuture.join(stopResultSet).mapEmpty();
+        future = future.flatMap(unused -> CompositeFuture.join((List) closeList).mapEmpty());
         closeList.clear();
         return future.onComplete(event -> clearConnections().onComplete(unused -> {
             if (!inTranscation) {
@@ -395,6 +454,14 @@ public class BaseXaSqlConnection extends AbstractXaSqlConnection {
     @Override
     public void addCloseFuture(Future<Void> future) {
         closeList.add(future);
+    }
+
+    @Override
+    public List<NewMycatConnection> getAllConnections() {
+        ArrayList<NewMycatConnection> resList = new ArrayList<>();
+        resList.addAll(map.values());
+        resList.addAll(extraConnections);
+        return resList;
     }
 
     /**

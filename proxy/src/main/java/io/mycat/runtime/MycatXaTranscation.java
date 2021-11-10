@@ -37,7 +37,7 @@ public class MycatXaTranscation implements XaSqlConnection, TransactionSession {
 
     @Override
     public String resolveFinalTargetName(String targetName, boolean master, ReplicaBalanceType replicaBalanceType) {
-        return dataSourceNearness.getDataSourceByTargetName(targetName,master,replicaBalanceType);
+        return dataSourceNearness.getDataSourceByTargetName(targetName, master, replicaBalanceType);
 
     }
 
@@ -92,6 +92,11 @@ public class MycatXaTranscation implements XaSqlConnection, TransactionSession {
     }
 
     @Override
+    public Future<Void> kill() {
+        return connection.kill();
+    }
+
+    @Override
     public Future<Void> openStatementState() {
         return connection.openStatementState();
     }
@@ -125,5 +130,25 @@ public class MycatXaTranscation implements XaSqlConnection, TransactionSession {
     @Override
     public void addCloseFuture(Future<Void> future) {
         connection.addCloseFuture(future);
+    }
+
+    @Override
+    public Future<Void> createSavepoint(String name) {
+        return connection.createSavepoint(name);
+    }
+
+    @Override
+    public Future<Void> rollbackSavepoint(String name) {
+        return connection.rollbackSavepoint(name);
+    }
+
+    @Override
+    public Future<Void> releaseSavepoint(String name) {
+        return connection.releaseSavepoint(name);
+    }
+
+    @Override
+    public List<NewMycatConnection> getAllConnections() {
+        return connection.getAllConnections();
     }
 }
