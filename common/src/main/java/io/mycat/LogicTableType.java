@@ -4,5 +4,7 @@ public enum LogicTableType {
     SHARDING,
     GLOBAL,
     NORMAL,
-    CUSTOM
+    CUSTOM,
+    VISUAL,
+    VIEW
 }

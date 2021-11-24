@@ -63,21 +63,26 @@ public class MycatLogicTable extends MycatTableBase implements AbstractMycatTabl
 
     @Override
     public boolean isSharding() {
-        return table.getType()== LogicTableType.SHARDING;
+        return table.getType() == LogicTableType.SHARDING;
     }
 
     @Override
     public boolean isNormal() {
-        return  table.getType()== LogicTableType.NORMAL;
+        return table.getType() == LogicTableType.NORMAL;
     }
 
     @Override
     public boolean isCustom() {
-        return table.getType() ==LogicTableType.CUSTOM;
+        return table.getType() == LogicTableType.CUSTOM;
     }
 
     @Override
     public boolean isBroadCast() {
-        return table.getType() ==LogicTableType.GLOBAL;
+        return table.getType() == LogicTableType.GLOBAL;
+    }
+
+    @Override
+    public boolean isVisual() {
+        return table.getType() == LogicTableType.VISUAL;
     }
 }

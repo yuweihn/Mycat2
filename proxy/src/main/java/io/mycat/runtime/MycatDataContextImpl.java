@@ -159,9 +159,12 @@ public class MycatDataContextImpl implements MycatDataContext {
             return this.getUser().getUserName();
         } else if (target.contains("transaction_policy")) {
             return this.transactionType().getName();
+        }else if (target.contains("transaction_isolation")||target.contains("tx_isolation")) {
+            MySQLIsolation isolation = getIsolation();
+            return isolation.getSessionText();
         }
         MysqlVariableService variableService = MetaClusterCurrent.wrapper(MysqlVariableService.class);
-        return variableService.getVariable(target);
+        return variableService.getSessionVariable(target);
     }
 
     @Override
@@ -459,5 +462,13 @@ public class MycatDataContextImpl implements MycatDataContext {
     @Override
     public void setDebug(boolean value) {
         this.debug = value;
+    }
+
+    @Override
+    public String getDefaultSchema() {
+        if (!this.processStateMap.isEmpty()) {
+            return (String) this.processStateMap.getOrDefault("SCHEMA", defaultSchema);
+        }
+        return defaultSchema;
     }
 }
