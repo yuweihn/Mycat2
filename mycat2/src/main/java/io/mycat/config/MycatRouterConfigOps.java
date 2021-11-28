@@ -646,6 +646,19 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
         if (MetaClusterCurrent.exist(MySQLManager.class) && datasourceConfigUpdateSet.isEmpty()) {
             return Resource.of(MetaClusterCurrent.wrapper(MySQLManager.class), true);
         }
+        if (MetaClusterCurrent.exist(MySQLManager.class)) {
+            MySQLManager mySQLManager = MetaClusterCurrent.wrapper(MySQLManager.class);
+            boolean success = false;
+            try{
+                MycatMySQLManagerImpl newMycatMySQLManager = new MycatMySQLManagerImpl(datasourceConfigUpdateSet.getTargetAsList());
+                success = true;
+                return Resource.of(newMycatMySQLManager, false);
+            }finally {
+                if (success){
+                    mySQLManager.close();
+                }
+            }
+        }
         return Resource.of(new MycatMySQLManagerImpl(datasourceConfigUpdateSet.getTargetAsList()), false);
     }
 
@@ -782,10 +795,18 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
                     }
                     return Resource.of(jdbcConnectionManager, true);
                 } else {
-                    jdbcConnectionManager.close();
-                    return Resource.of(new JdbcConnectionManager(
-                            DruidDatasourceProvider.class.getCanonicalName(),
-                            datasourceConfigUpdateSet.getTargetAsMap()), false);
+                    boolean success = false;
+                    try {
+                        JdbcConnectionManager newJdbcConnectionManager = new JdbcConnectionManager(
+                                DruidDatasourceProvider.class.getCanonicalName(),
+                                datasourceConfigUpdateSet.getTargetAsMap());
+                        success= true;
+                        return Resource.of(newJdbcConnectionManager , false);
+                    }finally {
+                        if (success) {
+                            jdbcConnectionManager.close();
+                        }
+                    }
                 }
             } else {
                 return Resource.of(jdbcConnectionManager, true);
