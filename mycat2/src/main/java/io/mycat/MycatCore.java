@@ -136,7 +136,7 @@ public class MycatCore {
             Files.createDirectory(this.baseDirectory);
             initConfig = true;
         }
-        if (!Files.list(this.baseDirectory).findFirst().isPresent()) {
+        if (!Files.exists((this.baseDirectory.resolve("server.json")))){
             initConfig = true;
         }
 
