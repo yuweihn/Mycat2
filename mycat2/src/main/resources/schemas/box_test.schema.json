@@ -2,7 +2,7 @@
 	"customTables":{},
 	"globalTables":{},
 	"normalTables":{},
-	"schemaName":"box_test",
+	"schemaName":"dev_01",
 	"shadingTables":{},
 	"targetName":"prototype"
 }
