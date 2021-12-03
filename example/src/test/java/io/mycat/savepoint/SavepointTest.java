@@ -26,12 +26,12 @@ public class SavepointTest implements MycatTest {
     private static final Logger LOGGER = LoggerFactory.getLogger(SavepointTest.class);
     @Before
     public void before() throws Exception {
-        if (!init) {
+//        if (!init) {
             try (Connection connection = getMySQLConnection(DB_MYCAT)) {
                 JdbcUtils.execute(connection, "/*+ mycat:readXARecoveryLog{} */;");
             }
-            init = true;
-        }
+//            init = true;
+//        }
     }
 
     @Test
@@ -271,6 +271,7 @@ public class SavepointTest implements MycatTest {
             execute(mycatConnection, RESET_CONFIG);
             initCluster(mycatConnection);
             connectionFunction.accept(mycatConnection);
+            JdbcUtils.execute(mycatConnection, "/*+ mycat:readXARecoveryLog{} */;");
             execute(mycatConnection, "CREATE DATABASE db1");
             execute(mycatConnection, "CREATE TABLE db1.`travelrecord` (\n" +
                     "  `id` bigint NOT NULL AUTO_INCREMENT,\n" +
@@ -293,6 +294,7 @@ public class SavepointTest implements MycatTest {
 
         }
         try (Connection mycatConnection = getMySQLConnection(DB_MYCAT);) {
+            JdbcUtils.execute(mycatConnection, "/*+ mycat:readXARecoveryLog{} */;");
             connectionFunction.accept(mycatConnection);
             execute(mycatConnection, "use db1");
             Assert.assertTrue(executeQuery(mycatConnection,
