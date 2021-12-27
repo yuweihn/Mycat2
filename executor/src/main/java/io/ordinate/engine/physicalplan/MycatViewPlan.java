@@ -104,7 +104,6 @@ public class MycatViewPlan implements PhysicalPlan {
                 });
                 observableFuture.onFailure(event -> emitter.tryOnError(event));
                 observableFuture.onSuccess(event -> {
-
                     event=  event.doOnComplete(() -> emitter.onComplete());
                     event=   event.doOnError(throwable -> emitter.tryOnError(throwable));
                   event.forEach(vectorSchemaRoot -> emitter.onNext(vectorSchemaRoot));
