@@ -1,0 +1,17 @@
+{
+	"dbType":"mysql",
+	"idleTimeout":60000,
+	"initSqls":[],
+	"initSqlsGetConnection":true,
+	"instanceType":"READ_WRITE",
+	"maxCon":1000,
+	"maxConnectTimeout":30000,
+	"maxRetryCount":5,
+	"minCon":1,
+	"name":"yuweiDs",
+	"password":"dev",
+	"type":"JDBC",
+	"url":"jdbc:mysql://mysql.yuweix.com:3307?useUnicode=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8",
+	"user":"yuwei",
+	"weight":0
+}
