@@ -1,0 +1,16 @@
+{
+	"clusterType":"MASTER_SLAVE",
+	"heartbeat":{
+		"heartbeatTimeout":1000,
+		"maxRetry":3,
+		"minSwitchTimeInterval":300,
+		"slaveThreshold":0
+	},
+	"masters":[
+		"agsTestDs"
+	],
+	"maxCon":200,
+	"name":"agsTest",
+	"readBalanceType":"BALANCE_ALL",
+	"switchType":"SWITCH"
+}

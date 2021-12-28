@@ -1,0 +1,17 @@
+{
+	"dbType":"mysql",
+	"idleTimeout":60000,
+	"initSqls":[],
+	"initSqlsGetConnection":true,
+	"instanceType":"READ_WRITE",
+	"maxCon":1000,
+	"maxConnectTimeout":30000,
+	"maxRetryCount":5,
+	"minCon":1,
+	"name":"agsTestDs",
+	"password":"ags@2020",
+	"type":"JDBC",
+	"url":"jdbc:mysql://mysql-test.agilenaas.net:3307?useUnicode=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8",
+	"user":"root",
+	"weight":0
+}
