@@ -323,7 +323,7 @@ public class MHATest extends ReplicaTest {
             masterTargets.add(manager.getDatasourceNameByReplicaName("c0", true, null));
             return false;
         });
-        Assert.assertEquals(1, masterTargets.size());
+        Assert.assertEquals(1, masterTargets.size());//todo check
         Assert.assertTrue(masterTargets.contains("dsw2"));
 
         manager.putHeartFlow("c0", "dsw2", checkMHA(true, 0));
@@ -436,9 +436,7 @@ public class MHATest extends ReplicaTest {
         return heartBeatStrategy -> {
             List<String> sqls = heartBeatStrategy.getSqls();
             List<List<Map<String, Object>>> list = new ArrayList<>();
-            Assert.assertTrue(sqls.get(0).equalsIgnoreCase(MHAHeartBeatStrategy.READ_ONLY_SQL));
-            Assert.assertTrue(sqls.get(1).equalsIgnoreCase(MHAHeartBeatStrategy.MASTER_SLAVE_HEARTBEAT_SQL));
-            list.add(Arrays.asList(Maps.of("READ_ONLY", !master ? 1 : 0)));
+            Assert.assertTrue(sqls.get(0).equalsIgnoreCase(MHAHeartBeatStrategy.MASTER_SLAVE_HEARTBEAT_SQL));
 
             Map<String, Object> map13 = new HashMap<>();
             map13.put("Slave_IO_Running", "Yes");
@@ -446,7 +444,7 @@ public class MHATest extends ReplicaTest {
             map13.put("Seconds_Behind_Master", delay +"");
 
             list.add(Arrays.asList(map13));
-            heartBeatStrategy.process(list);
+            heartBeatStrategy.process(list,!master);
         };
     }
 
