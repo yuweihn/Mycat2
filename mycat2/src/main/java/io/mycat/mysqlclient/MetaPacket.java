@@ -1,5 +1,5 @@
 /**
- * Copyright (C) <2021>  <chen junwen>
+ * Copyright (C) <2022>  <chen junwen>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation, either version 3 of the
@@ -12,11 +12,19 @@
  * You should have received a copy of the GNU General Public License along with this program.  If
  * not, see <http://www.gnu.org/licenses/>.
  */
-package io.mycat;
+package io.mycat.mysqlclient;
 
-public enum RangeVariableType {
-    EQUAL,
-    RANGE,
-    GTE,
-    LTE
+import lombok.Data;
+
+@Data
+public class MetaPacket {
+    public int columnCount;
+    public int serverStatus;
+    public long affectedRows;
+    public long lastInsertId;
+    public int serverStatusFlags;
+    public int numberOfWarnings;
+    public int errorCode;
+    public String sqlState = null;
+    public String errorMessage = null;
 }
