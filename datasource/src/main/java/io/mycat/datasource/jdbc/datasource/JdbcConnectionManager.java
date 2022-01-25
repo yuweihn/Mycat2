@@ -110,13 +110,27 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
         return getConnection(name, true, Connection.TRANSACTION_REPEATABLE_READ);
     }
 
+    public static String resolveDataSource(String datasourceName) {
+        if (MetaClusterCurrent.exist(ReplicaSelectorManager.class)) {
+            ReplicaSelectorManager replicaSelector = MetaClusterCurrent.wrapper(ReplicaSelectorManager.class);
+            if (replicaSelector.isDatasource(datasourceName)) {
+                return datasourceName;
+            }
+            if (replicaSelector.isReplicaName(datasourceName)) {
+                return replicaSelector.getDatasourceNameByReplicaName(datasourceName, true, null);
+            }
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("can not resolve datasourceName:{}", datasourceName);
+            }
+        }
+        return datasourceName;
+    }
+
     public DefaultConnection getConnection(String name, Boolean autocommit,
                                            int transactionIsolation) {
-        final JdbcDataSource key = dataSourceMap.computeIfAbsent(name, s -> {
-            ReplicaSelectorManager replicaSelector = MetaClusterCurrent.wrapper(ReplicaSelectorManager.class);
-            JdbcDataSource jdbcDataSource = dataSourceMap.get(replicaSelector.getDatasourceNameByReplicaName(s, true, null));
-            return Objects.requireNonNull(jdbcDataSource, "unknown target:" + name);
-        });
+        name = resolveDataSource(name);
+        final JdbcDataSource key = dataSourceMap.get(name);
+        Objects.requireNonNull(key, "unknown target:" + name);
         DefaultConnection defaultConnection;
         Connection connection = null;
         switch (key.getDbType()) {
@@ -236,7 +250,7 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
                 boolean readOnly = false;
                 try (DefaultConnection connection = getConnection(datasource)) {
                     try {
-                        readOnly = JdbcUtils.executeQuery(connection.connection, "SELECT @@read_only", Collections.emptyList()).toString().contains("1");
+                        readOnly = connection.connection.isReadOnly() || JdbcUtils.executeQuery(connection.connection, "SELECT @@read_only", Collections.emptyList()).toString().contains("1");
                     } catch (Throwable throwable) {
                         LOGGER.debug("heartbeat sql:{}", "SELECT @@read_only", throwable);
                     }

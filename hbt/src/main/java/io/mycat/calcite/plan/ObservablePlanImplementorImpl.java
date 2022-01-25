@@ -83,13 +83,13 @@ public class ObservablePlanImplementorImpl implements PlanImplementor {
         ExecutorProvider executorProvider = MetaClusterCurrent.wrapper(ExecutorProvider.class);
 
         PrepareExecutor prepare = executorProvider.prepare(plan);
-        if (context.getProcessStateMap().containsKey("VECTOR")) {
+        if (context.isVector()) {
             PrepareExecutor.ArrowObservable observable1 = prepare.asObservableVector(sqlMycatDataContext, plan.getMetaData());
-            return response.sendVectorResultSet(observable1.getMycatRowMetaData(),observable1.getObservable());
+            return response.sendVectorResultSet(observable1.getMycatRowMetaData(), observable1.getObservable());
         } else {
             ArrayBindable arrayBindable = prepare.getArrayBindable();
             Observable<MysqlPayloadObject> observable1 = PrepareExecutor
-                    .getMysqlPayloadObjectObservable(arrayBindable,sqlMycatDataContext,plan.getMetaData());
+                    .getMysqlPayloadObjectObservable(arrayBindable, sqlMycatDataContext, plan.getMetaData());
             Observable observable = mapToTimeoutObservable(observable1, drdsSqlWithParams);
             Observable<MysqlPayloadObject> executor = observable;
             return response.sendResultSet(executor);

@@ -60,12 +60,14 @@ public class CreateTableUtils {
         normalizeCreateTableSQLToMySQL(createSQL).ifPresent(sql -> {
             for (String s : set) {
                 try (DefaultConnection connection = jdbcConnectionManager.getConnection(s)) {
+                    Connection rawConnection = connection.getRawConnection();
+                    String backupSchema = rawConnection.getSchema();
                     if (InstanceType.valueOf(connection.getDataSource().getConfig().getInstanceType()).isWriteType()) {
-                        Connection rawConnection = connection.getRawConnection();
                         if (!rawConnection.isReadOnly()) {
                             connection.createDatabase(node.getSchema());
                             rawConnection.setSchema(node.getSchema());
                             connection.createTable(rewriteCreateTableSql(sql, node.getSchema(), node.getTable()));
+                            rawConnection.setSchema(backupSchema);
                         }
                     }
                 } catch (Throwable throwable) {

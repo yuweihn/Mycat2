@@ -33,13 +33,13 @@ public class RwTest implements MycatTest {
             String db = "testSchema";
 
             {
-                execute(mycat, "drop database " + db);
+                execute(mycat, "drop database if  exists  " + db);
                 execute(mycat, "create database " + db);
                 execute(mycat, "use " + db);
             }
 
             {
-                execute(readMysql, "drop database if exists " + db);
+                execute(readMysql, "drop database if  exists " + db);
                 execute(readMysql, "create database " + db);
                 execute(readMysql, "use " + db);
                 execute(readMysql, "drop table if exists " + db + ".normal");
@@ -192,7 +192,7 @@ public class RwTest implements MycatTest {
                                     "CREATE TABLE mysql.role_edges (\n\t`FROM_HOST` char(255) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL DEFAULT '',\n\t`FROM_USER` char(32) COLLATE utf8_bin NOT NULL DEFAULT '',\n\t`TO_HOST` char(255) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL DEFAULT '',\n\t`TO_USER` char(32) COLLATE utf8_bin NOT NULL DEFAULT '',\n\t`WITH_ADMIN_OPTION` enum('N', 'Y') CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL DEFAULT 'N',\n\tPRIMARY KEY (`FROM_HOST`, `FROM_USER`, `TO_HOST`, `TO_USER`)\n) ENGINE = InnoDB CHARSET = utf8 COLLATE = utf8_bin STATS_PERSISTENT = 0 ROW_FORMAT = DYNAMIC COMMENT 'Role hierarchy and role grants'",
                                     "dw0")));
             List<Map<String, Object>> maps = executeQuery(mycat, ShowTopologyHint.create("mysql", "role_edges"));
-            Assert.assertTrue(maps.toString().contains("dw0"));
+           Assert.assertTrue(maps.toString().contains("dw0"));
         }
     }
     @Test
