@@ -21,8 +21,9 @@ import cn.mycat.vertx.xa.XaLog;
 import io.mycat.newquery.NewMycatConnection;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
-import io.vertx.core.impl.logging.Logger;
-import io.vertx.core.impl.logging.LoggerFactory;
+import io.vertx.core.Handler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -99,7 +100,7 @@ public class LocalSqlConnection extends AbstractXaSqlConnection {
             inTranscation = false;
             //每一个记录日志
             return Future.succeededFuture();
-        }).mapEmpty().flatMap(o -> closeStatementState());
+        }).onFailure(event -> LOGGER.error("",event)).mapEmpty().flatMap(o -> closeStatementState());
     }
 
     @Override
@@ -108,7 +109,7 @@ public class LocalSqlConnection extends AbstractXaSqlConnection {
         return CompositeFuture.join(rollback).onComplete(event -> {
             inTranscation = false;
             //每一个记录日志
-        }).mapEmpty().flatMap(o -> closeStatementState());
+        }).onFailure(event -> LOGGER.error("",event)).mapEmpty().flatMap(o -> closeStatementState());
     }
 
     @Override
@@ -126,10 +127,14 @@ public class LocalSqlConnection extends AbstractXaSqlConnection {
 
     @Override
     public Future<Void> close() {
-        Function<NewMycatConnection, Future<Void>> consumer = newMycatConnection -> {
-            return newMycatConnection.close();
-        };
-        return close(consumer);
+        Future<Void> future = rollback();
+        return future.transform(voidAsyncResult -> {
+            Function<NewMycatConnection, Future<Void>> consumer = newMycatConnection -> {
+                newMycatConnection.abandonConnection();
+                return Future.succeededFuture();
+            };
+            return close(consumer);
+        });
     }
 
     private Future close(Function<NewMycatConnection, Future<Void>> consumer) {
@@ -151,11 +156,13 @@ public class LocalSqlConnection extends AbstractXaSqlConnection {
 
     @Override
     public Future<Void> kill() {
-        Function<NewMycatConnection, Future<Void>> consumer = newMycatConnection -> {
-            newMycatConnection.abandonConnection();
-            return Future.succeededFuture();
-        };
-        return close(consumer);
+        return rollback().transform(voidAsyncResult -> {
+            Function<NewMycatConnection, Future<Void>> consumer = newMycatConnection -> {
+                newMycatConnection.abandonConnection();
+                return Future.succeededFuture();
+            };
+            return close(consumer);
+        });
     }
 
 
