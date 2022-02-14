@@ -21,7 +21,11 @@ import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import lombok.SneakyThrows;
+import org.apache.arrow.adapter.jdbc.ArrowVectorIterator;
+import org.apache.arrow.adapter.jdbc.JdbcToArrowConfig;
+import org.apache.arrow.adapter.jdbc.JdbcToArrowConfigBuilder;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.types.pojo.ArrowType;
@@ -98,6 +102,9 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
 
     @Override
     public synchronized void prepareQuery(String sql, List<Object> params, MysqlCollector collector) {
+        if (this.future.isComplete()) {
+            this.future = Future.succeededFuture();
+        }
         this.future = this.future.transform(voidAsyncResult -> {
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("targetName:{}\n sql:{}\n params:{}", targetName, sql, params);
@@ -145,6 +152,7 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                 }
 
             } catch (Exception e) {
+                LOGGER.error("", e);
                 collector.onError(e);
                 return Future.failedFuture(e);
             } finally {
@@ -180,6 +188,9 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
     public Observable<VectorSchemaRoot> prepareQuery(String sql, List<Object> params, MycatRelDataType mycatRelDataType, BufferAllocator allocator) {
         return Observable.create(emitter -> {
             synchronized (NewMycatConnectionImpl.this) {
+                if (this.future.isComplete()) {
+                    this.future = Future.succeededFuture();
+                }
                 NewMycatConnectionImpl.this.future = NewMycatConnectionImpl.this.future.transform(voidAsyncResult -> {
                     try {
                         if (LOGGER.isDebugEnabled()) {
@@ -228,6 +239,7 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                             }
                         }
                     } catch (Exception e) {
+                        LOGGER.error("", e);
                         emitter.onError(e);
                         return Future.failedFuture(e);
                     } finally {
@@ -421,6 +433,9 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
 
     @Override
     public synchronized Future<List<Object>> call(String sql) {
+        if (this.future.isComplete()) {
+            this.future = Future.succeededFuture();
+        }
         Future<List<Object>> transform = future.transform(voidAsyncResult -> {
             try {
                 if (LOGGER.isDebugEnabled()) {
@@ -460,6 +475,7 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                 }
                 return Future.succeededFuture(resultSetList);
             } catch (Exception exception) {
+                LOGGER.error("", exception);
                 return Future.failedFuture(exception);
             }
         });
@@ -469,6 +485,9 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
 
     @Override
     public synchronized Future<SqlResult> insert(String sql, List<Object> params) {
+        if (this.future.isComplete()) {
+            this.future = Future.succeededFuture();
+        }
         Future<SqlResult> transform = future.transform(voidAsyncResult -> {
             try {
                 if (LOGGER.isDebugEnabled()) {
@@ -500,6 +519,7 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                 sqlResult.setLastInsertId(lastInsertId);
                 return Future.succeededFuture(sqlResult);
             } catch (Exception e) {
+                LOGGER.error("", e);
                 return Future.failedFuture(e);
             }
         });
@@ -519,6 +539,9 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
 
     @Override
     public synchronized Future<SqlResult> update(String sql, List<Object> params) {
+        if (this.future.isComplete()) {
+            this.future = Future.succeededFuture();
+        }
         Future<SqlResult> transform = future.transform(voidAsyncResult -> {
             try {
                 if (LOGGER.isDebugEnabled()) {
@@ -550,6 +573,7 @@ public class NewMycatConnectionImpl implements NewMycatConnection {
                 sqlResult.setLastInsertId(lastInsertId);
                 return Future.succeededFuture(sqlResult);
             } catch (Exception e) {
+                LOGGER.error("", e);
                 return Future.failedFuture(e);
             }
         });
