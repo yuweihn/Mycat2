@@ -6,6 +6,7 @@ https://www.yuque.com/ccazhw/ml3nkf/gnqwyv
 http://dl.mycat.org.cn/2.0/install-template/
 ------------------------------------------------------------------------------------
 1、解压安装模板；
-2、把mycat压缩成tar文件并放在 mycat\lib 目录下。
+2、将编译后的jar文件放在 mycat\lib 目录下；
+3、将mycat2\src\main\resources\目录下的全部文件复制到 mycat\conf 目录下。
 ------------------------------------------------------------------------------------
 
