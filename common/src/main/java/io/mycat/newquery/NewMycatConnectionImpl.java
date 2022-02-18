@@ -1,14 +1,12 @@
 package io.mycat.newquery;
 
 import com.alibaba.druid.pool.DruidPooledConnection;
-import com.alibaba.druid.pool.DruidPooledResultSet;
 import com.alibaba.druid.sql.SQLUtils;
 import com.alibaba.druid.sql.ast.SQLReplaceable;
 import com.alibaba.druid.sql.ast.SQLStatement;
 import com.alibaba.druid.sql.ast.expr.SQLVariantRefExpr;
 import com.alibaba.druid.sql.dialect.mysql.visitor.MySqlASTVisitorAdapter;
 import com.alibaba.druid.util.JdbcUtils;
-import com.mysql.cj.jdbc.result.ResultSetImpl;
 import com.mysql.cj.result.Field;
 import io.mycat.MySQLPacketUtil;
 import io.mycat.beans.mycat.*;
@@ -20,12 +18,9 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
+import lombok.Getter;
 import lombok.SneakyThrows;
-import org.apache.arrow.adapter.jdbc.ArrowVectorIterator;
-import org.apache.arrow.adapter.jdbc.JdbcToArrowConfig;
-import org.apache.arrow.adapter.jdbc.JdbcToArrowConfigBuilder;
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.types.pojo.ArrowType;
@@ -35,7 +30,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.*;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -43,8 +37,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Function;
 
-import static io.mycat.beans.mycat.MycatDataType.*;
+import static io.mycat.beans.mycat.MycatDataType.BINARY;
 
+@Getter
 public class NewMycatConnectionImpl implements NewMycatConnection {
     private static final Logger LOGGER = LoggerFactory.getLogger(NewMycatConnectionImpl.class);
 
