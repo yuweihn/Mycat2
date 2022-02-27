@@ -19,54 +19,33 @@ import lombok.Data;
 
 import java.text.MessageFormat;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Data
-public class MigrateHint extends HintBuilder {
+public class BinlogHint extends HintBuilder {
     String name;
-    Input input;
-    Output output;
+    List<Input> inputs;
 
     @Data
     public static class Input {
-        String schemaName;
-        String tableName;
-        String type;
-
-
         String url;
         String username;
         String password;
-        String sql;
-        long count;
-
-        Map<String, String> properties = new HashMap<>();
+        List<String> inputTableNames;
+        List<String> outputTableNames;
     }
 
-    @Data
-    public static class Output {
-        String schemaName;
-        String tableName;
-        String type;
-        String url;
-        String username;
-        String password;
-        Map<String, String> properties = new HashMap<>();
-        int parallelism = 1;
-        int batch = 1000;
-    }
-
-    public static MigrateHint create(String name,Input input, Output output) {
-        MigrateHint migrateHint = new MigrateHint();
+    public static BinlogHint create(String name, List<Input> inputs) {
+        BinlogHint migrateHint = new BinlogHint();
         migrateHint.setName(name);
-        migrateHint.setInput(input);
-        migrateHint.setOutput(output);
+        migrateHint.setInputs(inputs);
         return migrateHint;
     }
 
     @Override
     public String getCmd() {
-        return "MIGRATE";
+        return "BINLOG";
     }
 
     @Override
