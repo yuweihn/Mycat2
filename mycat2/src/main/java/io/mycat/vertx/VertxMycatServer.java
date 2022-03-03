@@ -20,6 +20,7 @@ import io.mycat.beans.mycat.ResultSetBuilder;
 import io.mycat.config.MySQLServerCapabilityFlags;
 import io.mycat.config.MycatServerConfig;
 import io.mycat.newquery.NewMycatConnectionConfig;
+import io.mycat.monitor.LogEntryHolder;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
@@ -104,6 +105,7 @@ public class VertxMycatServer implements MycatServer {
             NetServerOptions netServerOptions = new NetServerOptions();
             netServerOptions.setReusePort(true);
             netServerOptions.setReuseAddress(true);
+            netServerOptions.setUseProxyProtocol(serverConfig.getServer().isUseProxyProtocol());
             DeploymentOptions deploymentOptions = new DeploymentOptions();
             deploymentOptions.setWorker(false);
             boolean supportClientDeprecateEof = NewMycatConnectionConfig.CLIENT_DEPRECATE_EOF;
@@ -166,7 +168,7 @@ public class VertxMycatServer implements MycatServer {
 
         @Override
         public RowBaseIterator showConnections() {
-            List<MycatDataContext> sessions = MycatSessionManager.this.sessions.stream().map(i->i.getDataContext()).collect(Collectors.toList());
+            List<MycatDataContext> sessions = MycatSessionManager.this.sessions.stream().map(i -> i.getDataContext()).collect(Collectors.toList());
 
             ResultSetBuilder builder = ResultSetBuilder.create();
 
@@ -191,6 +193,7 @@ public class VertxMycatServer implements MycatServer {
             builder.addColumnInfo("TRANSACTION_TYPE", JDBCType.VARCHAR);
             builder.addColumnInfo("TRANSCATION_SNAPSHOT", JDBCType.VARCHAR);
             builder.addColumnInfo("CANCEL_FLAG", JDBCType.VARCHAR);
+            builder.addColumnInfo("SQL", JDBCType.VARCHAR);
 
             for (MycatDataContext session : sessions) {
                 long ID = session.getSessionId();
@@ -209,7 +212,7 @@ public class VertxMycatServer implements MycatServer {
                 int LAST_ERROR_CODE = session.getLastErrorCode();
                 long LAST_INSERT_ID = session.getLastInsertId();
                 String LAST_MESSAGE = session.getLastMessage();
-                String PROCESS_STATE = session.isRunning()?"RUNNING":"IDLE";
+                String PROCESS_STATE = session.isRunning() ? "RUNNING" : "IDLE";
 
                 int WARNING_COUNT = session.getWarningCount();
                 Long MYSQL_SESSION_ID = ID;
@@ -221,6 +224,8 @@ public class VertxMycatServer implements MycatServer {
                 TransactionSession transactionSession = dataContext.getTransactionSession();
                 String TRANSCATION_SMAPSHOT = transactionSession.snapshot().toString("|");
                 boolean CANCEL_FLAG = dataContext.getCancelFlag().get();
+
+                LogEntryHolder holder = (LogEntryHolder) dataContext.getHolder();
                 builder.addObjectRowPayload(Arrays.asList(
                         ID,
                         USER_NAME,
@@ -242,7 +247,8 @@ public class VertxMycatServer implements MycatServer {
                         MYSQL_SESSION_ID,
                         TRANSACTION_TYPE,
                         TRANSCATION_SMAPSHOT,
-                        CANCEL_FLAG
+                        CANCEL_FLAG,
+                        Optional.ofNullable(holder).map(i -> i.getSqlEntry()).map(i -> i.getSql()).orElse(null)
                 ));
             }
             return builder.build();

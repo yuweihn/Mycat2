@@ -12,6 +12,13 @@
     <artifactId>mycat2</artifactId>
 
     <dependencies>
+        <!-- https://mvnrepository.com/artifact/io.netty/netty-codec-haproxy -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-codec-haproxy</artifactId>
+            <version>4.1.74.Final</version>
+        </dependency>
+
         <!-- https://mvnrepository.com/artifact/io.r2dbc/r2dbc-pool -->
 <!--        <dependency>-->
 <!--            <groupId>io.r2dbc</groupId>-->
@@ -138,13 +145,6 @@
             <artifactId>guava</artifactId>
             <version>28.1-jre</version>
         </dependency>
-        <!-- https://mvnrepository.com/artifact/log4j/log4j -->
-        <!--        <dependency>-->
-        <!--            <groupId>log4j</groupId>-->
-        <!--            <artifactId>log4j</artifactId>-->
-        <!--            <version>1.2.17</version>-->
-        <!--        </dependency>-->
-        <!-- https://mvnrepository.com/artifact/log4j/apache-log4j-extras -->
         <dependency>
             <groupId>io.mycat</groupId>
             <artifactId>hbt</artifactId>
@@ -205,7 +205,7 @@
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-core</artifactId>
-            <version>4.2.3</version>
+            <version>4.2.5</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
@@ -230,7 +230,7 @@
         <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
-            <version>2.0.1</version>
+            <version>2.7.2</version>
         </dependency>
 
     </dependencies>
@@ -238,25 +238,40 @@
 
         <plugins>
             <plugin>
-                <artifactId>maven-assembly-plugin</artifactId>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.1.0</version>
                 <configuration>
-                    <finalName>mycat2-${project.version}</finalName>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                    <archive>
-                        <manifest>
-                            <mainClass>io.mycat.MycatCore</mainClass><!--这里改成自己的主类位置-->
-                        </manifest>
-                    </archive>
+                    <finalName>mycat2-${project.version}-jar-with-dependencies</finalName>
+                    <filters>
+                        <filter>
+                            <artifact>*:*</artifact>
+                            <excludes>
+                                <exclude>META-INF/*.SF</exclude>
+                                <exclude>META-INF/*.DSA</exclude>
+                                <exclude>META-INF/*.RSA</exclude>
+                            </excludes>
+                        </filter>
+                    </filters>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>make-assembly</id>
                         <phase>package</phase>
                         <goals>
-                            <goal>single</goal>
+                            <goal>shade</goal>
                         </goals>
+                        <configuration>
+                            <transformers>
+
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>reference.conf</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>io.mycat.MycatCore</mainClass>
+                                </transformer>
+
+                            </transformers>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

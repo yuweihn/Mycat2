@@ -19,6 +19,7 @@ import io.mycat.beans.mysql.MySQLIsolation;
 import io.mycat.beans.mysql.MySQLPayloadWriter;
 import io.mycat.beans.mysql.packet.AuthPacket;
 import io.mycat.beans.mysql.packet.AuthSwitchRequestPacket;
+import io.mycat.config.MySQLServerCapabilityFlags;
 import io.mycat.config.UserConfig;
 import io.mycat.mycatmysql.MycatVertxMySQLHandler;
 import io.mycat.mycatmysql.MycatVertxMysqlSession;
@@ -29,14 +30,19 @@ import io.mycat.util.MysqlNativePasswordPluginUtil;
 import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.NetSocket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.Optional;
 
 import static io.mycat.beans.mysql.MySQLErrorCode.ER_ACCESS_DENIED_ERROR;
 import static io.mycat.vertx.VertxMySQLPacketResolver.readInt;
 
 public class VertxMySQLAuthHandler implements Handler<Buffer> {
+    private static final Logger LOGGER = LoggerFactory.getLogger(VertxMySQLAuthHandler.class);
+
     final NetSocket socket;
     final VertxMycatServer.MycatSessionManager mysqlProxyServerVerticle;
     private final MycatDataContext mycatDataContext;
@@ -51,8 +57,15 @@ public class VertxMySQLAuthHandler implements Handler<Buffer> {
         this.mycatDataContext = new MycatDataContextImpl();
         this.seedParts = MysqlNativePasswordPluginUtil.nextSeedBuild();
         byte[] handshakePacket = MySQLClientAuthHandler.createHandshakePayload(mycatDataContext.getSessionId(), defaultServerCapabilities, seedParts);
-        socket.write(Buffer.buffer(MySQLPacketUtil.generateMySQLPacket(0, handshakePacket)));
-        socket.handler(this);
+        try {
+            socket.write(Buffer.buffer(MySQLPacketUtil.generateMySQLPacket(0, handshakePacket)));
+            socket.handler(this);
+        }catch (Exception exception){
+            if(LOGGER.isDebugEnabled()){
+                LOGGER.debug("{} is closed",socket.remoteAddress(),exception);
+            }
+            socket.close();
+        }
     }
 
     @Override
@@ -114,6 +127,7 @@ public class VertxMySQLAuthHandler implements Handler<Buffer> {
                         "'@'" +
                         host +
                         "' (using password: YES)";
+                LOGGER.error(message);
                 socket.write(Buffer.buffer(MySQLPacketUtil.generateMySQLPacket(packetId+1,
                         MySQLPacketUtil.generateError(ER_ACCESS_DENIED_ERROR, message, 0))));
                 socket.end();
@@ -124,10 +138,12 @@ public class VertxMySQLAuthHandler implements Handler<Buffer> {
         UserConfig userInfo = null;
         if (authenticator != null) {
             userInfo = authenticator.getUserInfo(username);
+        }else {
+            userInfo = new UserConfig();
         }
         InetSocketAddress remoteAddress = new InetSocketAddress(socket.remoteAddress().host(), socket.remoteAddress().port());
         mycatDataContext.setUser(new MycatUser(username, null, null, host, remoteAddress,userInfo));
-        mycatDataContext.useShcema(authPacket.getDatabase());
+        mycatDataContext.useShcema(Optional.ofNullable(authPacket.getDatabase()).orElse(userInfo.getSchema()));
         mycatDataContext.setServerCapabilities(
                 authPacket.getCapabilities()
         );
