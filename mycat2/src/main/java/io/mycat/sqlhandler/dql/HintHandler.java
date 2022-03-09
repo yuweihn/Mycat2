@@ -7,13 +7,14 @@ import com.alibaba.druid.sql.ast.SQLStatement;
 import com.alibaba.druid.sql.ast.expr.SQLCharExpr;
 import com.alibaba.druid.sql.ast.expr.SQLIdentifierExpr;
 import com.alibaba.druid.sql.ast.expr.SQLVariantRefExpr;
+import com.alibaba.druid.sql.ast.statement.SQLExprTableSource;
 import com.alibaba.druid.sql.ast.statement.SQLInsertStatement;
 import com.alibaba.druid.sql.dialect.mysql.ast.statement.MySqlHintStatement;
 import com.alibaba.druid.sql.dialect.mysql.ast.statement.MySqlInsertStatement;
 import com.alibaba.druid.util.JdbcUtils;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.UnmodifiableIterator;
-import hu.akarnokd.rxjava3.operators.ObservableTransformers;
 import io.mycat.*;
 import io.mycat.api.collector.MysqlPayloadObject;
 import io.mycat.api.collector.RowBaseIterator;
@@ -32,11 +33,13 @@ import io.mycat.calcite.table.ShardingTable;
 import io.mycat.commands.MycatdbCommand;
 import io.mycat.commands.SqlResultSetService;
 import io.mycat.config.*;
+import io.mycat.datasource.jdbc.datasource.DefaultConnection;
 import io.mycat.datasource.jdbc.datasource.JdbcConnectionManager;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
 import io.mycat.exporter.SqlRecorderRuntime;
-import io.mycat.hint.MigrateHint;
-import io.mycat.hint.MigrateStopHint;
+import io.mycat.hint.*;
+import io.mycat.hint.InterruptThreadHint;
+import io.mycat.hint.KillThreadHint;
 import io.mycat.monitor.MycatSQLLogMonitor;
 import io.mycat.monitor.SqlEntry;
 import io.mycat.replica.PhysicsInstance;
@@ -50,30 +53,29 @@ import io.mycat.sqlhandler.*;
 import io.mycat.sqlhandler.config.StorageManager;
 import io.mycat.sqlhandler.dml.UpdateSQLHandler;
 import io.mycat.util.JsonUtil;
+import io.mycat.util.MycatSQLExprTableSourceUtil;
 import io.mycat.util.NameMap;
 import io.mycat.util.VertxUtil;
 import io.mycat.vertx.VertxExecuter;
+import io.mycat.vertx.VertxUpdateExecuter;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Observable;
-import io.reactivex.rxjava3.functions.Function;
-import io.reactivex.rxjava3.internal.functions.Functions;
 import io.reactivex.rxjava3.schedulers.Schedulers;
-import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
-import io.vertx.core.Handler;
 import io.vertx.core.impl.future.PromiseInternal;
 import org.apache.calcite.runtime.ArrayBindable;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.commons.csv.QuoteMode;
-import org.jetbrains.annotations.Async;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
-import java.sql.*;
+import java.io.StringWriter;
+import java.sql.JDBCType;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -153,6 +155,44 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                         ArrayBindable arrayBindable = MetaClusterCurrent.wrapper(ExecutorProvider.class).prepare(plan).getArrayBindable();
                         Observable<MysqlPayloadObject> mysqlPayloadObjectObservable = PrepareExecutor.getMysqlPayloadObjectObservable(arrayBindable, sqlMycatDataContext, plan.getMetaData());
                         return response.sendResultSet(mysqlPayloadObjectObservable);
+                    }
+                    if ("killThread".equalsIgnoreCase(cmd)) {
+                        KillThreadHint killThreadHint = JsonUtil.from(body, KillThreadHint.class);
+                        long pid = killThreadHint.getId();
+                        dataContext.setAffectedRows(IOExecutor.kill(pid) ? 1 : 0);
+                        return response.sendOk();
+                    }
+                    if ("interruptThread".equalsIgnoreCase(cmd)) {
+                        Thread.currentThread().interrupt();
+                        InterruptThreadHint interruptThreadHint = JsonUtil.from(body, InterruptThreadHint.class);
+                        long pid = interruptThreadHint.getId();
+                        dataContext.setAffectedRows(IOExecutor.interrupt(pid) ? 1 : 0);
+                        return response.sendOk();
+                    }
+                    if ("showThreadInfo".equalsIgnoreCase(cmd)) {
+                        ResultSetBuilder builder = ResultSetBuilder.create();
+                        builder.addColumnInfo("ID", JDBCType.VARCHAR);
+                        builder.addColumnInfo("NAME", JDBCType.VARCHAR);
+                        builder.addColumnInfo("STATE", JDBCType.VARCHAR);
+                        builder.addColumnInfo("STACKTRACE", JDBCType.VARCHAR);
+
+                        List<Thread> threads = IOExecutor.findAllThreads();
+                        for (Thread thread : threads) {
+                            String name = thread.getName();
+                            long id = thread.getId();
+                            String state = thread.getState().name();
+                            StackTraceElement[] stackTrace = thread.getStackTrace();
+
+                            StringWriter stringWriter = new StringWriter();
+                            for (StackTraceElement traceElement : stackTrace) {
+                                stringWriter.write("\tat " + traceElement);
+                            }
+                            String stackTraceText = stringWriter.toString();
+
+                            builder.addObjectRowPayload(Arrays.asList(id, name, state, stackTraceText));
+                        }
+
+                        return response.sendResultSet(builder.build());
                     }
                     if ("createSqlCache".equalsIgnoreCase(cmd)) {
                         MycatRouterConfigOps ops = ConfigUpdater.getOps();
@@ -415,6 +455,25 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                         DrdsSqlCompiler.RBO_MERGE_JOIN = body.contains("1");
                         return response.sendOk();
                     }
+                    if ("setAcceptConnect".equalsIgnoreCase(cmd)) {
+                        boolean contains = body.contains("1");
+                        MycatServer server = MetaClusterCurrent.wrapper(MycatServer.class);
+                        if (!contains) {
+                            server.stopAcceptConnect();
+                        } else {
+                            server.resumeAcceptConnect();
+                        }
+                        dataContext.setAffectedRows(1);
+                        return response.sendOk();
+                    }
+                    if ("setReadyToCloseSQL".equalsIgnoreCase(cmd)) {
+                        ReadyToCloseSQLHint readyToCloseSQLHint = JsonUtil.from(body, ReadyToCloseSQLHint.class);
+                        String sql = readyToCloseSQLHint.getSql().trim();
+                        MycatServer server = MetaClusterCurrent.wrapper(MycatServer.class);
+                        server.setReadyToCloseSQL(sql);
+                        dataContext.setAffectedRows(1);
+                        return response.sendOk();
+                    }
                     if ("setDebug".equalsIgnoreCase(cmd)) {
                         boolean contains = body.contains("1");
                         dataContext.setDebug(contains);
@@ -629,19 +688,7 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                         String outputTableName = outputTable.getTableName();
 
 
-                        MySqlInsertStatement mySqlInsertStatement = new MySqlInsertStatement();
-                        mySqlInsertStatement.setTableName(new SQLIdentifierExpr("`" + outputTableName + "`"));
-                        mySqlInsertStatement.getTableSource().setSchema("`" + outputSchemaName + "`");
-                        SQLInsertStatement.ValuesClause valuesClause = new SQLInsertStatement.ValuesClause();
-
-                        int columnCount = outputTable.getColumns().size();
-
-                        for (SimpleColumnInfo column : outputTable.getColumns()) {
-                            mySqlInsertStatement.addColumn(new SQLIdentifierExpr("`" + column.getColumnName() + "`"));
-                            valuesClause.addValue(new SQLVariantRefExpr("?"));
-                        }
-                        mySqlInsertStatement.setValues(valuesClause);
-                        String insertTemplate = mySqlInsertStatement.toString();
+                        String insertTemplate = getMySQLInsertTemplate(outputTable);
 
 
                         migrateJdbcOutput.setUsername(username);
@@ -654,6 +701,166 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                         MigrateUtil.MigrateScheduler scheduler = MigrateUtil.register(name, migrateJdbcInputs, migrateJdbcOutput, migrateController);
                         return response.sendResultSet(MigrateUtil.show(scheduler));
                     }
+                    if ("BINLOG_LIST".equalsIgnoreCase(cmd)) {
+                        return response.sendResultSet(BinlogUtil.list());
+                    }
+                    if ("BINLOG_STOP".equalsIgnoreCase(cmd)) {
+                        BinlogStopHint hint = JsonUtil.from(body, BinlogStopHint.class);
+                        if (BinlogUtil.stop(hint.getId())) {
+                            dataContext.setAffectedRows(1);
+                        }
+                        return response.sendOk();
+                    }
+                    if ("BINLOG_CLEAR".equalsIgnoreCase(cmd)) {
+                        BinlogUtil.clear();
+                        dataContext.setAffectedRows(1);
+                        return response.sendOk();
+                    }
+                    if ("BINLOG_SNAPSHOT".equalsIgnoreCase(cmd)) {
+                        BinlogSnapshotHint hint = JsonUtil.from(body, BinlogSnapshotHint.class);
+                        RowBaseIterator rowBaseIterator = BinlogUtil.binlogSnapshot(hint.getName());
+                        return response.sendResultSet(rowBaseIterator);
+                    }
+                    if ("BINLOG_SYNC".equalsIgnoreCase(cmd)) {
+                        BinlogSyncHint binlogHint = JsonUtil.from(body, BinlogSyncHint.class);
+                        String name = binlogHint.getName();
+                        String snapshot = binlogHint.getSnapshotId();
+                        Map<String,BinlogUtil.BinlogArgs> binlogArgsMap = new HashMap<>();
+                        if (snapshot != null) {
+                            try (DefaultConnection defaultConnection = jdbcConnectionManager.getConnection(MetadataManager.getPrototype());) {
+                                List<Map<String, Object>> maps = JdbcUtils.executeQuery(defaultConnection.getRawConnection(), "select * from mycat.ds_binlog where Id = ?", Arrays.asList(snapshot));
+                                for (Map<String, Object> map : maps) {
+                                    String eId = (String) map.get("Id");
+                                    String eName = (String) map.get("Name");
+                                    String datasource = (String) map.get("Datasource");
+                                    String file = (String) map.get("File");
+                                    Long position = (Long) map.get("Position");
+                                    String binlog_ignore_db = (String) map.get("Binlog_Ignore_DB");
+                                    String binlog_do_db = (String) map.get("Binlog_Do_DB");
+
+                                    BinlogUtil.BinlogArgs binlogArgs = new BinlogUtil.BinlogArgs();
+                                    binlogArgs.setBinlogFilename(file);
+                                    binlogArgs.setBinlogPosition(position);
+
+                                    if (binlogHint.getConnectTimeout() > 0) {
+                                        binlogArgs.setConnectTimeout(binlogHint.getConnectTimeout());
+                                    }
+                                    binlogArgsMap.put(datasource,binlogArgs);
+                                }
+                            }
+                        }
+                        Objects.requireNonNull(binlogHint.getInputTableNames());
+
+                        List<String> outputTableNames = binlogHint.getOutputTableNames();
+
+                        if (outputTableNames == null) {
+                            binlogHint.setOutputTableNames(binlogHint.getInputTableNames());
+                        }
+
+                        IdentityHashMap<TableHandler, TableHandler> map = new IdentityHashMap<>();
+
+
+                        List<TableHandler> inputs = new ArrayList<>();
+                        List<TableHandler> outputs = new ArrayList<>();
+
+                        for (String inputTableName : binlogHint.getInputTableNames()) {
+                            String[] split = inputTableName.split("\\.");
+                            String schemaName = SQLUtils.normalize(split[0]);
+                            String tableName = SQLUtils.normalize(split[1]);
+                            TableHandler inputTable = metadataManager.getTable(schemaName, tableName);
+                            inputs.add(inputTable);
+                        }
+
+                        for (String outputTableName : binlogHint.getOutputTableNames()) {
+                            String[] split = outputTableName.split("\\.");
+                            String schemaName = SQLUtils.normalize(split[0]);
+                            String tableName = SQLUtils.normalize(split[1]);
+                            TableHandler outputTable = metadataManager.getTable(schemaName, tableName);
+                            outputs.add(outputTable);
+                        }
+
+                        for (int i = 0; i < inputs.size(); i++) {
+                            map.put(inputs.get(i), outputs.get(i));
+                        }
+
+                        Map<String, Map<String, List<Partition>>> infoCollector = new HashMap<>();
+                        List<MigrateUtil.MigrateController> migrateControllers = new ArrayList<>();
+
+
+                        Set<Map.Entry<TableHandler, TableHandler>> entries = map.entrySet();
+                        for (Map.Entry<TableHandler, TableHandler> entry : entries) {
+                            ServerConfig serverConfig = MetaClusterCurrent.wrapper(ServerConfig.class);
+
+                            TableHandler inputTable = entry.getKey();
+                            TableHandler outputTable = entry.getValue();
+
+                            UserConfig userConfig = routerConfig.getUsers().get(0);
+
+                            String username = userConfig.getUsername();
+                            String password = userConfig.getPassword();
+
+
+                            String ip = serverConfig.getIp();
+                            int port = serverConfig.getPort();
+
+                            String url =
+                                    "jdbc:mysql://" +
+                                            ip +
+                                            ":" +
+                                            port + "/mysql?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true";
+
+                            MigrateUtil.MigrateJdbcAnyOutput output = new MigrateUtil.MigrateJdbcAnyOutput();
+                            output.setUrl(url);
+                            output.setUsername(username);
+                            output.setPassword(password);
+
+                            List<Partition> partitions = new ArrayList<>();
+                            switch (inputTable.getType()) {
+                                case SHARDING: {
+                                    ShardingTable shardingTable = (ShardingTable) inputTable;
+                                    partitions = shardingTable.getShardingFuntion().calculate(Collections.emptyMap());
+                                    break;
+                                }
+                                case GLOBAL: {
+                                    GlobalTable globalTable = (GlobalTable) inputTable;
+                                    partitions = ImmutableList.of(globalTable.getGlobalDataNode().get(0));
+                                    break;
+                                }
+                                case NORMAL: {
+                                    NormalTable normalTable = (NormalTable) inputTable;
+                                    partitions = ImmutableList.of(normalTable.getDataNode());
+                                    break;
+                                }
+                                case CUSTOM:
+                                case VISUAL:
+                                case VIEW:
+                                    throw new UnsupportedOperationException();
+                            }
+                            ReplicaSelectorManager replicaSelectorManager = MetaClusterCurrent.wrapper(ReplicaSelectorManager.class);
+
+                            Map<String, List<Partition>> listMap = partitions.stream().collect(Collectors.groupingBy(partition -> replicaSelectorManager.getDatasourceNameByReplicaName(partition.getTargetName(), true, null)));
+                            infoCollector.put(inputTable.getUniqueName(), listMap);
+
+                            List<Flowable<BinlogUtil.ParamSQL>> flowables = new ArrayList<>();
+                            for (Map.Entry<String, List<Partition>> e : listMap.entrySet()) {
+                                BinlogUtil.BinlogArgs binlogArgs = binlogArgsMap.get(e.getKey());
+                                flowables.add(BinlogUtil.observe(binlogArgs, e.getKey(), e.getValue()).subscribeOn(Schedulers.io()));
+                            }
+                            Flowable<BinlogUtil.ParamSQL> merge = flowables.size() == 1 ? flowables.get(0) : Flowable.merge(flowables, flowables.size());
+                            merge = merge.map(paramSQL -> {
+                                SQLStatement sqlStatement = SQLUtils.parseSingleMysqlStatement(paramSQL.getSql());
+                                SQLExprTableSource sqlExprTableSource = VertxUpdateExecuter.getTableSource(sqlStatement);
+                                MycatSQLExprTableSourceUtil.setSqlExprTableSource(outputTable.getSchemaName(), outputTable.getTableName(), sqlExprTableSource);
+                                paramSQL.setSql(sqlStatement.toString());
+                                return paramSQL;
+                            });
+                            MigrateUtil.MigrateController migrateController = MigrateUtil.writeSql(output, merge);
+                            migrateControllers.add(migrateController);
+                        }
+                        BinlogUtil.BinlogScheduler scheduler = BinlogUtil.BinlogScheduler.of(UUID.randomUUID().toString(), binlogHint.getName(), infoCollector, migrateControllers);
+                        BinlogUtil.register(scheduler);
+                        return response.sendResultSet(BinlogUtil.list(Collections.singletonList(scheduler)));
+                    }
                     mycatDmlHandler(cmd, body);
                     return response.sendOk();
                 }
@@ -662,6 +869,24 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
         } catch (Throwable throwable) {
             return response.sendError(throwable);
         }
+    }
+
+    private static String getMySQLInsertTemplate(TableHandler outputTable) {
+        String outputSchemaName = outputTable.getSchemaName();
+        String outputTableName = outputTable.getTableName();
+        MySqlInsertStatement mySqlInsertStatement = new MySqlInsertStatement();
+        mySqlInsertStatement.setTableName(new SQLIdentifierExpr("`" + outputTableName + "`"));
+        mySqlInsertStatement.getTableSource().setSchema("`" + outputSchemaName + "`");
+        SQLInsertStatement.ValuesClause valuesClause = new SQLInsertStatement.ValuesClause();
+
+        int columnCount = outputTable.getColumns().size();
+
+        for (SimpleColumnInfo column : outputTable.getColumns()) {
+            mySqlInsertStatement.addColumn(new SQLIdentifierExpr("`" + column.getColumnName() + "`"));
+            valuesClause.addValue(new SQLVariantRefExpr("?"));
+        }
+        mySqlInsertStatement.setValues(valuesClause);
+        return mySqlInsertStatement.toString();
     }
 
     public static RowBaseIterator showHeatbeatStat() {

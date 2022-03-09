@@ -29,6 +29,7 @@ import com.alibaba.druid.sql.ast.statement.SQLTableElement;
 import com.alibaba.druid.sql.dialect.mysql.ast.MySqlPrimaryKey;
 import com.alibaba.druid.sql.dialect.mysql.ast.statement.MySqlCreateTableStatement;
 import com.alibaba.druid.sql.dialect.mysql.ast.statement.MySqlTableIndex;
+import com.google.common.collect.ImmutableList;
 import io.mycat.*;
 import io.mycat.beans.mycat.TransactionType;
 import io.mycat.calcite.spm.DbPlanManagerPersistorImpl;
@@ -222,12 +223,18 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
         List<String> allReplica = clusters.stream().map(i -> i.getName()).filter(i -> i.startsWith("c")).collect(Collectors.toList());
         GlobalTableConfig globalTableConfig = new GlobalTableConfig();
         globalTableConfig.setCreateTableSQL(sqlString.toString());
-        globalTableConfig.setBroadcast(allReplica.stream()
+        List<GlobalBackEndTableInfoConfig> backEndTableInfoConfigs = allReplica.stream()
                 .map(i -> {
                     GlobalBackEndTableInfoConfig backEndTableInfoConfig = new GlobalBackEndTableInfoConfig();
                     backEndTableInfoConfig.setTargetName(i);
                     return backEndTableInfoConfig;
-                }).collect(Collectors.toList()));
+                }).collect(Collectors.toList());
+        if (backEndTableInfoConfigs.isEmpty()) {
+            GlobalBackEndTableInfoConfig backEndTableInfoConfig = new GlobalBackEndTableInfoConfig();
+            backEndTableInfoConfig.setTargetName(MetadataManager.getPrototype());
+            backEndTableInfoConfigs = ImmutableList.of(backEndTableInfoConfig);
+        }
+        globalTableConfig.setBroadcast(backEndTableInfoConfigs);
         return globalTableConfig;
     }
 
@@ -1096,7 +1103,7 @@ public class MycatRouterConfigOps implements AutoCloseable, ConfigOps {
             Map<String, ViewConfig> views = logicSchemaConfig.getViews();
             Optional<String> viewNameOptional = views.keySet().stream().filter(v -> v.equalsIgnoreCase(viewName)).findFirst();
             viewNameOptional.ifPresent(s -> views.remove(s));
-            if (!viewNameOptional.isPresent()){
+            if (!viewNameOptional.isPresent()) {
                 Map<String, NormalTableConfig> normalTables = logicSchemaConfig.getNormalTables();
                 Optional<String> tableNameOptional = normalTables.keySet().stream().filter(v -> v.equalsIgnoreCase(viewName)).findFirst();
                 tableNameOptional.ifPresent(s -> normalTables.remove(s));

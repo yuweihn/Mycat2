@@ -91,9 +91,25 @@ public class VertxMycatServer implements MycatServer {
         return server.kill(ids);
     }
 
+    @Override
+    public void stopAcceptConnect() {
+        this.server.stopAcceptConnect();
+    }
+
+    @Override
+    public void resumeAcceptConnect() {
+        this.server.resumeAcceptConnect();
+    }
+
+    @Override
+    public void setReadyToCloseSQL(String sql) {
+        this.server.setReadyToCloseSQL(sql);
+    }
+
     public static class MycatSessionManager implements MycatServer {
         private final ConcurrentLinkedDeque<VertxSession> sessions = new ConcurrentLinkedDeque<>();
         private MycatServerConfig serverConfig;
+        public boolean acceptConnect = true;
 
         public MycatSessionManager(MycatServerConfig serverConfig) {
             this.serverConfig = serverConfig;
@@ -122,6 +138,10 @@ public class VertxMycatServer implements MycatServer {
                     public void start() throws Exception {
                         NetServer netServer = vertx.createNetServer(netServerOptions);//创建代理服务器
                         netServer.connectHandler(socket -> {
+                            if (!MycatSessionManager.this.acceptConnect) {
+                                socket.close();
+                                return;
+                            }
                             VertxMySQLAuthHandler vertxMySQLAuthHandler = new VertxMySQLAuthHandler(socket, finalServerCapabilities, MycatSessionManager.this);
                         }).listen(serverConfig.getServer().getPort(),
                                 serverConfig.getServer().getIp(), listenResult -> {//代理服务器的监听端口
@@ -152,6 +172,23 @@ public class VertxMycatServer implements MycatServer {
             return count;
         }
 
+        @Override
+        public void stopAcceptConnect() {
+            acceptConnect = false;
+        }
+
+        @Override
+        public void resumeAcceptConnect() {
+            acceptConnect = true;
+        }
+
+        @Override
+        public void setReadyToCloseSQL(String sql) {
+            for (VertxSession session : sessions) {
+                session.getDataContext().setReadyToCloseSQL(sql);
+            }
+        }
+
         public void addSession(VertxSession vertxSession) {
             NetSocket socket = vertxSession.getSocket();
             socket.closeHandler(event -> {
@@ -165,6 +202,7 @@ public class VertxMycatServer implements MycatServer {
         public RowBaseIterator showNativeDataSources() {
             return demo();
         }
+
 
         @Override
         public RowBaseIterator showConnections() {

@@ -18,34 +18,17 @@ import io.mycat.util.JsonUtil;
 import lombok.Data;
 
 import java.text.MessageFormat;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 @Data
-public class BinlogHint extends HintBuilder {
-    String name;
-    List<Input> inputs;
+public class BinlogListHint extends HintBuilder {
 
-    @Data
-    public static class Input {
-        String url;
-        String username;
-        String password;
-        List<String> inputTableNames;
-        List<String> outputTableNames;
-    }
-
-    public static BinlogHint create(String name, List<Input> inputs) {
-        BinlogHint migrateHint = new BinlogHint();
-        migrateHint.setName(name);
-        migrateHint.setInputs(inputs);
-        return migrateHint;
+    public static String create() {
+        return new BinlogListHint().build();
     }
 
     @Override
     public String getCmd() {
-        return "BINLOG";
+        return "BINLOG_LIST";
     }
 
     @Override
