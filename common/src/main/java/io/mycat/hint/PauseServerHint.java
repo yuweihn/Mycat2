@@ -18,22 +18,20 @@ import io.mycat.util.JsonUtil;
 import lombok.Data;
 
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
-public class ReadyToCloseSQLHint extends HintBuilder {
-    String sql;
+public class PauseServerHint extends HintBuilder {
+    List<Long> connectionIds = new ArrayList<>();
 
-
-    public static String create(String sql) {
-        ReadyToCloseSQLHint migrateHint = new ReadyToCloseSQLHint();
-        migrateHint.setSql(sql);
-        return migrateHint.build();
+    public static String create() {
+        return new PauseServerHint().build();
     }
 
     @Override
     public String getCmd() {
-        return "setReadyToCloseSQL";
+        return "pauseServer";
     }
 
     @Override
@@ -44,7 +42,6 @@ public class ReadyToCloseSQLHint extends HintBuilder {
     }
 
     public static void main(String[] args) {
-        String s = create("select 'x'");
-        System.out.println(s);
+        System.out.println(PauseServerHint.create());
     }
 }

@@ -38,8 +38,6 @@ import io.mycat.datasource.jdbc.datasource.JdbcConnectionManager;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
 import io.mycat.exporter.SqlRecorderRuntime;
 import io.mycat.hint.*;
-import io.mycat.hint.InterruptThreadHint;
-import io.mycat.hint.KillThreadHint;
 import io.mycat.monitor.MycatSQLLogMonitor;
 import io.mycat.monitor.SqlEntry;
 import io.mycat.replica.PhysicsInstance;
@@ -474,6 +472,30 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                         dataContext.setAffectedRows(1);
                         return response.sendOk();
                     }
+                    if ("pauseServer".equalsIgnoreCase(cmd)) {
+                        PauseServerHint pauseServerHint = JsonUtil.from(body, PauseServerHint.class);
+                        MycatServer server = MetaClusterCurrent.wrapper(MycatServer.class);
+
+                        long sessionId = dataContext.getSessionId();
+                        HashSet<Long> set = new HashSet<>();
+                        set.add(sessionId);
+                        set.addAll(Optional.ofNullable(pauseServerHint.getConnectionIds()).orElse(Collections.emptyList()));
+                        return server.pause(new ArrayList<>(set)).transform(result -> {
+                            if (result.succeeded()) {
+                                dataContext.setAffectedRows(1);
+                                return response.sendOk();
+                            } else {
+                                server.resume();
+                                return response.sendError(result.cause());
+                            }
+                        });
+                    }
+                    if ("resumeServer".equalsIgnoreCase(cmd)) {
+                        MycatServer server = MetaClusterCurrent.wrapper(MycatServer.class);
+                        server.resume();
+                        dataContext.setAffectedRows(1);
+                        return response.sendOk();
+                    }
                     if ("setDebug".equalsIgnoreCase(cmd)) {
                         boolean contains = body.contains("1");
                         dataContext.setDebug(contains);
@@ -725,7 +747,8 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                         BinlogSyncHint binlogHint = JsonUtil.from(body, BinlogSyncHint.class);
                         String name = binlogHint.getName();
                         String snapshot = binlogHint.getSnapshotId();
-                        Map<String,BinlogUtil.BinlogArgs> binlogArgsMap = new HashMap<>();
+                        Map<String, BinlogUtil.BinlogArgs> binlogArgsMap = new HashMap<>();
+                        List<BinlogUtil.BinlogRes> binlogResArrayList = new ArrayList<>();
                         if (snapshot != null) {
                             try (DefaultConnection defaultConnection = jdbcConnectionManager.getConnection(MetadataManager.getPrototype());) {
                                 List<Map<String, Object>> maps = JdbcUtils.executeQuery(defaultConnection.getRawConnection(), "select * from mycat.ds_binlog where Id = ?", Arrays.asList(snapshot));
@@ -745,7 +768,7 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                                     if (binlogHint.getConnectTimeout() > 0) {
                                         binlogArgs.setConnectTimeout(binlogHint.getConnectTimeout());
                                     }
-                                    binlogArgsMap.put(datasource,binlogArgs);
+                                    binlogArgsMap.put(datasource, binlogArgs);
                                 }
                             }
                         }
@@ -842,9 +865,12 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                             infoCollector.put(inputTable.getUniqueName(), listMap);
 
                             List<Flowable<BinlogUtil.ParamSQL>> flowables = new ArrayList<>();
+
                             for (Map.Entry<String, List<Partition>> e : listMap.entrySet()) {
                                 BinlogUtil.BinlogArgs binlogArgs = binlogArgsMap.get(e.getKey());
-                                flowables.add(BinlogUtil.observe(binlogArgs, e.getKey(), e.getValue()).subscribeOn(Schedulers.io()));
+                                BinlogUtil.BinlogRes binlogRes = new BinlogUtil.BinlogRes();
+                                binlogResArrayList.add(binlogRes);
+                                flowables.add(BinlogUtil.observe(binlogArgs, binlogRes, e.getKey(), e.getValue()).subscribeOn(Schedulers.io()));
                             }
                             Flowable<BinlogUtil.ParamSQL> merge = flowables.size() == 1 ? flowables.get(0) : Flowable.merge(flowables, flowables.size());
                             merge = merge.map(paramSQL -> {
@@ -857,7 +883,7 @@ public class HintHandler extends AbstractSQLHandler<MySqlHintStatement> {
                             MigrateUtil.MigrateController migrateController = MigrateUtil.writeSql(output, merge);
                             migrateControllers.add(migrateController);
                         }
-                        BinlogUtil.BinlogScheduler scheduler = BinlogUtil.BinlogScheduler.of(UUID.randomUUID().toString(), binlogHint.getName(), infoCollector, migrateControllers);
+                        BinlogUtil.BinlogScheduler scheduler = BinlogUtil.BinlogScheduler.of(UUID.randomUUID().toString(), binlogHint.getName(), infoCollector, migrateControllers,binlogResArrayList);
                         BinlogUtil.register(scheduler);
                         return response.sendResultSet(BinlogUtil.list(Collections.singletonList(scheduler)));
                     }

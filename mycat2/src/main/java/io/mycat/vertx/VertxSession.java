@@ -27,4 +27,6 @@ public interface VertxSession extends MySQLServerSession {
     Future<Void> close();
 
     NetSocket getSocket();
+
+    boolean isPause();
 }
