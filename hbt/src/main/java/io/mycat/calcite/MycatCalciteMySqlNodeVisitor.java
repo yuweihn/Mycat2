@@ -15,6 +15,7 @@ import com.google.common.collect.ImmutableList;
 import io.mycat.MycatException;
 import io.mycat.calcite.sqlfunction.datefunction.*;
 import io.mycat.calcite.sqlfunction.infofunction.*;
+import io.mycat.calcite.sqlfunction.jsonfunction.SubGtFunction;
 import io.mycat.calcite.sqlfunction.lockfunction.MycatGetLockFunction;
 import io.mycat.calcite.sqlfunction.lockfunction.MycatIsFreeLockFunction;
 import io.mycat.calcite.sqlfunction.lockfunction.MycatReleaseLockFunction;
@@ -1265,12 +1266,11 @@ public class MycatCalciteMySqlNodeVisitor extends MySqlASTVisitorAdapter {
                         new SQLMethodInvokeExpr("SOUNDEX", null, x.getRight()));
                 eq.accept(this);
                 return false;
-            case Mod:
-
             case SubGt:
-
             case SubGtGt:
-
+                sqlNode = SubGtFunction.INSTANCE.createCall(SqlParserPos.ZERO, new SqlNode[]{left, right});
+                return false;
+            case Mod:
             case PoundGt:
 
             case PoundGtGt:
@@ -1334,7 +1334,7 @@ public class MycatCalciteMySqlNodeVisitor extends MySqlASTVisitorAdapter {
             case PG_ST_DISTANCE:
 
             default:
-                SqlUnresolvedFunction sqlUnresolvedFunction = new SqlUnresolvedFunction(new SqlIdentifier(x.getOperator().name(), SqlParserPos.ZERO),
+                SqlUnresolvedFunction sqlUnresolvedFunction = new SqlUnresolvedFunction(new SqlIdentifier(x.getOperator().getName(), SqlParserPos.ZERO),
                         null,
                         null,
                         null,

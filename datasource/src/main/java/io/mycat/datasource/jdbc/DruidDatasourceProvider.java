@@ -14,15 +14,21 @@
  */
 package io.mycat.datasource.jdbc;
 
+import com.alibaba.druid.DbType;
 import com.alibaba.druid.pool.DruidDataSource;
 import io.mycat.MycatDataContext;
 import io.mycat.TransactionSession;
 import io.mycat.config.DatasourceConfig;
 import io.mycat.config.ServerConfig;
 import io.mycat.datasource.jdbc.datasource.JdbcDataSource;
+import org.jooq.DSLContext;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DSL;
 
+import javax.sql.DataSource;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -68,8 +74,49 @@ public class DruidDatasourceProvider implements DatasourceProvider {
         if (initSQLs != null) {
             datasource.setConnectionInitSqls(initSQLs);
         }
-
-        return new JdbcDataSource(config, datasource);
+        DataSource finalDataSource;
+        if (config.computeType().isJdbc() && !"mysql".equalsIgnoreCase(config.getDbType())) {
+            dbType = Optional.ofNullable(dbType).orElse("mysql");
+            DbType dbTypeEnum = DbType.of(dbType);
+            SQLDialect dialect;
+            switch (dbTypeEnum) {
+                case jtds:
+                case other:
+                case db2:
+                case oracle:
+                case hive:
+                case dm:
+                case polardb:
+                case sqlserver:
+                default:
+                    dialect = SQLDialect.DEFAULT;
+                    break;
+                case hsql:
+                    dialect = SQLDialect.HSQLDB;
+                    break;
+                case postgresql:
+                    dialect = SQLDialect.POSTGRES;
+                    break;
+                case oceanbase:
+                case mysql:
+                    dialect = SQLDialect.MYSQL;
+                    break;
+                case mariadb:
+                    dialect = SQLDialect.MARIADB;
+                    break;
+                case derby:
+                    dialect = SQLDialect.DERBY;
+                    break;
+                case h2:
+                    dialect = SQLDialect.H2;
+                    break;
+            }
+            DSLContext using = DSL.using(datasource, dialect);
+            finalDataSource = using.parsingDataSource();
+        } else {
+            finalDataSource = datasource;
+        }
+        return new JdbcDataSource(config, finalDataSource);
     }
 
     @Override
