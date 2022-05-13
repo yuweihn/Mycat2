@@ -13,10 +13,7 @@ import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.Json;
 import lombok.SneakyThrows;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.*;
 import org.testng.Assert;
 
 import javax.annotation.concurrent.NotThreadSafe;
@@ -24,6 +21,7 @@ import java.sql.Connection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @NotThreadSafe
 @net.jcip.annotations.NotThreadSafe
@@ -39,6 +37,7 @@ public class MycatMonitorTest implements MycatTest {
     }
 
     @AfterClass
+    @SneakyThrows
     public static void afterClass() {
         if (vertx != null) {
             vertx.close();
@@ -52,6 +51,15 @@ public class MycatMonitorTest implements MycatTest {
 
     }
 
+    @After
+    @SneakyThrows
+    public synchronized void after() {
+        try (Connection mycatConnection = getMySQLConnection(DB_MYCAT);) {
+            JdbcUtils.execute(mycatConnection, "/*+mycat:setSqlTimeFilter{value:" +
+                    TimeUnit.SECONDS.toMillis(30) +
+                    "} */", Collections.emptyList());
+        }
+    }
     @Test
     @SneakyThrows
     public void test() {
@@ -66,7 +74,7 @@ public class MycatMonitorTest implements MycatTest {
                     ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\n");
 
             String sql = " select * FROM db1.`monitor`; ";
-            for (int i = 0; i < 1000; i++) {
+            for (int i = 0; i < 100; i++) {
                 JdbcUtils.executeQuery(mySQLConnection, sql, Collections.emptyList());
             }
         }
@@ -89,7 +97,7 @@ public class MycatMonitorTest implements MycatTest {
                     ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\n");
 
             String sql = " select * FROM db1.`monitor`; ";
-            for (int i = 0; i < 1000; i++) {
+            for (int i = 0; i < 100; i++) {
                 executeQuery(mySQLConnection, sql);
             }
         }
@@ -112,7 +120,7 @@ public class MycatMonitorTest implements MycatTest {
                     ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4\n");
 
             String sql = " select * FROM db1.`monitor`";
-            for (int i = 0; i < 1000; i++) {
+            for (int i = 0; i < 100; i++) {
                 executeQuery(mySQLConnection, sql);
             }
         }

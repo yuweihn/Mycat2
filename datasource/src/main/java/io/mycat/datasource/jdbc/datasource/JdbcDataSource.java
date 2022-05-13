@@ -14,6 +14,11 @@
  */
 package io.mycat.datasource.jdbc.datasource;
 
+import com.alibaba.druid.pool.DruidDataSource;
+import com.alibaba.druid.pool.DruidPooledConnection;
+import io.mycat.MetaClusterCurrent;
+import io.mycat.MycatServer;
+import io.mycat.api.collector.RowBaseIterator;
 import io.mycat.beans.mycat.MycatDataSource;
 import io.mycat.config.DatasourceConfig;
 import org.slf4j.Logger;
@@ -21,9 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -111,7 +114,24 @@ public class JdbcDataSource implements MycatDataSource {
         this.valid = valid;
     }
 
-    public  void close() {
+    public void close() {
+        int count = this.counter.get();
+        if (count > 0) {
+            LOGGER.info("JdbcDataSource:{} close ,but pool count is {}", getName(), count);
+            if (this.datasourceConfig.isRemoveAbandoned() && this.getDataSource() instanceof DruidDataSource) {
+                DruidDataSource druidDataSource = (DruidDataSource) this.getDataSource();
+                Object activeConnections = druidDataSource.getActiveConnectionStackTrace();
+                int activeCount = druidDataSource.getActiveCount();
+                if (activeCount != count) {
+                    LOGGER.error("JdbcDataSource:{} close activeCount{},activeCount != count",getName(),activeCount);
+                }
+                LOGGER.info("JdbcDataSource:{} close count but has activeConnections {}", getName(), activeConnections);
+            }
+            MycatServer mycatServer = MetaClusterCurrent.wrapper(MycatServer.class);
+            RowBaseIterator rowBaseIterator = mycatServer.showConnections();
+            List<Map<String, Object>> resultSetMap = rowBaseIterator.getResultSetMap();
+            LOGGER.error(resultSetMap.toString());
+        }
         Optional.ofNullable(this.getDataSource()).ifPresent(i -> {
             try {
                 Class<? extends DataSource> aClass = i.getClass();
@@ -127,6 +147,7 @@ public class JdbcDataSource implements MycatDataSource {
                 methodList.sort(Comparator.comparingInt(Method::getParameterCount));
                 if (!methodList.isEmpty()) {
                     methodList.get(0).invoke(i);
+                    LOGGER.info("JdbcDataSource:{} closed", getName());
                 }
             } catch (Throwable e) {
                 LOGGER.error("试图关闭数据源失败:{} ,{}", getName(), e);
