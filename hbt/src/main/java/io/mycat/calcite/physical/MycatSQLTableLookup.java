@@ -5,22 +5,16 @@ import com.google.common.collect.ImmutableMultimap;
 import io.mycat.AsyncMycatDataContextImpl;
 import io.mycat.DrdsSqlWithParams;
 import io.mycat.beans.mycat.CopyMycatRowMetaData;
-import io.mycat.beans.mycat.MycatRowMetaData;
 import io.mycat.calcite.*;
 import io.mycat.calcite.logical.MycatView;
 import io.mycat.calcite.resultset.CalciteRowMetaData;
-import io.mycat.newquery.NewMycatConnection;
 import io.mycat.vertx.VertxExecuter;
 import io.reactivex.rxjava3.annotations.NonNull;
 import io.reactivex.rxjava3.core.Observable;
-import io.vertx.core.Future;
 import lombok.Getter;
 import org.apache.calcite.adapter.enumerable.*;
 import org.apache.calcite.linq4j.tree.*;
-import org.apache.calcite.plan.RelOptCluster;
-import org.apache.calcite.plan.RelOptCost;
-import org.apache.calcite.plan.RelOptPlanner;
-import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.plan.*;
 import org.apache.calcite.rel.*;
 import org.apache.calcite.rel.core.CorrelationId;
 import org.apache.calcite.rel.core.Filter;
@@ -28,12 +22,12 @@ import org.apache.calcite.rel.core.JoinInfo;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.metadata.RelMdUtil;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
-import org.apache.calcite.rex.RexCall;
-import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.rex.RexShuttle;
-import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rex.*;
 import org.apache.calcite.runtime.NewMycatDataContext;
 import org.apache.calcite.sql.*;
+import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql.util.SqlString;
@@ -43,16 +37,16 @@ import org.apache.calcite.util.Util;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static io.mycat.calcite.MycatImplementor.MYCAT_SQL_LOOKUP_IN;
 
 @Getter
 public class MycatSQLTableLookup extends SingleRel implements MycatRel {
-    protected final RexNode condition;
+    protected final RexNode joinCondition;
     protected final JoinRelType joinType;
     protected final Type type;
     protected final List<CorrelationId> correlationIds;
@@ -65,9 +59,9 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
 
     @Override
     public RelWriter explainTerms(RelWriter pw) {
-        JoinInfo joinInfo = JoinInfo.of(getInput(), right, condition);
+        JoinInfo joinInfo = JoinInfo.of(getInput(), right, joinCondition);
         RelWriter relWriter = super.explainTerms(pw)
-                .item("condition", condition)
+                .item("condition", joinCondition)
                 .item("joinType", joinType.lowerName)
                 .item("type", type.toString())
                 .item("correlationIds", correlationIds)
@@ -81,11 +75,11 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
     }
 
     public MycatSQLTableLookup changeTo(RelNode input, MycatView right) {
-        return new MycatSQLTableLookup(getCluster(), input.getTraitSet(), input, right, joinType, condition, correlationIds, type);
+        return new MycatSQLTableLookup(getCluster(), input.getTraitSet(), input, right, joinType, joinCondition, correlationIds, type);
     }
 
     public MycatSQLTableLookup changeTo(RelNode input) {
-        return new MycatSQLTableLookup(getCluster(), input.getTraitSet(), input, right, joinType, condition, correlationIds, type);
+        return new MycatSQLTableLookup(getCluster(), input.getTraitSet(), input, right, joinType, joinCondition, correlationIds, type);
     }
 
     public static MycatSQLTableLookup create(RelOptCluster cluster,
@@ -95,8 +89,8 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
                                              JoinRelType joinType,
                                              RexNode condition,
                                              List<CorrelationId> correlationIds,
-                                             Type type){
-        return new MycatSQLTableLookup(cluster,traits,input,right,joinType,condition,correlationIds,type);
+                                             Type type) {
+        return new MycatSQLTableLookup(cluster, traits, input, right, joinType, condition, correlationIds, type);
     }
 
     public MycatSQLTableLookup(RelOptCluster cluster,
@@ -108,7 +102,7 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
                                List<CorrelationId> correlationIds,
                                Type type) {
         super(cluster, traits.replace(MycatConvention.INSTANCE), input);
-        this.condition = condition;
+        this.joinCondition = condition;
         this.joinType = joinType;
         this.correlationIds = correlationIds;
         this.type = type;
@@ -236,7 +230,7 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
 
     @Override
     public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
-        return new MycatSQLTableLookup(getCluster(), traitSet, inputs.get(0), right, joinType, condition, correlationIds, type);
+        return new MycatSQLTableLookup(getCluster(), traitSet, inputs.get(0), right, joinType, joinCondition, correlationIds, type);
     }
 
     public static Observable<Object[]> dispatchRightObservable(NewMycatDataContext context, MycatSQLTableLookup tableLookup, Observable<Object[]> leftInput) {
@@ -247,14 +241,15 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
         Observable<@NonNull List<Object[]>> buffer;
         if (tableLookup.getType() == Type.BACK) {//semi 可以分解
             buffer = leftInput.buffer(300, 50);
-        }else {//NONE 该运算不能分解
-            buffer  = leftInput.toList().toObservable();
+        } else {//NONE 该运算不能分解
+            buffer = leftInput.toList().toObservable();
         }
         Observable<Object[]> rightObservable = buffer.flatMap(argsList -> {
-            if (argsList.isEmpty()){
+            if (argsList.isEmpty()) {
                 return Observable.empty();
             }
-            RexShuttle rexShuttle = argSolver(argsList);
+            List<String> rightFieldNames = RelOptUtil.findAllTables(rightView.getRelNode()).get(0).getRowType().getFieldNames();
+            RexShuttle rexShuttle = argSolver(tableLookup.getInput(), argsList, rightFieldNames);
             RelNode mycatInnerRelNode = rightView.getRelNode().accept(new RelShuttleImpl() {
                 @Override
                 public RelNode visit(RelNode other) {
@@ -272,28 +267,103 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
                     rightView.getCondition().map(c -> c.accept(rexShuttle)).orElse(null));
             DrdsSqlWithParams drdsSql = context.getDrdsSql();
             SqlNode sqlTemplate = newRightView.getSQLTemplate(DrdsSqlWithParams.isForUpdate(drdsSql.getParameterizedSQL()));
-            ImmutableMultimap<String, SqlString> apply1 = newRightView.apply(context.getContext().getMergeUnionSize(),sqlTemplate, sqlMycatDataContext.getSqlMap(Collections.emptyMap(), newRightView, drdsSql, drdsSql.getHintDataNodeFilter()), drdsSql.getParams());
+            ImmutableMultimap<String, SqlString> apply1 = newRightView.apply(context.getContext().getMergeUnionSize(), sqlTemplate, sqlMycatDataContext.getSqlMap(Collections.emptyMap(), newRightView, drdsSql, drdsSql.getHintDataNodeFilter()), drdsSql.getParams());
             return Observable.merge(sqlMycatDataContext.getObservables(apply1, rightRowMetaData,
-                    (sessionConnection, sql, extractParams, calciteRowMetaData) -> VertxExecuter.runQuery(sessionConnection,sql,extractParams,calciteRowMetaData)
+                    (sessionConnection, sql, extractParams, calciteRowMetaData) -> VertxExecuter.runQuery(sessionConnection, sql, extractParams, calciteRowMetaData)
             ));
         });
         return rightObservable;
     }
 
     @NotNull
-    private static RexShuttle argSolver(List<Object[]> argsList) {
+    private static RexShuttle argSolver(RelNode left, List<Object[]> argsList, List<String> rightFieldNames) {
         return new RexShuttle() {
             @Override
+            public void visitEach(Iterable<? extends RexNode> exprs) {
+                super.visitEach(exprs);
+            }
+
+            @Override
+            public List<RexNode> visitList(Iterable<? extends RexNode> exprs) {
+                return super.visitList(exprs);
+            }
+
+            @Override
+            public RexNode visitCorrelVariable(RexCorrelVariable variable) {
+                return super.visitCorrelVariable(variable);
+            }
+
+            @Override
+            public RexNode visitDynamicParam(RexDynamicParam dynamicParam) {
+                return super.visitDynamicParam(dynamicParam);
+            }
+
+            @Override
             public RexNode visitCall(RexCall call) {
+                RexBuilder rexBuilder = MycatCalciteSupport.RexBuilder;
                 if (call.getOperator() == MYCAT_SQL_LOOKUP_IN) {
                     List<RexNode> operands = call.getOperands();
-                    RexNode rexNode = operands.get(1);
-                    RexCall rexCall = (RexCall) rexNode;
-                    LinkedList<RexNode> accept = MycatTableLookupValues.apply(true, argsList, rexCall.getOperands());
-                    RexNode rexNode1 = MycatCalciteSupport.RexBuilder.makeIn(operands.get(0), accept);
-                    return RexUtil.expandSearch(MycatCalciteSupport.RexBuilder,null,rexNode1);
+                    RexCall exprRow = (RexCall) operands.get(0);
+                    List<String> columnNames = exprRow.getOperands().stream().map(i -> ((RexInputRef) i).getIndex()).map(i -> rightFieldNames.get(i)).collect(Collectors.toList());
+                    List<String> valueNames = left.getRowType().getFieldNames();
+                    columnNames = columnNames.stream().filter(i -> valueNames.contains(i)).collect(Collectors.toList());
+                    List<RexNode> collect = exprRow.getOperands().stream().filter(rexNode -> {
+                        int index = ((RexInputRef) rexNode).getIndex();
+                        return valueNames.contains( rightFieldNames.get(index));
+                    }).collect(Collectors.toList());
+                    exprRow = (RexCall) rexBuilder.makeCall(SqlStdOperatorTable.ROW, collect);
+                    List<List<RexLiteral>> rowList = new ArrayList<>();
+                    for (Object[] args : argsList) {
+                        List<RexLiteral> row = new ArrayList<>();
+                        for (int i = 0; i < columnNames.size(); i++) {
+                            String needColumnName = columnNames.get(i);
+
+
+                            for (int j = 0; j < valueNames.size(); j++) {
+                                String fieldName = valueNames.get(j);
+                                if (needColumnName.equals(fieldName)) {
+                                    RelDataTypeField relDataTypeField = left.getRowType().getFieldList().get(j);
+                                    RelDataType fieldType = relDataTypeField.getType();
+                                    RexLiteral right = (RexLiteral) MycatCalciteSupport.RexBuilder.makeLiteral(Optional.ofNullable(args[j]).map(new Function<Object, String>() {
+                                        @Override
+                                        public String apply(Object o) {
+                                            if (o instanceof LocalDateTime) {
+                                                return java.sql.Timestamp.valueOf((LocalDateTime) o).toString();
+                                            }
+                                            return o.toString();
+                                        }
+                                    }).orElse(null));
+                                    row.add(right);
+                                }
+                            }
+                        }
+                        rowList.add(row);
+                    }
+                    if (rowList.get(0).size() != columnNames.size()) {
+                       throw new UnsupportedOperationException("may be a bug");
+                    }
+
+                    if (rowList.size() == 1) {
+                        ArrayList<RexNode> ands = new ArrayList<>();
+                        for (int i = 0; i < exprRow.getOperands().size(); i++) {
+                            RexNode right = rowList.get(0).get(i);
+                            RexNode left = exprRow.getOperands().get(i);
+                            ands.add(MycatCalciteSupport.RexBuilder
+                                    .makeCall(SqlStdOperatorTable.EQUALS, left, MycatCalciteSupport.RexBuilder.makeCast(left.getType(), right)));
+                        }
+                        if (ands.size() == 1) {
+                            return ands.get(0);
+                        }
+                        return rexBuilder.makeCall(SqlStdOperatorTable.AND, ands);
+                    }
+                    List<RexNode> rowRexNodeList = new ArrayList<>();
+                    for (List<RexLiteral> rexLiterals : rowList) {
+                        RexNode rexNode = rexBuilder.makeCall(SqlStdOperatorTable.ROW, rexLiterals);
+                        rowRexNodeList.add(rexNode);
+                    }
+                    return rexBuilder.makeIn(exprRow, rowRexNodeList);
                 }
-                return call;
+                return super.visitCall(call);
             }
         };
     }
@@ -342,7 +412,7 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
                                      Expression leftExpression,
                                      Expression rightExpression) {
         RelNode left = input;
-        JoinInfo joinInfo = JoinInfo.of(left, right, condition);
+        JoinInfo joinInfo = JoinInfo.of(left, right, joinCondition);
         leftExpression =
                 toEnumerate(leftExpression);
         rightExpression =
@@ -365,26 +435,26 @@ public class MycatSQLTableLookup extends SingleRel implements MycatRel {
         return implementor.result(
                 physType,
                 builder.append(
-                        Expressions.call(
-                                leftExpression,
-                                BuiltInMethod.HASH_JOIN.method,
-                                Expressions.list(
-                                        rightExpression,
-                                        leftPhysType.generateAccessor(joinInfo.leftKeys),
-                                        rightPhysType.generateAccessor(joinInfo.rightKeys),
-                                        EnumUtils.joinSelector(joinType,
-                                                physType,
-                                                ImmutableList.of(
-                                                        leftPhysType, rightPhysType)))
-                                        .append(
-                                                Util.first(keyPhysType.comparer(),
-                                                        Expressions.constant(null)))
-                                        .append(
-                                                Expressions.constant(joinType.generatesNullsOnLeft()))
-                                        .append(
-                                                Expressions.constant(
-                                                        joinType.generatesNullsOnRight()))
-                                        .append(predicate)))
+                                Expressions.call(
+                                        leftExpression,
+                                        BuiltInMethod.HASH_JOIN.method,
+                                        Expressions.list(
+                                                        rightExpression,
+                                                        leftPhysType.generateAccessor(joinInfo.leftKeys),
+                                                        rightPhysType.generateAccessor(joinInfo.rightKeys),
+                                                        EnumUtils.joinSelector(joinType,
+                                                                physType,
+                                                                ImmutableList.of(
+                                                                        leftPhysType, rightPhysType)))
+                                                .append(
+                                                        Util.first(keyPhysType.comparer(),
+                                                                Expressions.constant(null)))
+                                                .append(
+                                                        Expressions.constant(joinType.generatesNullsOnLeft()))
+                                                .append(
+                                                        Expressions.constant(
+                                                                joinType.generatesNullsOnRight()))
+                                                .append(predicate)))
                         .toBlock());
     }
 

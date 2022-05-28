@@ -26,6 +26,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 
+import static io.mycat.querycondition.ComparisonOperator.LTE;
+
 @AllArgsConstructor
 @Getter
 @ToString
@@ -140,7 +142,7 @@ public class ValueIndexCondition implements Comparable<ValueIndexCondition>, Ser
                 switch (condition.getQueryType()) {
                     case PK_POINT_QUERY: {
                         //queryByPrimaryKey
-                        Map<String, RangeVariable> map = new HashMap<>();
+                        Map<String, RangeVariable> map = new LinkedHashMap<>();// need column order
 
                         if (pointQueryKey.size() > 1) {
                             List<Partition> curPartitions = new LinkedList<>();
@@ -165,7 +167,7 @@ public class ValueIndexCondition implements Comparable<ValueIndexCondition>, Ser
                         ArrayList<Object> leftValues = new ArrayList<>(2);
                         ArrayList<Object> rightValues = new ArrayList<>(2);
 
-                        if (rangeQueryUpperOp == ComparisonOperator.LT || rangeQueryUpperOp == ComparisonOperator.LTE) {
+                        if (rangeQueryUpperOp == ComparisonOperator.LT || rangeQueryUpperOp == LTE) {
                             for (Object o1 : rangeQueryLowerKey) {
                                 if (o1 instanceof RexNode) {
                                     o1 = MycatRexUtil.resolveParam((RexNode) o1, params);
@@ -193,17 +195,24 @@ public class ValueIndexCondition implements Comparable<ValueIndexCondition>, Ser
                             bigOne = rangeQueryUpperKey.get(rangeQueryUpperKey.size() - 1);
                         }
                         Map<String, RangeVariable> map = new HashMap<>();
-                        if (smallOne != null && bigOne != null &&
-                                rangeQueryUpperOp == ComparisonOperator.LTE && rangeQueryLowerOp == ComparisonOperator.GTE) {
-                            for (String indexColumnName : condition.getIndexColumnNames()) {
-                                RangeVariable rangeVariable = new RangeVariable(indexColumnName, RangeVariableType.RANGE, smallOne, bigOne);
-                                map.put(indexColumnName, rangeVariable);
+                        if (smallOne != null && bigOne != null) {
+                            if (rangeQueryUpperOp  == ComparisonOperator.LT){
+                                rangeQueryUpperOp = LTE;
                             }
+                            if (rangeQueryLowerOp  == ComparisonOperator.GT){
+                                rangeQueryLowerOp = ComparisonOperator.GTE;
+                            }
+                            if (rangeQueryUpperOp == LTE && rangeQueryLowerOp == ComparisonOperator.GTE ||
+                                    rangeQueryUpperOp == ComparisonOperator.LT && rangeQueryLowerOp == ComparisonOperator.GT)
+                                for (String indexColumnName : condition.getIndexColumnNames()) {
+                                    RangeVariable rangeVariable = new RangeVariable(indexColumnName, RangeVariableType.RANGE, smallOne, bigOne);
+                                    map.put(indexColumnName, rangeVariable);
+                                }
                         } else if (smallOne != null) {
                             RangeVariableType type = null;
                             if (rangeQueryUpperOp == ComparisonOperator.LT) {
                                 type = RangeVariableType.LT;
-                            } else if (rangeQueryUpperOp == ComparisonOperator.LTE) {
+                            } else if (rangeQueryUpperOp == LTE) {
                                 type = RangeVariableType.LTE;
                             }
                             if (type != null) {
