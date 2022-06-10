@@ -258,6 +258,8 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
                         readOnly = connection.connection.isReadOnly() || JdbcUtils.executeQuery(connection.connection, "SELECT @@read_only", Collections.emptyList()).toString().contains("1");
                     } catch (Throwable throwable) {
                         LOGGER.debug("heartbeat sql:{}", "SELECT @@read_only", throwable);
+                        heartBeatStrategy.onException(throwable);
+                        return;
                     }
                     ArrayList<List<Map<String, Object>>> resultList = new ArrayList<>();
                     List<String> sqls = heartBeatStrategy.getSqls();
@@ -269,6 +271,7 @@ public class JdbcConnectionManager implements ConnectionManager<DefaultConnectio
 
                         } catch (Exception e) {
                             LOGGER.error("jdbc heartbeat ", e);
+                            heartBeatStrategy.onException(e);
                             return;
                         }
                     }
