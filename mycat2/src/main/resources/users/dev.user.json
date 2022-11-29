@@ -1,0 +1,7 @@
+{
+	"dialect":"mysql",
+	"ip":null,
+	"password":"q1w2e3r4t5",
+	"transactionType":"proxy",
+	"username":"dev"
+}
