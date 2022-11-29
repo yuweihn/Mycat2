@@ -10,4 +10,3 @@ http://dl.mycat.org.cn/2.0/install-template/
 3、将mycat2\src\main\resources\目录下的全部文件复制到 mycat\conf 目录下。注意clusters、datasources、schemas目录下不要有重复配置。
 4、启动。 bin目录下执行 ./mycat start
 ------------------------------------------------------------------------------------
-
