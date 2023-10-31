@@ -6,7 +6,6 @@
   <artifactId>parent</artifactId>
   <version>1.22-release</version>
 
-
   <modules>
     <module>config</module>
     <module>proxy</module>
