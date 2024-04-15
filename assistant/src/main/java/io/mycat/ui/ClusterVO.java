@@ -1,7 +1,6 @@
 package io.mycat.ui;
 
 import io.mycat.config.ClusterConfig;
-import io.mycat.util.StringUtil;
 import io.vertx.core.json.Json;
 import javafx.event.ActionEvent;
 import javafx.scene.control.ListView;
@@ -9,9 +8,7 @@ import javafx.scene.control.TextField;
 import lombok.Data;
 import org.jetbrains.annotations.NotNull;
 
-import javax.validation.ConstraintViolation;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Data
 public class ClusterVO implements VO{
